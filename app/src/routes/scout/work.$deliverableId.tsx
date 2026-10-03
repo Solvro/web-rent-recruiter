@@ -14,9 +14,11 @@ import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import {
 	CallChecks,
+	candidateOutcome,
 	depositStatusLine,
 	PayoutBreakdown,
 	personOf,
+	SendLink,
 	WhyNotAccepted,
 	WorkStatus,
 	workInfo,
@@ -86,7 +88,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 				</div>
 			</header>
 
-			<Waiting d={d} person={person} />
+			<Waiting d={d} person={person} w={w} />
 			<FollowUps d={d} />
 
 			<section className="space-y-4">
@@ -112,7 +114,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 
 			<Review d={d} w={w} />
 
-			{d.status === "REJECTED" && !WITHDRAWN.test(d.review?.reasons[0] ?? "") && (
+			{d.status === "REJECTED" && !WITHDRAWN.test(d.review?.reasons[0] ?? "") && !candidateOutcome(d) && (
 				<Appeal d={d} align="start" showReasons={false} />
 			)}
 
@@ -146,18 +148,15 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 }
 
 /** Something only the candidate can do now: the link to send them. */
-function Waiting({ d, person }: { d: DeliverableView; person: string }) {
+function Waiting({ d, person, w }: { d: DeliverableView; person: string; w: GigWorkView }) {
 	const confirm = d.status === "PENDING" ? d.confirmation : null;
 	const who = firstName(person);
 	if (confirm?.status === "PENDING" && confirm.url)
 		return (
-			<div className="space-y-3 rounded-3xl bg-accent p-5 text-accent-foreground">
+			<section className="space-y-3">
 				<p>Send {who} this link. You get paid when they confirm they are open to a call.</p>
-				<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-					<CopyButton text={confirm.url} className="text-accent-foreground" />
-					<Countdown deadline={confirm.expiresAt} prefix="" suffix="left" />
-				</div>
-			</div>
+				<SendLink d={d} person={person} role={{ title: d.roleTitle, company: w.companyName || null }} />
+			</section>
 		);
 	if (d.callChecks?.length)
 		return (

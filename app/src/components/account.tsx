@@ -92,7 +92,7 @@ export function AccountMenu() {
 								key={p.id}
 								onClick={() => {
 									wallet.selectPersona(p.id);
-									navigate({ to: p.kind === "company" ? "/company" : "/scout/submissions" });
+									navigate({ to: p.kind === "company" ? "/company" : "/scout" });
 								}}
 								className={cn("justify-between", wallet.persona?.id === p.id && "bg-accent")}
 							>

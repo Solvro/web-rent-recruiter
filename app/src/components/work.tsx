@@ -3,14 +3,18 @@
  * candidate has to click, and where the money went.
  */
 import { type AgentReview, type Criteria, type DeliverableView, explorerTxUrl } from "@scout/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { Chip } from "@/components/bits";
+import { toast } from "sonner";
+import { Chip, Countdown, Disclosure } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
 import { API_MOCK } from "@/lib/env";
+import { errorMessage } from "@/lib/errors";
 import { firstName, formatMoney, personInTitle } from "@/lib/format";
 import { GIG_TYPES, type GigKind } from "@/lib/gig-types";
 import { kindOfWork, type WorkKind } from "@/lib/gigs/work";
 import { inCents } from "@/lib/payout";
+import { typedClient } from "@/lib/trpc";
 
 export const KIND_OF: Record<WorkKind, GigKind> = {
 	sourcing: "SOURCING",
@@ -27,6 +31,23 @@ export function personOf(d: DeliverableView, fallback?: string | null) {
 	if (d.deliverable.type === "SOURCING") return d.deliverable.name;
 	return fallback || personInTitle(d.gigTitle);
 }
+
+/**
+ * Rejections that came from the candidate, not from a judgement of the work: they read as the candidate's answer,
+ * never as "The agent didn't accept", and there is nothing to appeal.
+ */
+export function candidateOutcome(d: DeliverableView): string | null {
+	if (d.status !== "REJECTED") return null;
+	const r = d.review?.reasons[0] ?? "";
+	if (/reported the message/i.test(r)) return "Candidate reported the message";
+	if (/call didn't happen/i.test(r)) return "Candidate says the call didn't happen";
+	if (/didn't confirm/i.test(r)) return "Candidate didn't answer in time";
+	if (/isn't interested|isn't open|not interested/i.test(r)) return "Candidate said not now";
+	return null;
+}
+
+export const isWithdrawn = (d: DeliverableView) =>
+	/^withdrawn by the recruiter/i.test(d.review?.reasons[0] ?? "");
 
 const LATER: Record<string, { label: string; tone: "accent" | "good" | "neutral" }> = {
 	HELD: { label: "after the interview", tone: "accent" },
@@ -61,10 +82,10 @@ export function WorkStatus({ d, person }: { d: DeliverableView; person: string }
 				<Loader2 className="size-3.5 animate-spin" /> The agent is checking
 			</Chip>
 		);
-	if (d.status === "REJECTED")
-		return (
-			<Chip>{d.review?.reasons[0] === "Withdrawn by the recruiter." ? "Taken back" : "Not accepted"}</Chip>
-		);
+	if (d.status === "REJECTED" && d.appeal?.status === "OPEN")
+		return <Chip tone="accent">The company is looking again</Chip>;
+	if (d.status === "REJECTED" && candidateOutcome(d)) return <Chip>{candidateOutcome(d)}</Chip>;
+	if (d.status === "REJECTED") return <Chip>{isWithdrawn(d) ? "Taken back" : "Not accepted"}</Chip>;
 	return (
 		<span className="flex flex-wrap items-center justify-end gap-2">
 			{p && <span className="type-label tabular text-success">+{formatMoney(p.now)}</span>}
@@ -151,7 +172,7 @@ export function PayoutBreakdown({
 				]
 			: []),
 		...(BigInt(p.operatorFee) > 0n
-			? [{ label: operator ? `${operator}, who vouched for you` : "Your operator", amount: p.operatorFee }]
+			? [{ label: operator ? `${operator}, your operator` : "Your operator", amount: p.operatorFee }]
 			: []),
 		...(BigInt(p.platformFee) > 0n ? [{ label: "Service fee", amount: p.platformFee }] : []),
 	];
@@ -238,4 +259,63 @@ export function depositStatusLine(d: DeliverableView) {
 	if (dep.status === "KEPT") return `Your ${amount} deposit stays with the company.`;
 	if (dep.status === "RETURNED") return `Your ${amount} deposit was returned.`;
 	return `Your ${amount} deposit comes back when the agent accepts.`;
+}
+
+/**
+ * The link the candidate has to click, with the message to send it with, what happens at the deadline, and a fresh
+ * link (more time) before it runs out.
+ */
+export function SendLink({
+	d,
+	person,
+	role,
+}: {
+	d: DeliverableView;
+	person: string;
+	role: { title: string; company: string | null };
+}) {
+	const qc = useQueryClient();
+	const resend = useMutation({
+		mutationFn: () => typedClient.candidate.resendConfirmation.mutate({ deliverableId: d.id }),
+		onSuccess: () => {
+			toast.success("New link ready. Send it again; the old one no longer works.");
+			void qc.invalidateQueries({ queryKey: ["gigs"] });
+		},
+		onError: (e) => toast.error(errorMessage(e)),
+	});
+	const c = d.confirmation;
+	if (!c?.url || c.status !== "PENDING") return null;
+	const who = firstName(person);
+	const until = new Date(c.expiresAt).toLocaleString("en-GB", {
+		weekday: "short",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	const message = `Hi ${who}, I came across a ${role.title} role${role.company ? ` at ${role.company}` : ""} that I think fits you well. If you're open to a 30-minute call about it, you can say yes here (one tap, no sign-up): ${c.url}`;
+	return (
+		<div className="w-full space-y-3 rounded-3xl bg-accent p-5 text-left text-accent-foreground">
+			<p className="break-all type-label">{c.url}</p>
+			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+				<CopyButton text={c.url} className="text-accent-foreground" />
+				<CopyButton text={message} label="Copy message with link" className="text-accent-foreground" />
+			</div>
+			<Disclosure label="See the message">
+				<p className="rounded-2xl bg-card p-3 text-foreground">{message}</p>
+			</Disclosure>
+			<p className="type-label">
+				{who} has until {until} to answer
+				<Countdown deadline={c.expiresAt} prefix=" ·" suffix="left" />. If they don't, the profile isn't
+				accepted
+				{d.deposit?.status === "HELD" ? " and your deposit stays with the company" : ""}.{" "}
+				<button
+					type="button"
+					onClick={() => resend.mutate()}
+					disabled={resend.isPending}
+					className="underline underline-offset-4"
+				>
+					{resend.isPending ? "Making a new link…" : "Give more time (new link)"}
+				</button>
+			</p>
+		</div>
+	);
 }

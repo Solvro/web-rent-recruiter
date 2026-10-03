@@ -120,7 +120,12 @@ export function CloseRole({ role }: { role: RoleDetail }) {
 						<div className="space-y-2 text-muted-foreground">
 							<p>
 								Your agent stops
-								{preview.data.openGigs ? ` and ${preview.data.openGigs} open tasks close` : ""}.{" "}
+								{preview.data.openGigs === 1
+									? " and its open task closes"
+									: preview.data.openGigs
+										? ` and ${preview.data.openGigs} open tasks close`
+										: ""}
+								.{" "}
 								<span className="text-foreground">{formatMoney(preview.data.refund)} comes back to you.</span>
 							</p>
 							{preview.data.inProgress.length > 0 && (

@@ -7,6 +7,7 @@ export type Persona = {
 	kind: Me["kind"];
 	displayName: string;
 	companyName?: string;
+	companyDescription?: string;
 	/** Plain label in the account switcher. */
 	role: "Company" | "Recruiter";
 	/** Identity used by the mock API. Demo mode against the real API derives it from the demo key. */
@@ -19,7 +20,9 @@ export const PERSONAS: Record<PersonaId, Persona> = {
 		id: "company",
 		kind: "company",
 		displayName: "Hanna Lewicka",
-		companyName: "Seed-stage Solana DeFi startup · Warsaw",
+		companyName: "Wisła Labs",
+		/** How the company describes itself to recruiters and candidates. */
+		companyDescription: "Seed-stage DeFi startup, Warsaw",
 		role: "Company",
 		mockAddress: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
 	},

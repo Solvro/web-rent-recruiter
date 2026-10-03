@@ -157,8 +157,8 @@ export function PayBreakdown({
 				{operatorFee > 0n && operator && (
 					<>
 						{" "}
-						· <span className="tabular">{formatMoney(operatorFee)}</span> to {operator.name}, who vouched for
-						you
+						· <span className="tabular">{formatMoney(operatorFee)}</span> to {operator.name}, your operator.
+						Their vouch is what lets you take screening calls.
 					</>
 				)}
 			</p>

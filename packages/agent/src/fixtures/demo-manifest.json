@@ -2,7 +2,7 @@
 	"$comment": "Canonical demo fixtures (Stream C). Everything else (seed, e2e, app mocks) should read from here. File names kept from the earlier TypeScript role for compatibility.",
 	"story": {
 		"role": "Senior Rust Engineer (Solana programs)",
-		"company": "Seed-stage Solana DeFi startup · Warsaw",
+		"company": "Wisła Labs",
 		"founder": "Hanna Lewicka",
 		"budgetUsd": 750,
 		"plan": "SOURCING 17 × $25 (paid on candidate confirmation) · SCREENING_CALL 3 × $40 · SCREENING_CALL variant language 1 × $15 (English C1) · REFERENCE_CHECK 1 × $25 · committed $585 · reserve $165",

@@ -1,7 +1,7 @@
 import type { Deliverable, DeliverableView, Me, RecordingView } from "@scout/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check, Copy, ExternalLink, Loader2, Lock, Mic, UserRound } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Lock, Mic, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { Appeal } from "@/components/appeal";
@@ -14,7 +14,14 @@ import { Avatar } from "@/components/person";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { depositStatusLine, personOf, WhyNotAccepted, WorkStatus } from "@/components/work";
+import {
+	candidateOutcome,
+	depositStatusLine,
+	personOf,
+	SendLink,
+	WhyNotAccepted,
+	WorkStatus,
+} from "@/components/work";
 import { appCodeOf, errorData, errorMessage, isDuplicate, isNotFound } from "@/lib/errors";
 import { firstName, formatMoney } from "@/lib/format";
 import { eligibilityLine, requirementChips } from "@/lib/gig-access";
@@ -66,7 +73,15 @@ function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 	return (
 		<div className="mx-auto max-w-xl space-y-10">
 			<header className="space-y-3">
-				<KindChip gig={g} />
+				<Link
+					to="/scout"
+					className="inline-flex items-center gap-1.5 type-label text-muted-foreground hover:text-foreground"
+				>
+					<ArrowLeft className="size-3.5" /> Gigs
+				</Link>
+				<div>
+					<KindChip gig={g} />
+				</div>
 				<h1 className="type-display">
 					Earn {formatMoney(earn)} <span className="text-muted-foreground">{GIG_TYPES[kindOf(g)].unit}</span>
 				</h1>
@@ -443,7 +458,11 @@ function useDeliver(gig: GigView, onSent: (id: string) => void) {
 	return { ...mutation, busy: mutation.isPending || pending };
 }
 
-const NOISE = new Set(["demo", "dev", "developer", "engineer", "backend", "frontend", "fullstack", "live"]);
+const NOISE = new Set(
+	"demo dev developer engineer backend frontend fullstack live fde rust java go golang python ml ai sre cto pm eng swe test".split(
+		" ",
+	),
+);
 /** "linkedin.com/in/karolina-mazurek-backend-demo" → "Karolina Mazurek". */
 function nameFromProfile(url: string) {
 	const slug = url.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1] ?? url.match(/github\.com\/([^/?#]+)/i)?.[1];
@@ -451,9 +470,21 @@ function nameFromProfile(url: string) {
 	const parts = decodeURIComponent(slug)
 		.split(/[-_.]/)
 		.filter((p) => /^[\p{L}]+$/u.test(p) && !NOISE.has(p.toLowerCase()))
-		.slice(0, 2);
-	return parts.length === 2 ? parts.map((p) => p[0].toUpperCase() + p.slice(1).toLowerCase()).join(" ") : "";
+		.slice(0, 3);
+	return parts.length >= 2 ? parts.map((p) => p[0].toUpperCase() + p.slice(1).toLowerCase()).join(" ") : "";
 }
+
+/** "a, b and c" */
+const listOf = (items: string[]) =>
+	items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+
+const profileKey = (url: string) =>
+	url
+		.trim()
+		.toLowerCase()
+		.replace(/^https?:\/\/(www\.)?/, "")
+		.replace(/[/?#].*$/, (m) => (m.startsWith("/") ? m.split(/[?#]/)[0].replace(/\/$/, "") : ""));
+const sameProfile = (a: string, b: string) => !!b.trim() && profileKey(a) === profileKey(b);
 
 function SourcingForm({
 	gig,
@@ -471,7 +502,25 @@ function SourcingForm({
 	const [nameTouched, setNameTouched] = useState(false);
 	const [notes, setNotes] = useState("");
 	const [duplicate, setDuplicate] = useState(false);
+	// Once the link was pasted, the name and note stay on screen (clearing the link never wipes them).
+	const [expanded, setExpanded] = useState(false);
 	const deliver = useDeliver(gig, onSent);
+	const work = useMyWork();
+	const sentByMe = (work.data ?? []).some(
+		(d) =>
+			d.roleId === gig.roleId &&
+			d.deliverable.type === "SOURCING" &&
+			sameProfile(d.deliverable.profileUrl, profileUrl),
+	);
+	const dupLine = sentByMe
+		? "You already sent this person for this role. See them in My work."
+		: "Another recruiter already submitted this person for this role.";
+	const validUrl = /^(https?:\/\/)?(www\.)?[\w-]+(\.[\w-]+)+\/\S+/.test(profileUrl.trim());
+	const missing = [
+		!profileUrl.trim() ? "their profile link" : !validUrl ? "a full profile link" : null,
+		!name.trim() ? "their name" : null,
+		!notes.trim() ? "a short note" : null,
+	].filter(Boolean);
 
 	// Duplicate check right after the link is pasted.
 	useEffect(() => {
@@ -494,19 +543,24 @@ function SourcingForm({
 	return (
 		<form
 			className="space-y-6"
+			noValidate
 			onSubmit={(e) => {
 				e.preventDefault();
-				deliver.mutate({ type: "SOURCING", name, profileUrl, notes });
+				if (missing.length) return;
+				const url = /^https?:\/\//.test(profileUrl.trim())
+					? profileUrl.trim()
+					: `https://${profileUrl.trim()}`;
+				deliver.mutate({ type: "SOURCING", name: name.trim(), profileUrl: url, notes });
 			}}
 		>
 			<Input
 				id="url"
 				type="url"
-				required
 				autoFocus
 				value={profileUrl}
 				onChange={(e) => {
 					setProfileUrl(e.target.value);
+					if (e.target.value) setExpanded(true);
 					setDuplicate(false);
 					if (!nameTouched) setName(nameFromProfile(e.target.value));
 				}}
@@ -514,7 +568,7 @@ function SourcingForm({
 				aria-label="Profile link"
 				className="h-12"
 			/>
-			{profileUrl && (
+			{(expanded || profileUrl) && (
 				<div className="animate-in space-y-6 fade-in-0">
 					<Input
 						id="name"
@@ -547,22 +601,27 @@ function SourcingForm({
 					operator && <li>No deposit: you are vouched by {operator}.</li>
 				)}
 			</ul>
-			{duplicate && <p className="text-destructive">Another recruiter already submitted this person.</p>}
+			{duplicate && <p className="text-destructive">{dupLine}</p>}
 			{deliver.isError && !isDuplicate(deliver.error) && (
 				<p className="text-destructive">{errorMessage(deliver.error)}</p>
 			)}
 			{deliver.isError && isDuplicate(deliver.error) && !duplicate && (
-				<p className="text-destructive">Another recruiter already submitted this person.</p>
+				<p className="text-destructive">{dupLine}</p>
 			)}
 			<Button
 				type="submit"
 				size="lg"
 				className="h-12 w-full"
-				disabled={!profileUrl || !name || !notes.trim() || duplicate || deliver.busy}
+				disabled={missing.length > 0 || duplicate || deliver.busy}
 			>
 				{deliver.busy && <Loader2 className="animate-spin" />}
 				Send to the agent
 			</Button>
+			{missing.length > 0 && expanded && (
+				<p className="text-center type-label text-muted-foreground">
+					Add {listOf(missing as string[])} to send.
+				</p>
+			)}
 		</form>
 	);
 }
@@ -574,6 +633,36 @@ const RECOMMENDATIONS = [
 	{ value: "MAYBE", label: "Not sure" },
 	{ value: "PASS", label: "Not a fit" },
 ] as const;
+
+function LevelPicker({
+	level,
+	onPick,
+}: {
+	level: (typeof LEVELS)[number] | null;
+	onPick: (l: (typeof LEVELS)[number]) => void;
+}) {
+	return (
+		<div className="flex flex-wrap items-center gap-2">
+			<span className="type-label text-muted-foreground">Level you heard</span>
+			{LEVELS.map((l) => (
+				<button
+					key={l}
+					type="button"
+					aria-pressed={level === l}
+					onClick={() => onPick(l)}
+					className={cn(
+						"rounded-full px-3.5 py-1.5 type-label ring-1 ring-inset transition-colors",
+						level === l
+							? "bg-accent text-accent-foreground ring-primary/30"
+							: "text-muted-foreground ring-border hover:bg-muted",
+					)}
+				>
+					{l}
+				</button>
+			))}
+		</div>
+	);
+}
 
 const draftKey = (gigId: string) => `scout.answers.${gigId}`;
 function readDraft(gigId: string): Record<string, string> {
@@ -629,20 +718,29 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 				if (!touched.current.has(a.questionId) && !next[a.questionId]?.trim()) next[a.questionId] = a.answer;
 			return next;
 		});
-		setRecommendation((r) => r ?? view.prefill?.recommendation ?? null);
 	};
-	const complete =
-		script.every((q) => answers[q.id]?.trim()) &&
-		!!recommendation &&
-		(!language || !!level) &&
-		(!reference || (refereeName && refereeRelation));
+	// The notetaker's reading of the call is a hint; the recommendation stays the recruiter's own click.
+	const suggested = RECOMMENDATIONS.find((r) => r.value === recording?.prefill?.recommendation)?.label;
+	// Language checks: the level picker sits under the question that asks for the level (asked once).
+	const levelQuestion = language ? script.find((q) => /\blevel\b/i.test(q.question))?.id : undefined;
+	const unanswered = script.filter((q) => !answers[q.id]?.trim()).length;
+	const todo = [
+		reference && !refereeName.trim() ? "who you talked to" : null,
+		reference && !refereeRelation.trim() ? "how they know the candidate" : null,
+		unanswered ? `${unanswered} more answer${unanswered === 1 ? "" : "s"}` : null,
+		!recommendation ? "your call" : null,
+		language && !level ? "the level you heard" : null,
+	].filter((x): x is string => !!x);
+	const complete = todo.length === 0;
+	const yoursUntil = gig.claimedAt ? Date.parse(gig.claimedAt) + CLAIM_HOURS * 3_600_000 : null;
 
 	return (
 		<form
 			className="space-y-8"
+			noValidate
 			onSubmit={(e) => {
 				e.preventDefault();
-				if (!recommendation) return;
+				if (!recommendation || !complete) return;
 				const list = script.map((q) => ({ questionId: q.id, answer: answers[q.id]?.trim() ?? "" }));
 				deliver.mutate(
 					reference
@@ -666,6 +764,18 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 				);
 			}}
 		>
+			{yoursUntil && yoursUntil > Date.now() && (
+				<p className="type-label text-muted-foreground">
+					Yours until{" "}
+					{new Date(yoursUntil).toLocaleString("en-GB", {
+						weekday: "short",
+						hour: "2-digit",
+						minute: "2-digit",
+					})}
+					<Countdown deadline={new Date(yoursUntil).toISOString()} prefix=" ·" suffix="left" tone="good" />.
+					If you don't send your notes by then, the gig goes back on the board.
+				</p>
+			)}
 			{!reference && <BookingTimes gig={gig} />}
 			{!reference && <ShowUpFee gig={gig} />}
 			<Notetaker gigId={gig.id} onDone={onDone} />
@@ -710,6 +820,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 							onChange={(e) => typeAnswer(q.id, e.target.value)}
 							className="min-h-20 rounded-3xl p-4"
 						/>
+						{q.id === levelQuestion && <LevelPicker level={level} onPick={setLevel} />}
 					</li>
 				))}
 			</ol>
@@ -744,7 +855,9 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 				</Disclosure>
 			)}
 			<fieldset className="space-y-2">
-				<legend className="type-label text-muted-foreground">Your call</legend>
+				<legend className="type-label text-muted-foreground">
+					Your call{suggested && !recommendation ? ` · the notetaker heard "${suggested}"` : ""}
+				</legend>
 				<div className="flex flex-wrap gap-2">
 					{RECOMMENDATIONS.map((r) => (
 						<button
@@ -764,27 +877,10 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 					))}
 				</div>
 			</fieldset>
-			{language && (
+			{language && !levelQuestion && (
 				<fieldset className="space-y-3">
 					<legend className="type-label text-muted-foreground">Level you heard</legend>
-					<div className="flex flex-wrap gap-2">
-						{LEVELS.map((l) => (
-							<button
-								key={l}
-								type="button"
-								aria-pressed={level === l}
-								onClick={() => setLevel(l)}
-								className={cn(
-									"rounded-full px-3.5 py-1.5 type-label ring-1 ring-inset transition-colors",
-									level === l
-										? "bg-accent text-accent-foreground ring-primary/30"
-										: "text-muted-foreground ring-border hover:bg-muted",
-								)}
-							>
-								{l}
-							</button>
-						))}
-					</div>
+					<LevelPicker level={level} onPick={setLevel} />
 				</fieldset>
 			)}
 			{!reference && (
@@ -803,9 +899,16 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 				{deliver.busy && <Loader2 className="animate-spin" />}
 				Send to the agent
 			</Button>
+			{!complete && (
+				<p className="text-center type-label text-muted-foreground">Add {listOf(todo)} to send.</p>
+			)}
 		</form>
 	);
 }
+
+/** A full Google Meet, Zoom or Teams link (the notetaker can't join anything else). */
+const MEETING_LINK =
+	/^(https?:\/\/)?(meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}|([\w-]+\.)?zoom\.us\/(j|my)\/\S+|teams\.(microsoft|live)\.com\/\S+)/i;
 
 const ACTIVE = new Set(["joining", "waiting_room", "in_call", "recording", "processing"]);
 
@@ -813,6 +916,7 @@ const ACTIVE = new Set(["joining", "waiting_room", "in_call", "recording", "proc
 function Notetaker({ gigId, onDone }: { gigId: string; onDone: (view: RecordingView) => void }) {
 	const [url, setUrl] = useState("");
 	const [started, setStarted] = useState(false);
+	const meetingOk = MEETING_LINK.test(url.trim());
 	const recording = useRecording(gigId, true);
 	const view = recording.data;
 	const delivered = useRef(false);
@@ -888,7 +992,7 @@ function Notetaker({ gigId, onDone }: { gigId: string; onDone: (view: RecordingV
 					aria-label="Meeting link"
 					className="h-11"
 				/>
-				<Button type="button" onClick={() => invite.mutate()} disabled={!url.trim() || invite.isPending}>
+				<Button type="button" onClick={() => invite.mutate()} disabled={!meetingOk || invite.isPending}>
 					{invite.isPending && <Loader2 className="animate-spin" />}
 					Invite notetaker
 				</Button>
@@ -898,7 +1002,9 @@ function Notetaker({ gigId, onDone }: { gigId: string; onDone: (view: RecordingV
 			) : (
 				!started && (
 					<p className="type-label text-muted-foreground">
-						The notetaker records the call and fills in the answers for you. Optional.
+						{url.trim() && !meetingOk
+							? "Paste the full meeting link, e.g. meet.google.com/abc-defg-hij."
+							: "The notetaker records the call and fills in the answers for you. Optional."}
 					</p>
 				)
 			)}
@@ -913,26 +1019,6 @@ function notetakerError(e: unknown) {
 		return "The notetaker isn't available right now. Fill in the answers yourself.";
 	if (code === "RECORDING_DONE") return "This call is already recorded.";
 	return errorMessage(e);
-}
-
-function CopyLink({ url }: { url: string }) {
-	const [copied, setCopied] = useState(false);
-	return (
-		<div className="flex w-full items-center gap-2 rounded-full bg-card p-1.5 pl-5 ring-1 ring-foreground/10">
-			<span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{url}</span>
-			<Button
-				onClick={() => {
-					void navigator.clipboard?.writeText(url).then(() => {
-						setCopied(true);
-						setTimeout(() => setCopied(false), 2000);
-					});
-				}}
-			>
-				{copied ? <Check /> : <Copy />}
-				{copied ? "Copied" : "Copy link"}
-			</Button>
-		</div>
-	);
 }
 
 /** After sending: the agent reviews within seconds; the payout panel (app shell) shows when it accepts. */
@@ -954,23 +1040,23 @@ function Checking({
 	const asks = status === "PENDING" && (mine?.followUps ?? []).some((f) => !f.answer);
 	const deposit = mine ? depositStatusLine(mine) : null;
 	const review = mine?.review?.candidateReview ?? null;
-	const until = confirm?.expiresAt
-		? new Date(confirm.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-		: null;
+
 	return (
 		<div className="mx-auto flex max-w-xl flex-col items-center gap-6 py-20 text-center">
-			{confirm ? (
+			{confirm && mine ? (
 				<>
 					<h1 className="type-display">Send this link to {who}</h1>
 					<p className="max-w-md text-muted-foreground">
 						The agent likes this profile. You get paid when {who} confirms they are open to a conversation.
 					</p>
-					<CopyLink url={confirm.url ?? ""} />
-					<p className="max-w-md type-label text-muted-foreground">
-						{who} has until {until} to answer
-						{confirm.expiresAt && <Countdown deadline={confirm.expiresAt} prefix=" ·" suffix="left" />}. If
-						they don't, the profile isn't accepted.
-					</p>
+					<SendLink
+						d={mine}
+						person={who}
+						role={{
+							title: gig.post?.title ?? gig.roleTitle,
+							company: gig.post?.companyDescriptor ?? gig.companyName,
+						}}
+					/>
 				</>
 			) : asks && mine ? (
 				<>
@@ -1015,6 +1101,16 @@ function Checking({
 							: "Payment is on its way to you."}
 						{deposit && ` ${deposit}`}
 					</p>
+				</>
+			) : mine && candidateOutcome(mine) ? (
+				<>
+					<h1 className="type-display">{candidateOutcome(mine)}</h1>
+					<p className="max-w-md text-muted-foreground">
+						{/didn't answer/.test(candidateOutcome(mine) ?? "")
+							? `${who} didn't answer in time, so this profile isn't paid. It doesn't affect your record.`
+							: `That's ${who}'s answer, not a judgement of your work. It doesn't affect your record.`}
+					</p>
+					{deposit && <p className="type-label text-muted-foreground">{deposit}</p>}
 				</>
 			) : (
 				<>

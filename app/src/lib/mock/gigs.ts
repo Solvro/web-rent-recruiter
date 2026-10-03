@@ -441,15 +441,19 @@ export function startAgent(roleId: string) {
 	log(
 		roleId,
 		"GIG_POSTED",
-		`Posted ${gig.maxDeliverables} sourcing gigs at ${formatMoney(gig.bounty)} each`,
+		`Asked recruiters for ${gig.maxDeliverables} profiles at ${formatMoney(gig.bounty)} each`,
 		{
 			gigId: gig.id,
 		},
 	);
-	schedule(roleId, 8 * SECOND, "sim-source", "tomasz");
-	schedule(roleId, 14 * SECOND, "sim-source", "piotr");
-	// A recruiter in the room sources Karolina herself; the simulator only steps in if nobody does.
-	schedule(roleId, recruiterUsed() ? LATE_KAROLINA_MS : 120 * SECOND, "sim-source", "karolina");
+	// The scripted Rust engineers only go to a role that looks for them; any other role waits for real recruiters.
+	const text = `${role.title} ${[...role.criteria.mustHave, ...role.criteria.niceToHave].map((c) => c.label).join(" ")}`;
+	if (/\b(rust|solana|anchor)\b/i.test(text)) {
+		schedule(roleId, 8 * SECOND, "sim-source", "tomasz");
+		schedule(roleId, 14 * SECOND, "sim-source", "piotr");
+		// A recruiter in the room sources Karolina herself; the simulator only steps in if nobody does.
+		schedule(roleId, recruiterUsed() ? LATE_KAROLINA_MS : 120 * SECOND, "sim-source", "karolina");
+	}
 	save();
 }
 
@@ -995,6 +999,17 @@ function acceptSourcing(d: MockDelivery) {
 /** Scripted replies to the company's instructions; the backend runs the real agent. */
 /** The agent proposes; the company decides in "Needs you". */
 function propose(roleId: string, what: string, change: Pick<Proposal, "add" | "remove">) {
+	// Taking back something only proposed: just drop the proposal, nothing to undo.
+	if (change.remove) {
+		const pending = [...g.proposals.values()].find(
+			(p) => p.roleId === roleId && p.add && (!change.remove?.skill || p.add.skill === change.remove.skill),
+		);
+		if (pending) {
+			g.proposals.delete(pending.id);
+			log(roleId, "AGENT_MESSAGE", `OK, I dropped that: I won't ${pending.text}.`);
+			return;
+		}
+	}
 	const p: Proposal = { id: newId("prop"), roleId, text: what, at: iso(), ...change };
 	g.proposals.set(p.id, p);
 	log(roleId, "AGENT_MESSAGE", `I can ${what}. Say yes in "Needs you" and I'll do it.`);
@@ -1997,7 +2012,7 @@ function roleStatus(roleId: string): RoleStatusView {
 	}
 	for (const p of g.proposals.values())
 		if (p.roleId === roleId)
-			wait("company", `You to approve: ${p.text}`, p.at, {
+			wait("company", `Your agent wants to ${p.text}`, p.at, {
 				actions: [
 					{ id: "approve_proposal", label: "Yes, do it", proposalId: p.id },
 					{ id: "decline_proposal", label: "No", proposalId: p.id },
@@ -2660,6 +2675,13 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		const d = g.deliveries.get(String(ctx.input.deliverableId));
 		if (!d?.confirmToken) throw new MockError(404, "NOT_FOUND", "Nothing to resend.");
 		d.confirmExpiresAt = Date.now() + CONFIRM_WINDOW_MS;
+		// A fresh link with the full window again (the old one stops working), like the backend.
+		const old = confirmationOf(d.confirmToken);
+		if (old?.status === "PENDING") {
+			const { token: _t, status: _s, respondedAt: _r, ...card } = old;
+			answerConfirmation(d.confirmToken, "EXPIRED");
+			d.confirmToken = createConfirmation({ ...card, expiresAt: iso(d.confirmExpiresAt) });
+		}
 		const name = d.payload.type === "SOURCING" ? first(d.payload.name) : "the candidate";
 		log(
 			d.roleId,
@@ -2667,7 +2689,10 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			`I asked ${displayName(d.scout)} to send ${name} the link again and gave ${name} more time.`,
 		);
 		save();
-		return { url: null, expiresAt: iso(d.confirmExpiresAt) };
+		return {
+			url: ctx.wallet === d.scout ? (confirmationFor(d.confirmToken)?.url ?? null) : null,
+			expiresAt: iso(d.confirmExpiresAt),
+		};
 	},
 	"roles.loosenRequirement": (ctx) => {
 		need(ctx);

@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { errorMessage } from "../errors";
 import { formatMoney } from "../format";
-import { typedClient, untypedClient } from "../trpc";
+import { typedClient } from "../trpc";
 import { useTransact } from "../use-transact";
 
 const REJECTING = /reject|no\b|pass|don.t/i;
@@ -48,8 +48,7 @@ export function useWaitingAction(roleId: string) {
 				}
 				case "approve_proposal":
 				case "decline_proposal":
-					// Not in the typed router yet (Stream B is adding it).
-					return untypedClient.mutation("roles.decideProposal", {
+					return api.roles.decideProposal.mutate({
 						roleId,
 						proposalId: action.proposalId ?? "",
 						approve: action.id === "approve_proposal",

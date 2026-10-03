@@ -124,7 +124,8 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 			: undefined;
 	// "Your call on Karolina Mazurek: No usable answer to …" → a short title, and the reason underneath.
 	const raw = plain(w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, ""));
-	const [head, ...rest] = raw.split(/:\s+/);
+	const proposal = w.actions?.some((x) => x.id === "approve_proposal");
+	const [head, ...rest] = proposal ? [raw] : raw.split(/:\s+/);
 	const title = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
 	const reasonText = rest.length && title !== raw ? rest.join(": ") : null;
 	const detail = why?.detail && !raw.includes(plain(why.detail).slice(0, 40)) ? plain(why.detail) : null;

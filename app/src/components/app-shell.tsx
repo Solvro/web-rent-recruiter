@@ -7,6 +7,7 @@ import { AccountMenu } from "@/components/account";
 import { Brand, Chip } from "@/components/bits";
 import { Receipt, type ReceiptDetails } from "@/components/receipt";
 import { Button } from "@/components/ui/button";
+import { candidateOutcome, isWithdrawn } from "@/components/work";
 import { useOffline } from "@/lib/connection";
 import { AUTH_MODE } from "@/lib/env";
 import { dateLabel, firstName, formatMoney, personInTitle } from "@/lib/format";
@@ -20,7 +21,7 @@ const NAV = {
 	company: [{ to: "/company", label: "Roles" }],
 	scout: [
 		{ to: "/scout", label: "Gigs" },
-		{ to: "/scout/submissions", label: "Earnings" },
+		{ to: "/scout/submissions", label: "My work" },
 	],
 } as const;
 
@@ -141,16 +142,14 @@ function PayoutMoment({ wallet }: { wallet: string }) {
 					});
 				}
 				// Status notes join the same queue so nothing ever stacks on top of a payout panel.
-				if (
-					wasStatus === "PENDING" &&
-					s.status === "REJECTED" &&
-					!/^withdrawn by the recruiter/i.test(s.review?.reasons[0] ?? "")
-				)
+				if (wasStatus === "PENDING" && s.status === "REJECTED" && !isWithdrawn(s))
 					fresh.push({
 						key: `${s.id}:rejected`,
 						big: false,
 						amount: "",
-						line: `The agent didn't accept ${s.gigType === "SOURCING" ? `${person}'s profile` : "your notes"}`,
+						line: candidateOutcome(s)
+							? `${person}: ${candidateOutcome(s)?.replace(/^Candidate /, "")}`
+							: `The agent didn't accept ${s.gigType === "SOURCING" ? `${person}'s profile` : "your notes"}`,
 						receipt: null,
 					});
 				if (s.status === "ACCEPTED" && p && wasLater !== p.laterStatus) {
@@ -188,6 +187,12 @@ function PayoutMoment({ wallet }: { wallet: string }) {
 
 	const current = queue[0];
 	const panel = useRef<HTMLDivElement>(null);
+	// Small notes (not payments) step aside on their own, so an old one never sits over a new screen.
+	useEffect(() => {
+		if (!current || current.big) return;
+		const t = setTimeout(() => setQueue((q) => (q[0]?.key === current.key ? q.slice(1) : q)), 8_000);
+		return () => clearTimeout(t);
+	}, [current]);
 	// Any other toast (e.g. "Submitted") is lifted above the panel instead of covering it.
 	useEffect(() => {
 		const root = document.documentElement;
@@ -266,7 +271,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 					</div>
 				</div>
 			</header>
-			<main className="mx-auto w-full max-w-5xl flex-1 px-4 py-12 sm:px-6 sm:py-16">{children}</main>
+			{/* The payout panel docks at the bottom: keep the page's last button above it. */}
+			<main
+				className="mx-auto w-full max-w-5xl flex-1 px-4 py-12 sm:px-6 sm:py-16"
+				style={{ paddingBottom: "calc(var(--moment-height, 0px) + 4rem)" }}
+			>
+				{children}
+			</main>
 			{me.data?.kind === "scout" && <PayoutMoment key={me.data.wallet} wallet={me.data.wallet} />}
 		</div>
 	);

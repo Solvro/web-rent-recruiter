@@ -59,7 +59,11 @@ export function Appeal({
 					))}
 				</ul>
 			)}
-			{d.appeal?.status === "OPEN" && <p className="type-label text-primary">The company is looking again</p>}
+			{d.appeal?.status === "OPEN" && (
+				<p className="max-w-sm type-label text-muted-foreground">
+					You asked the company to look again. Their answer shows up here, usually within two days.
+				</p>
+			)}
 			{d.appeal?.status === "OVERTURNED" && (
 				<p className="type-label text-success">
 					Paid{d.appeal.paid ? ` ${formatMoney(d.appeal.paid)}` : ""} after a second look

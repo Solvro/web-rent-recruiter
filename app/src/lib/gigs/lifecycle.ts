@@ -1,23 +1,19 @@
 /**
  * A role's money lifecycle beyond the agent: fund a role whose first deposit never landed, discard it, and see
- * what closing returns before closing. Stream B's roles.fund / discardDraft / closePreview (untyped until they're
- * in the router; parsed with the shared schemas).
+ * what closing returns before closing (Stream B: roles.fund / discardDraft / closePreview).
  */
-import { ClosePreview, FundRoleResponse } from "@scout/shared";
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
-import { untypedClient } from "../trpc";
+import { typedClient } from "../trpc";
 
 export const lifecycleApi = {
-	fund: async (id: string) => FundRoleResponse.parse(await untypedClient.mutation("roles.fund", { id })),
-	discardDraft: async (id: string) =>
-		z.object({ ok: z.boolean() }).parse(await untypedClient.mutation("roles.discardDraft", { id })),
+	fund: (id: string) => typedClient.roles.fund.mutate({ id }),
+	discardDraft: (id: string) => typedClient.roles.discardDraft.mutate({ id }),
 };
 
 export function useClosePreview(id: string, enabled: boolean) {
 	return useQuery({
 		queryKey: ["roles", "closePreview", id],
-		queryFn: async () => ClosePreview.parse(await untypedClient.query("roles.closePreview", { id })),
+		queryFn: () => typedClient.roles.closePreview.query({ id }),
 		enabled,
 		retry: false,
 	});

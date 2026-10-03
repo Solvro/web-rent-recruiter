@@ -29,7 +29,7 @@
 			"key": "senior-backend-ts",
 			"demo": true,
 			"title": "Senior Rust Engineer (Solana programs)",
-			"company": "Seed-stage Solana DeFi startup · Warsaw",
+			"company": "Wisła Labs",
 			"locationLabel": "Warsaw · hybrid, 2 days in office",
 			"salaryLabel": "30,000–38,000 PLN / month (B2B)",
 			"jobDescription": "Senior Rust Engineer (Solana programs)\n\nWe're a seed-stage DeFi startup in Warsaw building an on-chain credit marketplace on Solana: lenders and borrowers matched by programs, with no bank in the middle. The team is five people, led by our founder Hanna Lewicka, and we're hiring our second protocol engineer.\n\nYou'll design, ship and maintain our Anchor programs (lending pools, liquidations, fee splits), write the tests and fuzzing that keep them safe, and help build the TypeScript SDK our app uses.\n\nWhat we need:\n- 4+ years of production Rust\n- Solana programs you shipped to mainnet (Anchor or native)\n- Experience with DeFi protocols: a DEX, lending or AMM\n- A security mindset: property tests, fuzzing, working with auditors\n- Fluent English (C1); our investors and auditors are international\n\nNice to have: TypeScript SDKs for programs, open-source Solana work, early-stage experience.\n\nHybrid: 2 days a week in our Warsaw office. 30,000–38,000 PLN/month on B2B, plus tokens.",

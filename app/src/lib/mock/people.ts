@@ -5,7 +5,7 @@ import manifest from "../../../public/avatars/manifest.json";
 const INFO: Record<string, Omit<CandidateInfo, "avatarUrl">> = {
 	"Karolina Mazurek": {
 		currentTitle: "Senior Protocol Engineer",
-		currentCompany: "a Solana DEX and lending protocol",
+		currentCompany: "a DeFi lending protocol",
 		location: "Warsaw",
 	},
 	"Tomasz Brzeziński": {
@@ -14,8 +14,8 @@ const INFO: Record<string, Omit<CandidateInfo, "avatarUrl">> = {
 		location: "Warsaw",
 	},
 	"Piotr Lewandowski": {
-		currentTitle: "Frontend Developer (Web3)",
-		currentCompany: "an NFT marketplace",
+		currentTitle: "Frontend Developer",
+		currentCompany: "a marketplace startup",
 		location: "Gdańsk",
 	},
 	"Marek Zieliński": {

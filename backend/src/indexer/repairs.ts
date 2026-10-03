@@ -26,6 +26,11 @@ const PERSONA_BIOS: [string, string][] = [
 ];
 
 export async function runRepairs(log: { info(m: string): void; warn(m: string): void }) {
+	// The demo company is "Wisła Labs" (older seeds used a descriptor as its name).
+	await db
+		.update(schema.accounts)
+		.set({ companyName: "Wisła Labs" })
+		.where(eq(schema.accounts.companyName, "Seed-stage Solana DeFi startup · Warsaw"));
 	for (const [name, bio] of PERSONA_BIOS)
 		await db
 			.update(schema.accounts)
