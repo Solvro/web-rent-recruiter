@@ -268,3 +268,34 @@ describe("requiredLanguage", () => {
 		expect(requiredLanguage(withLanguages(["Fluent German"]))).toEqual({ name: "German", level: "C1" });
 	});
 });
+
+describe("planRationale", () => {
+	it("singular counts, no zero parts, and says what doesn't fit", async () => {
+		const { planRationale } = await import("./plan.ts");
+		const designer: Criteria = {
+			mustHave: [{ id: "b2b", label: "6+ years designing B2B SaaS products", weight: 5 }],
+			niceToHave: [],
+			seniority: "SENIOR",
+			location: { mode: "HYBRID", places: ["Berlin"] },
+			salaryRange: null,
+			languages: ["German (B1)", "English"],
+			dealBreakers: [],
+		};
+		const counts = splitBudget(400, "SENIOR", designer);
+		const line = planRationale(designer, counts);
+		expect(line).not.toMatch(/\$0 to|\b0 (reference|screening|profile)/);
+		expect(line).not.toMatch(/\b1 screening calls\b/);
+		expect(line).toMatch(/German language check/);
+		expect(line).toBe(
+			"Of the $400 budget, the agent commits $215 to sourcing 5 profiles, $68 to 1 screening call with the best of them and $26 to a German language check for the finalist. $91 stays in reserve to re-post a gig if a candidate drops out. No reference check fits this budget; top it up to add one for the finalist.",
+		);
+		expect(counts.references).toBe(0);
+		const demo = planRationale(
+			{ ...criteria, languages: ["English (C1)"] },
+			splitBudget(750, "SENIOR", { ...criteria, languages: ["English (C1)"] }),
+		);
+		expect(demo).toBe(
+			"Of the $750 budget, the agent commits $425 to sourcing 17 profiles, $120 to 3 screening calls with the best of them, $15 to an English language check for the finalist and $25 to 1 reference check. $165 stays in reserve to re-post a gig if a candidate drops out.",
+		);
+	});
+});

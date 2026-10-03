@@ -26,7 +26,6 @@ const BriefsOutput = z.object({
 	sourcing: z.string(),
 	screening: z.string(),
 	reference: z.string(),
-	rationale: z.string(),
 });
 
 const usd = (n: number) => `$${n}`;
@@ -44,6 +43,44 @@ function languageBrief(criteria: Criteria): string {
 		: "";
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const listJoin = (items: string[]) =>
+	items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+
+/** The plan line in the agent's thread, always computed from the numbers (never from the model). */
+export function planRationale(criteria: Criteria, counts: GigCounts): string {
+	const total =
+		counts.reserve +
+		counts.sourcing * counts.sourcingBounty +
+		counts.screenings * counts.screeningBounty +
+		counts.languageChecks * counts.languageBounty +
+		counts.references * counts.referenceBounty;
+	const lang = requiredLanguage(criteria)?.name ?? "";
+	const parts = [
+		counts.sourcing &&
+			`${usd(counts.sourcing * counts.sourcingBounty)} to sourcing ${plural(counts.sourcing, "profile")}`,
+		counts.screenings &&
+			`${usd(counts.screenings * counts.screeningBounty)} to ${plural(counts.screenings, "screening call")} with the best of them`,
+		counts.languageChecks &&
+			`${usd(counts.languageChecks * counts.languageBounty)} to ${counts.languageChecks === 1 ? article(lang) : `${counts.languageChecks} ${lang}`} language check${counts.languageChecks === 1 ? "" : "s"} for the finalist`,
+		counts.references &&
+			`${usd(counts.references * counts.referenceBounty)} to ${plural(counts.references, "reference check")}`,
+	].filter((p): p is string => Boolean(p));
+	const missing =
+		counts.sourcing === 0
+			? " The budget doesn't cover any sourcing yet; top it up to start."
+			: counts.screenings === 0
+				? " No screening call fits this budget yet; top it up to add one."
+				: counts.references === 0
+					? " No reference check fits this budget; top it up to add one for the finalist."
+					: "";
+	const reserve =
+		counts.reserve > 0
+			? ` ${usd(counts.reserve)} stays in reserve to re-post a gig if a candidate drops out.`
+			: "";
+	return `Of the ${usd(total)} budget, the agent commits ${parts.length ? listJoin(parts) : "nothing yet"}.${reserve}${missing}`;
+}
+
 function offlineBriefs(input: { criteria: Criteria; title: string }, counts: GigCounts) {
 	const must = input.criteria.mustHave
 		.slice(0, 3)
@@ -53,11 +90,6 @@ function offlineBriefs(input: { criteria: Criteria; title: string }, counts: Gig
 		sourcing: `Find ${input.title} candidates (${place(input.criteria)}) who are open to a conversation. Must have: ${must}. Deliver a profile link and a 2-line note on why they fit; you're paid ${usd(counts.sourcingBounty)} for each profile the agent accepts.`,
 		screening: `Run a 30-minute call with a shortlisted candidate using the agent's question script. Deliver an answer to every question with concrete details (projects, numbers, dates) and your recommendation. Paid for the quality of the answers, not the minutes.`,
 		reference: `Call one reference the candidate provides and work through the agent's 5 questions. Deliver specific answers, including how the reference knows the candidate and what they'd verify.`,
-		rationale: `Of the ${usd(counts.reserve + counts.sourcing * counts.sourcingBounty + counts.screenings * counts.screeningBounty + counts.languageChecks * counts.languageBounty + counts.references * counts.referenceBounty)} budget, the agent commits ${usd(counts.sourcing * counts.sourcingBounty)} to sourcing ${counts.sourcing} profiles, ${usd(counts.screenings * counts.screeningBounty)} to ${counts.screenings} screening calls with the best of them${
-			counts.languageChecks
-				? `, ${usd(counts.languageChecks * counts.languageBounty)} to ${article(requiredLanguage(input.criteria)?.name ?? "")} language check for the finalist`
-				: ""
-		} and ${usd(counts.references * counts.referenceBounty)} to ${counts.references} reference check${counts.references === 1 ? "" : "s"}. ${usd(counts.reserve)} stays in reserve to re-post a gig if a candidate drops out.`,
 	};
 }
 
@@ -86,7 +118,9 @@ export async function planGigs(input: {
 					? `, plus ${counts.languageChecks} × ${usd(counts.languageBounty)} ${requiredLanguage(input.criteria)?.name} language check for the finalist`
 					: ""
 			}`,
-			reference: `${counts.references} × ${usd(counts.referenceBounty)}`,
+			reference: counts.references
+				? `${counts.references} × ${usd(counts.referenceBounty)}`
+				: "none (doesn't fit the budget)",
 			reserve: usd(counts.reserve),
 		}),
 		schema: BriefsOutput,
@@ -94,6 +128,8 @@ export async function planGigs(input: {
 		offline: () => offlineBriefs(input, counts),
 	});
 	const language = requiredLanguage(input.criteria);
+	// Numbers are code's job: the plan line is always computed, whatever the model wrote.
+	const rationale = planRationale(input.criteria, counts);
 
 	const base = (usdc: number) => BigInt(usdc) * BigInt(USDC_UNIT);
 	const gigs: PlannedGig[] = [];
@@ -147,5 +183,5 @@ export async function planGigs(input: {
 		});
 	}
 	const committed = gigs.reduce((sum, g) => sum + g.bounty * BigInt(g.maxDeliverables), 0n);
-	return { gigs, rationale: briefs.rationale, committed, reserve: input.budget - committed };
+	return { gigs, rationale, committed, reserve: input.budget - committed };
 }

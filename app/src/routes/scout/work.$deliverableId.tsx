@@ -24,6 +24,7 @@ import {
 } from "@/components/work";
 import { appCodeOf, errorMessage, isNotFound } from "@/lib/errors";
 import { firstName, formatMoney } from "@/lib/format";
+import { useMyWork } from "@/lib/gigs/api";
 import { type GigWorkView, useEditWork, useWithdrawWork, useWork } from "@/lib/gigs/work";
 import { useTitle } from "@/lib/use-title";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ const dateLabel = (iso: string) =>
 
 function WorkPage({ id, me }: { id: string; me: Me }) {
 	const detail = useWork(id);
+	const mine = useMyWork();
 	const w = detail.data;
 	useTitle(w ? personOf(w.work, w.candidateName) : "My work");
 
@@ -58,7 +60,12 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 			<ErrorState />
 		);
 
-	const d = w.work;
+	// gigs.mine carries the sourcer's call checks; use them when the detail doesn't.
+	const row = mine.data?.find((x) => x.id === id);
+	const d =
+		w.work.callChecks?.length || !row?.callChecks?.length
+			? w.work
+			: { ...w.work, callChecks: row.callChecks };
 	const person = personOf(d, w.candidateName);
 	const info = workInfo(d);
 	const questions = w.call?.questions ?? [];

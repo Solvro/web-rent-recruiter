@@ -864,7 +864,7 @@ export async function myGigs(wallet: Address): Promise<{ gigs: GigView[]; delive
 }
 
 /** Self-reported calls about a sourced candidate, waiting for the candidate (shown to the sourcer). */
-async function callChecksFor(candidateId: string) {
+export async function callChecksFor(candidateId: string) {
 	const rows = await db
 		.select({
 			c: schema.candidateConfirmations,

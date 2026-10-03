@@ -25,7 +25,14 @@ import { agentSigner, fetchProgramAccount } from "../solana/chain.ts";
 import { isHosted } from "../solana/gatekeeper.ts";
 import { rejectIx } from "../solana/scout.ts";
 import { sendAsRelayer } from "../solana/tx.ts";
-import { deliverableView, logActivity, requireRoleOwner, roleDecide, toDeliverableReview } from "./gigs.ts";
+import {
+	callChecksFor,
+	deliverableView,
+	logActivity,
+	requireRoleOwner,
+	roleDecide,
+	toDeliverableReview,
+} from "./gigs.ts";
 import { decide, onchainAccounts } from "./submissions.ts";
 
 type SubRow = typeof schema.submissions.$inferSelect;
@@ -500,7 +507,13 @@ export async function gigWork(wallet: Address, deliverableId: string): Promise<G
 	const decision = (sub.agentReview as { decision?: { action?: string } } | null)?.decision?.action;
 	const sourcing = gig.type === "SOURCING";
 	return {
-		work: deliverableView(sub, gig, role, conf),
+		work: await (async () => {
+			const view = deliverableView(sub, gig, role, conf);
+			if (!sourcing) return view;
+			// Same as gigs.mine: unrecorded calls about this candidate waiting for their "yes, we talked".
+			const checks = await callChecksFor(sub.id);
+			return checks.length ? { ...view, callChecks: checks } : view;
+		})(),
 		kind: sourcing
 			? "sourcing"
 			: gig.type === "REFERENCE_CHECK"
