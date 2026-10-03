@@ -74,6 +74,14 @@ export function DemoWalletProvider({ children }: { children: ReactNode }) {
 	);
 	useResetOnAccountChange(address);
 
+	// Mock demo: once a person plays a recruiter, the simulator leaves Karolina to them.
+	useEffect(() => {
+		if (API_MOCK && personaId && PERSONAS[personaId].kind === "scout")
+			try {
+				localStorage.setItem("scout.mock-recruiter-used", "1");
+			} catch {}
+	}, [personaId]);
+
 	const selectPersona = useCallback((id: PersonaId) => {
 		// Another person now: their toasts aren't yours.
 		toast.dismiss();

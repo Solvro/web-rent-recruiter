@@ -98,7 +98,7 @@ export function Pinned({ asks }: { asks: { key: string; node: ReactNode }[] }) {
 	);
 }
 
-const card = "space-y-3 rounded-3xl bg-card p-5 shadow-sm ring-1 ring-foreground/10";
+const card = "space-y-3 rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground/10 sm:p-5";
 
 /** A company item exactly as the API describes it: what it waits for, the agent's reasoning, its actions. */
 function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread: ThreadActivity[] }) {

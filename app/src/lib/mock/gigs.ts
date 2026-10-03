@@ -152,7 +152,21 @@ type Entry = {
 	createdAt: string;
 };
 
-type Agenda = { at: number; roleId: string; action: string; ref?: string };
+type Agenda = { at: number; roleId: string; action: string; ref?: string; delayed?: boolean };
+
+/**
+ * Set once anyone switches to a recruiter persona in this mock session. A company-only demo keeps the quick
+ * simulated sourcing of Karolina; once a person plays the recruiter, the simulator waits so they can do it.
+ */
+export const RECRUITER_USED_KEY = "scout.mock-recruiter-used";
+const recruiterUsed = () => {
+	try {
+		return localStorage.getItem(RECRUITER_USED_KEY) === "1";
+	} catch {
+		return false;
+	}
+};
+const LATE_KAROLINA_MS = 10 * 60 * 1000;
 
 const g = {
 	gigs: new Map<string, MockGig>(),
@@ -417,8 +431,8 @@ export function startAgent(roleId: string) {
 	);
 	schedule(roleId, 8 * SECOND, "sim-source", "tomasz");
 	schedule(roleId, 14 * SECOND, "sim-source", "piotr");
-	// Late on purpose: in a demo Lucía sources Karolina herself; the simulator only steps in if nobody does.
-	schedule(roleId, 10 * 60 * SECOND, "sim-source", "karolina");
+	// A recruiter in the room sources Karolina herself; the simulator only steps in if nobody does.
+	schedule(roleId, recruiterUsed() ? LATE_KAROLINA_MS : 120 * SECOND, "sim-source", "karolina");
 	save();
 }
 
@@ -1154,6 +1168,13 @@ export async function tick() {
 			} else continue;
 			changed = true;
 		}
+		// Someone started playing a recruiter after the role began: give them time to source Karolina.
+		if (recruiterUsed())
+			for (const a of g.agenda)
+				if (a.action === "sim-source" && a.ref === "karolina" && !a.delayed) {
+					a.at = Math.max(a.at, now + LATE_KAROLINA_MS - 120 * SECOND);
+					a.delayed = true;
+				}
 		const due = g.agenda.filter((a) => a.at <= now);
 		if (due.length) {
 			g.agenda = g.agenda.filter((a) => a.at > now);

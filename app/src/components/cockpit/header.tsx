@@ -31,17 +31,15 @@ export function RoleHeader({
 }) {
 	return (
 		<header className="space-y-1.5 py-4">
+			{/* Desktop: title · status on one line. Phone: the title, then the status, so neither is squeezed. */}
 			<div className="flex items-baseline gap-3">
-				<p className="min-w-0 flex-1">
+				<p className="min-w-0 flex-1 truncate sm:whitespace-normal">
 					<button type="button" onClick={onDetails} className="inline text-left hover:text-primary">
 						{role.title}
 					</button>
-					<span className="text-muted-foreground"> · </span>
-					<span className={cn("text-muted-foreground", status?.now.busy && "shimmer")} aria-live="polite">
-						{status?.now.text ?? "Getting ready"}
-					</span>
+					<span className="hidden text-muted-foreground sm:inline"> · </span>
+					<StatusText status={status} className="hidden sm:inline" />
 				</p>
-				{status && <Spent role={role} budget={status.budget} />}
 				<button
 					type="button"
 					onClick={onDetails}
@@ -50,14 +48,31 @@ export function RoleHeader({
 					Details
 				</button>
 			</div>
-			<div className="flex flex-wrap items-baseline gap-x-4">
+			<StatusText status={status} className="block truncate sm:hidden" />
+			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 				{status && <Progress p={status.pipeline} />}
 				<CandidatesButton />
+				{status && (
+					<span className="ml-auto">
+						<Spent role={role} budget={status.budget} />
+					</span>
+				)}
 			</div>
 			{status && (
 				<p className="hidden type-label text-muted-foreground sm:block">{nextLine(status.pipeline)}</p>
 			)}
 		</header>
+	);
+}
+
+function StatusText({ status, className }: { status: RoleStatus | undefined; className?: string }) {
+	return (
+		<span
+			className={cn("text-muted-foreground", status?.now.busy && "shimmer", className)}
+			aria-live="polite"
+		>
+			{status?.now.text ?? "Getting ready"}
+		</span>
 	);
 }
 

@@ -258,13 +258,13 @@ function Composer({ roleId, items }: { roleId: string; items: ThreadActivity[] }
 	return (
 		<div className="space-y-2">
 			{!text && (
-				<div className="flex flex-wrap gap-1.5">
+				<div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:flex-wrap sm:px-0">
 					{suggestionsFor(items).map((s) => (
 						<button
 							key={s}
 							type="button"
 							onClick={() => submit(s)}
-							className="rounded-full px-3 py-1 type-label text-muted-foreground ring-1 ring-border transition-colors hover:text-foreground"
+							className="shrink-0 rounded-full px-3 py-1 type-label whitespace-nowrap text-muted-foreground ring-1 ring-border transition-colors hover:text-foreground"
 						>
 							{s}
 						</button>

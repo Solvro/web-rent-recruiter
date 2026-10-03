@@ -254,17 +254,29 @@ async function payConfirmed(submissionId: string) {
 	const confirmed = await sendAsRelayer([ix, memoIx(`scout:confirm:${c.proofHash}`)], [agent]);
 	const [payee] = await db.select().from(schema.accounts).where(eq(schema.accounts.wallet, sub.scoutWallet));
 	await applyConfirmedTx(confirmed);
-	await logActivity(
-		role.id,
-		"DELIVERY_ACCEPTED",
-		`${what} → ${payee?.displayName ?? "the recruiter"} paid (proof on-chain)`,
-		{
-			gigId: sub.gigId,
-			deliverableId: submissionId,
-			signature: confirmed.signature,
-			data: { proof: c.proofHash },
-		},
-	);
+	const [paid] = await db.select().from(schema.submissions).where(eq(schema.submissions.id, submissionId));
+	const usd = (b: bigint) => `$${(Number(b) / 1e6).toFixed(2).replace(/\.00$/, "")}`;
+	const first = (n: string | null | undefined) => (n ?? "").split(" ")[0] || "the recruiter";
+	const score =
+		(paid?.agentReview as { sourcing?: { score?: number }; call?: { score?: number } } | null)?.sourcing
+			?.score ?? (paid?.agentReview as { call?: { score?: number } } | null)?.call?.score;
+	const later = paid?.laterStatus === "HELD" ? (paid.payoutLater ?? 0n) : 0n;
+	const callKind =
+		gig?.type === "REFERENCE_CHECK"
+			? "reference check"
+			: gig?.variant === "language"
+				? "language check"
+				: "screening";
+	const line =
+		c.kind === "call"
+			? `${first(sub.candidateName)} confirmed the ${callKind} happened → paid ${first(payee?.displayName)} ${usd(paid?.payoutNow ?? 0n)}${score !== undefined ? ` (${score})` : ""}${later > 0n ? `, +${usd(later)} once ${first(sub.candidateName)} attends` : ""}.`
+			: `${sub.candidateName} confirmed interest → paid ${first(payee?.displayName)} ${usd(paid?.payoutNow ?? 0n)} for sourcing them${score !== undefined ? ` (${score})` : ""}.`;
+	await logActivity(role.id, "DELIVERY_ACCEPTED", line, {
+		gigId: sub.gigId,
+		deliverableId: submissionId,
+		signature: confirmed.signature,
+		data: { proof: c.proofHash },
+	});
 }
 
 async function rejectUnconfirmed(

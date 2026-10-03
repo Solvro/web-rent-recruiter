@@ -65,17 +65,19 @@ export function WaitingList({ roleId, status }: { roleId: string; status: RoleSt
 							: left === null && due !== null && due > 0
 								? ` · usually within ${since(due)}`
 								: ""}
-						{(w.actions ?? []).map((action) => (
-							<button
-								key={`${action.id}-${action.criterionId ?? action.gigId ?? ""}`}
-								type="button"
-								disabled={run.isPending}
-								onClick={() => run.mutate({ action })}
-								className="ml-2 text-foreground underline-offset-4 hover:underline disabled:opacity-50"
-							>
-								{run.isPending && run.variables?.action === action ? "…" : action.label}
-							</button>
-						))}
+						<span className="mt-0.5 flex flex-wrap gap-x-3 sm:mt-0 sm:inline">
+							{(w.actions ?? []).map((action) => (
+								<button
+									key={`${action.id}-${action.criterionId ?? action.gigId ?? ""}`}
+									type="button"
+									disabled={run.isPending}
+									onClick={() => run.mutate({ action })}
+									className="text-foreground underline-offset-4 hover:underline disabled:opacity-50 sm:ml-2"
+								>
+									{run.isPending && run.variables?.action === action ? "…" : action.label}
+								</button>
+							))}
+						</span>
 					</li>
 				);
 			})}
