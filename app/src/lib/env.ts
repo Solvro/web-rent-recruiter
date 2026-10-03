@@ -1,6 +1,20 @@
-/** Mock API is the default until the backend is up. Set VITE_API_MOCK=0 to hit the real API. */
-export const API_MOCK = import.meta.env.VITE_API_MOCK !== "0";
-export const API_URL = import.meta.env.VITE_API_URL ?? "/api";
+/**
+ * Mock data unless VITE_API_MOCK=0. "?data=mock" or "?data=live" overrides it at runtime and is remembered,
+ * so the live demo can fall back to simulated data without restarting anything.
+ */
+function readDataOverride(): boolean | null {
+	try {
+		const param = new URLSearchParams(location.search).get("data");
+		if (param === "mock" || param === "live") localStorage.setItem("scout.data", param);
+		const stored = localStorage.getItem("scout.data");
+		return stored === "mock" ? true : stored === "live" ? false : null;
+	} catch {
+		return null;
+	}
+}
+export const API_MOCK = readDataOverride() ?? import.meta.env.VITE_API_MOCK !== "0";
+/** tRPC endpoint (the dev server proxies /trpc to the backend). */
+export const TRPC_URL = import.meta.env.VITE_TRPC_URL ?? "/trpc";
 export const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID as string | undefined;
 export const SOLANA_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 export const SOLANA_WS_URL = import.meta.env.VITE_SOLANA_WS_URL ?? SOLANA_RPC_URL.replace(/^http/, "ws");

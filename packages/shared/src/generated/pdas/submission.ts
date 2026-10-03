@@ -17,8 +17,8 @@ import {
 } from "@solana/kit";
 
 export type SubmissionSeeds = {
-  roleVault: Address;
-  candidateHash: ReadonlyUint8Array;
+  task: Address;
+  deliverableHash: ReadonlyUint8Array;
 };
 
 export async function findSubmissionPda(
@@ -34,8 +34,8 @@ export async function findSubmissionPda(
       getBytesEncoder().encode(
         new Uint8Array([115, 117, 98, 109, 105, 115, 115, 105, 111, 110]),
       ),
-      getAddressEncoder().encode(seeds.roleVault),
-      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.candidateHash),
+      getAddressEncoder().encode(seeds.task),
+      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.deliverableHash),
     ],
   });
 }

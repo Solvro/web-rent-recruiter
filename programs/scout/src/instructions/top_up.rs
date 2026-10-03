@@ -4,7 +4,7 @@ use anchor_spl::token_interface::{transfer_checked, Mint, TokenAccount, TokenInt
 use crate::{
     error::ScoutError,
     events::RoleToppedUp,
-    state::{RoleStatus, RoleVault},
+    state::{Status, RoleVault},
 };
 
 #[derive(Accounts)]
@@ -30,7 +30,7 @@ pub struct TopUp<'info> {
 pub fn handle_top_up(ctx: Context<TopUp>, amount: u64) -> Result<()> {
     require!(amount > 0, ScoutError::InvalidAmount);
     let accounts = ctx.accounts;
-    require!(accounts.role_vault.status == RoleStatus::Open, ScoutError::RoleClosed);
+    require!(accounts.role_vault.status == Status::Open, ScoutError::RoleClosed);
 
     let cpi_accounts = TransferChecked {
         from: accounts.company_token_account.to_account_info(),

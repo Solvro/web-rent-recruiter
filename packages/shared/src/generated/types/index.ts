@@ -6,5 +6,8 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./roleStatus";
+export * from "./configParams";
+export * from "./outcome";
+export * from "./status";
 export * from "./submissionStatus";
+export * from "./taskType";

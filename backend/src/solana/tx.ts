@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { explorerTxUrl, type UnsignedTx } from "@scout/shared";
 import {
 	AccountRole,
@@ -12,6 +13,7 @@ import {
 	getTransactionDecoder,
 	type Instruction,
 	isSolanaError,
+	type KeyPairSigner,
 	partiallySignTransaction,
 	pipe,
 	type Signature,
@@ -24,16 +26,29 @@ import {
 } from "@solana/kit";
 import {
 	ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+	agentSigner,
 	invalidateCached,
+	loadDeployment,
 	programAddress,
 	relayer,
 	rpc,
+	rpcSubscriptions,
 	tokenProgram,
 } from "./chain.ts";
-import { camel, encodeInstructionData, findInstruction, type Idl, requireIdl } from "./idl.ts";
+import {
+	BorshReader,
+	camel,
+	decodeType,
+	encodeInstructionData,
+	findInstruction,
+	type Idl,
+	loadIdl,
+	requireIdl,
+} from "./idl.ts";
 
 const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111111";
+const MEMO_PROGRAM_ADDRESS = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const RENT_SYSVAR = address("SysvarRent111111111111111111111111111111111");
 
 /** Accounts every instruction may reference without the caller naming them. */
@@ -77,9 +92,31 @@ export function buildScoutInstruction(
 }
 
 /** Compile a v0 tx with the relayer as fee payer. All signature slots (incl. the relayer's) are left empty. */
-export async function buildUnsignedTx(instructions: Instruction[], summary: string): Promise<UnsignedTx> {
+/**
+ * Messages the gig board built that need the gatekeeper's (agent's) co-signature: claims and deliverables.
+ * /tx.submit adds the agent signature only for these exact messages, so nothing else gets past the gate.
+ */
+const gatekeeperApproved = new Map<string, number>();
+const messageHash = (bytes: ArrayLike<number>) =>
+	createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
+
+export async function buildUnsignedTx(
+	instructions: Instruction[],
+	summary: string,
+	/** gatekeeper: our agent co-signs at tx.submit. cosigner: someone else must (tx.submitForCosign). */
+	opts: { gatekeeper?: boolean; cosigner?: Address } = {},
+): Promise<UnsignedTx> {
 	const tx = await compile(instructions);
-	return { transaction: getBase64EncodedWireTransaction(tx), summary };
+	if (opts.gatekeeper) {
+		const now = Date.now();
+		for (const [k, until] of gatekeeperApproved) if (until < now) gatekeeperApproved.delete(k);
+		gatekeeperApproved.set(messageHash(tx.messageBytes), now + 5 * 60_000);
+	}
+	return {
+		transaction: getBase64EncodedWireTransaction(tx),
+		summary,
+		...(opts.cosigner ? { cosigner: opts.cosigner } : {}),
+	};
 }
 
 async function compile(instructions: Instruction[]) {
@@ -95,10 +132,59 @@ async function compile(instructions: Instruction[]) {
 }
 
 /** Relayer signs and sends a tx it fully owns (e.g. permissionless settle_expired). */
-export async function sendAsRelayer(instructions: Instruction[]): Promise<Signature> {
+/**
+ * Relayer pays and signs; `cosigners` add their signatures (e.g. the agent key acting as role.agent).
+ * Only for transactions the backend built itself.
+ */
+export async function sendAsRelayer(
+	instructions: Instruction[],
+	cosigners: KeyPairSigner[] = [],
+): Promise<ConfirmedTx> {
 	const payer = await relayer();
-	const tx = await signTransaction([payer.keyPair], await compile(instructions));
-	return sendAndConfirm(tx);
+	const tx = await signTransaction(
+		[payer.keyPair, ...cosigners.map((c) => c.keyPair)],
+		await compile(instructions),
+	);
+	const signature = await sendAndConfirm(tx);
+	// Payouts change balances: the next me.get must not serve a cached one.
+	invalidateCached(...instructions.flatMap((ix) => (ix.accounts ?? []).map((a) => a.address)));
+	const decoded = instructions.flatMap((ix) =>
+		decodeScoutInstruction(
+			ix.programAddress,
+			(ix.accounts ?? []).map((a) => a.address),
+			ix.data ?? new Uint8Array(),
+		),
+	);
+	return { signature, instructions: decoded };
+}
+
+/** A Scout instruction from a confirmed tx: the backend knows exactly which accounts it touched. */
+export type DecodedScoutIx = {
+	name: string;
+	accounts: Record<string, string>;
+	args: Record<string, unknown>;
+};
+export type ConfirmedTx = { signature: Signature; instructions: DecodedScoutIx[] };
+
+function decodeScoutInstruction(
+	program: string,
+	accountAddresses: readonly string[],
+	data: ArrayLike<number>,
+): DecodedScoutIx[] {
+	const idl = loadIdl();
+	if (!idl || program !== programAddress()) return [];
+	const bytes = Uint8Array.from(data);
+	const def = idl.instructions.find((d) => d.discriminator.every((b, j) => bytes[j] === b));
+	if (!def) return [];
+	const accounts: Record<string, string> = {};
+	def.accounts.forEach((a, i) => {
+		const addr = accountAddresses[i];
+		if (addr && addr !== program) accounts[camel(a.name)] = addr; // program ID = omitted optional account
+	});
+	const r = new BorshReader(bytes.subarray(8));
+	const args: Record<string, unknown> = {};
+	for (const a of def.args) args[camel(a.name)] = decodeType(idl, r, a.type);
+	return [{ name: def.name, accounts, args }];
 }
 
 // ---- Relayer policy ---------------------------------------------------------
@@ -118,21 +204,43 @@ export type CompiledMessageLike = {
  * beyond fees/rent for our program. Rules:
  * - fee payer (static account 0) is the relayer;
  * - no address lookup tables;
- * - top-level programs: Scout, Associated Token, Compute Budget only (no System/Token transfers);
- * - the relayer key may appear only as fee payer, as the IDL account named `payer` of a Scout instruction, or as
- *   the funding account (index 0) of an ATA create instruction.
+ * - top-level programs: Scout, Associated Token, Compute Budget, Memo, and Token `transfer_checked` of our USDC
+ *   (a user paying another user, e.g. an overturned appeal; the relayer can't be referenced by it) — no System;
+ * - the relayer key may appear only as fee payer, as the IDL account named `payer` of a Scout instruction, as the
+ *   non-signer `rent_payer` refund target, or as the funding account (index 0) of an ATA create instruction.
  * Returns an error message, or null if the tx is acceptable.
  */
 export function checkRelayerPolicy(
 	msg: CompiledMessageLike,
-	opts: { relayer: string; programId: string; idl: Pick<Idl, "instructions"> },
+	opts: {
+		relayer: string;
+		programId: string;
+		idl: Pick<Idl, "instructions">;
+		usdcMint?: string;
+		/** Token programs whose USDC transfer_checked a user may sign (fees only for the relayer). */
+		tokenPrograms?: string[];
+	},
 ): string | null {
 	if (msg.staticAccounts[0] !== opts.relayer) return "fee payer must be the relayer";
 	if (msg.addressTableLookups && msg.addressTableLookups.length > 0)
 		return "address lookup tables not allowed";
-	const allowed = new Set([opts.programId, ASSOCIATED_TOKEN_PROGRAM_ADDRESS, COMPUTE_BUDGET_PROGRAM_ADDRESS]);
+	const allowed = new Set([
+		opts.programId,
+		ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+		COMPUTE_BUDGET_PROGRAM_ADDRESS,
+		MEMO_PROGRAM_ADDRESS,
+	]);
 	for (const [i, ix] of msg.instructions.entries()) {
 		const program = msg.staticAccounts[ix.programAddressIndex];
+		if (program && opts.tokenPrograms?.includes(program)) {
+			// transfer_checked = 12: (source, mint, destination, authority). Only our USDC, never the relayer.
+			if (ix.data?.[0] !== 12) return `instruction ${i}: only USDC transfer_checked is allowed`;
+			const accs = (ix.accountIndices ?? []).map((a) => msg.staticAccounts[a]);
+			if (opts.usdcMint && accs[1] !== opts.usdcMint)
+				return `instruction ${i}: transfer of an unexpected mint`;
+			if (accs.includes(opts.relayer)) return `instruction ${i}: relayer referenced by a token transfer`;
+			continue;
+		}
 		if (!program || !allowed.has(program)) return `instruction ${i}: program ${program} not allowed`;
 		const relayerPositions = (ix.accountIndices ?? []).flatMap((acc, pos) =>
 			msg.staticAccounts[acc] === opts.relayer ? [pos] : [],
@@ -143,11 +251,16 @@ export function checkRelayerPolicy(
 			const def = opts.idl.instructions.find((d) => d.discriminator.every((b, j) => data[j] === b));
 			if (!def) return `instruction ${i}: unknown Scout instruction`;
 			for (const pos of relayerPositions) {
-				if (def.accounts[pos]?.name !== "payer") {
+				const acc = def.accounts[pos] as { name?: string; signer?: boolean } | undefined;
+				// `rent_payer` (reject_submission) only receives the closed Submission's rent back.
+				if (acc?.name !== "payer" && !(acc?.name === "rent_payer" && !acc.signer)) {
 					return `instruction ${i} (${def.name}): relayer used as "${def.accounts[pos]?.name ?? pos}"`;
 				}
 			}
 		} else if (program === ASSOCIATED_TOKEN_PROGRAM_ADDRESS) {
+			// create(payer, ata, owner, mint, …): only token accounts for our USDC mint.
+			const mint = msg.staticAccounts[ix.accountIndices?.[3] ?? -1];
+			if (opts.usdcMint && mint !== opts.usdcMint) return `instruction ${i}: ATA for an unexpected mint`;
 			if (relayerPositions.some((p) => p !== 0))
 				return `instruction ${i}: relayer may only fund ATA creation`;
 		} else {
@@ -158,7 +271,7 @@ export function checkRelayerPolicy(
 }
 
 /** Validate a user-signed tx, add the relayer signature, send and confirm. */
-export async function relayUserTx(signedTxBase64: string): Promise<Signature> {
+export async function relayUserTx(signedTxBase64: string, caller?: string): Promise<ConfirmedTx> {
 	const payer = await relayer();
 	let tx: Transaction;
 	let msg: ReturnType<ReturnType<typeof getCompiledTransactionMessageDecoder>["decode"]>;
@@ -173,15 +286,44 @@ export async function relayUserTx(signedTxBase64: string): Promise<Signature> {
 		relayer: payer.address,
 		programId: programAddress(),
 		idl: requireIdl(),
+		usdcMint: loadDeployment()?.usdcMint,
+		tokenPrograms: [tokenProgram()],
 	});
 	if (violation) throw new RelayerPolicyError(violation);
-	const missing = Object.entries(tx.signatures).filter(([k, v]) => k !== payer.address && v === null);
+	// The signed-in caller must be one of the signers: nobody relays transactions for other wallets.
+	if (caller && !(caller in tx.signatures && tx.signatures[caller as keyof typeof tx.signatures])) {
+		throw new RelayerPolicyError("the transaction must be signed by the signed-in wallet");
+	}
+	// v3.2 gatekeeper: the agent co-signs claims/deliverables, but only messages the gig board built.
+	const agent = await agentSigner().catch(() => null);
+	const needsAgent = Boolean(
+		agent && agent.address in tx.signatures && !tx.signatures[agent.address as keyof typeof tx.signatures],
+	);
+	if (needsAgent && !gatekeeperApproved.has(messageHash(tx.messageBytes))) {
+		throw new RelayerPolicyError(
+			"this claim or delivery wasn't prepared by the gig board; request a new one",
+		);
+	}
+	const missing = Object.entries(tx.signatures).filter(
+		([k, v]) => k !== payer.address && !(needsAgent && k === agent?.address) && v === null,
+	);
 	if (missing.length)
 		throw new RelayerPolicyError(`missing signature from ${missing.map(([k]) => k).join(", ")}`);
-	const signed = await partiallySignTransaction([payer.keyPair], tx);
+	const signed = await partiallySignTransaction(
+		needsAgent && agent ? [payer.keyPair, agent.keyPair] : [payer.keyPair],
+		tx,
+	);
+	if (needsAgent) gatekeeperApproved.delete(messageHash(tx.messageBytes));
 	const signature = await sendAndConfirm(signed);
 	invalidateCached(...msg.staticAccounts);
-	return signature;
+	const instructions = msg.instructions.flatMap((ix) =>
+		decodeScoutInstruction(
+			msg.staticAccounts[ix.programAddressIndex] ?? "",
+			(ix.accountIndices ?? []).map((i) => msg.staticAccounts[i] ?? ""),
+			ix.data ?? [],
+		),
+	);
+	return { signature, instructions };
 }
 
 export class RelayerPolicyError extends Error {}
@@ -215,16 +357,80 @@ async function sendAndConfirm(tx: Transaction): Promise<Signature> {
 			throw toTxError(err);
 		}
 	}
-	const deadline = Date.now() + 60_000;
-	while (Date.now() < deadline) {
-		const { value } = await rpc.getSignatureStatuses([signature]).send();
-		const status = value[0];
-		if (status?.err) throw new TxFailedError(`transaction failed: ${JSON.stringify(status.err, jsonBigint)}`);
-		if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized")
+	return confirm(signature);
+}
+
+/**
+ * Wait for `confirmed`. The tx is already sent, so a failed status read (429, timeout) must not surface as a
+ * failure, or a client retry would build and send a second transaction (e.g. a double top-up). The public
+ * devnet RPC rate-limits per method, so race a websocket notification against HTTP polling that alternates
+ * between two methods.
+ */
+async function confirm(signature: Signature): Promise<Signature> {
+	const abort = new AbortController();
+	const timeout = new Promise<never>((_, reject) =>
+		setTimeout(
+			() =>
+				reject(
+					new TxFailedError(
+						`transaction sent but not confirmed within 60 s; check ${explorerTxUrl(signature)} before retrying`,
+					),
+				),
+			60_000,
+		),
+	);
+	const viaWs = (async () => {
+		const notifications = await rpcSubscriptions
+			.signatureNotifications(signature, { commitment: "confirmed" })
+			.subscribe({ abortSignal: abort.signal });
+		for await (const n of notifications) {
+			if (n.value.err)
+				throw new TxFailedError(`transaction failed: ${JSON.stringify(n.value.err, jsonBigint)}`);
 			return signature;
-		await new Promise((r) => setTimeout(r, 800));
+		}
+		return new Promise<never>(() => {}); // stream ended: leave it to polling
+	})().catch((err) => {
+		if (err instanceof TxFailedError) throw err;
+		return new Promise<never>(() => {}); // websocket unavailable: leave it to polling
+	});
+	const viaHttp = (async () => {
+		for (let i = 0; !abort.signal.aborted; i++) {
+			await new Promise((r) => setTimeout(r, 1500));
+			const state = await (i % 2 === 0
+				? statusViaSignatures(signature)
+				: statusViaTransaction(signature)
+			).catch(() => null);
+			if (state === "failed") throw new TxFailedError(`transaction failed: ${signature}`);
+			if (state === "confirmed") return signature;
+		}
+		return new Promise<never>(() => {});
+	})();
+	try {
+		return await Promise.race([viaWs, viaHttp, timeout]);
+	} finally {
+		abort.abort();
 	}
-	throw new TxFailedError(`transaction not confirmed in time: ${signature}`);
+}
+
+async function statusViaSignatures(signature: Signature) {
+	const { value } = await rpc.getSignatureStatuses([signature]).send();
+	const st = value[0];
+	if (st?.err) return "failed" as const;
+	return st?.confirmationStatus === "confirmed" || st?.confirmationStatus === "finalized"
+		? ("confirmed" as const)
+		: null;
+}
+
+async function statusViaTransaction(signature: Signature) {
+	const tx = await rpc
+		.getTransaction(signature, {
+			commitment: "confirmed",
+			maxSupportedTransactionVersion: 0,
+			encoding: "json",
+		})
+		.send();
+	if (!tx) return null;
+	return tx.meta?.err ? ("failed" as const) : ("confirmed" as const);
 }
 
 const jsonBigint = (_: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);

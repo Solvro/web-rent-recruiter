@@ -1,0 +1,16 @@
+Senior Rust Engineer (Solana programs)
+
+We're a seed-stage DeFi startup in Warsaw building an on-chain credit marketplace on Solana: lenders and borrowers matched by programs, with no bank in the middle. The team is five people, led by our founder Hanna Lewicka, and we're hiring our second protocol engineer.
+
+You'll design, ship and maintain our Anchor programs (lending pools, liquidations, fee splits), write the tests and fuzzing that keep them safe, and help build the TypeScript SDK our app uses.
+
+What we need:
+- 4+ years of production Rust
+- Solana programs you shipped to mainnet (Anchor or native)
+- Experience with DeFi protocols: a DEX, lending or AMM
+- A security mindset: property tests, fuzzing, working with auditors
+- Fluent English (C1); our investors and auditors are international
+
+Nice to have: TypeScript SDKs for programs, open-source Solana work, early-stage experience.
+
+Hybrid: 2 days a week in our Warsaw office. 30,000–38,000 PLN/month on B2B, plus tokens.

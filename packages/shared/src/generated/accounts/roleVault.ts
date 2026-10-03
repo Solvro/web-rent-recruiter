@@ -27,6 +27,8 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -47,10 +49,10 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  getRoleStatusDecoder,
-  getRoleStatusEncoder,
-  type RoleStatus,
-  type RoleStatusArgs,
+  getStatusDecoder,
+  getStatusEncoder,
+  type Status,
+  type StatusArgs,
 } from "../types";
 
 export const ROLE_VAULT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -67,18 +69,39 @@ export type RoleVault = {
   roleId: bigint;
   mint: Address;
   vaultTokenAccount: Address;
-  bountyPerCandidate: bigint;
-  maxCandidates: number;
+  /** The AI agent's wallet: may create/close tasks, accept/reject deliverables and attest outcomes. */
+  agent: Option<Address>;
+  /** Snapshots of Config at creation: later config changes never alter an open role's terms. */
+  feeBps: number;
+  minBounty: bigint;
+  minReputableBounty: bigint;
+  /**
+   * Company-signed limits on the agent: per-task bounty, and the total its tasks may ever pay
+   * (accepted + still promised). Bounds the damage of a compromised agent key.
+   */
+  agentMaxBounty: bigint;
+  agentMaxCommitment: bigint;
+  /** Σ over agent-created tasks of max_deliverables × bounty, minus unused slots of closed ones. */
+  agentCommitted: bigint;
+  reviewWindowSeconds: bigint;
+  /** After this long a company/agent may release an exclusive claim with nothing pending. */
+  claimTimeoutSeconds: bigint;
+  holdbackWindowSeconds: bigint;
+  /** Next task id; tasks are numbered 0, 1, 2, ... */
+  taskCount: number;
+  openTaskCount: number;
   acceptedCount: number;
   pendingCount: number;
+  /** Σ over pending deliverables of their task bounty (each one fully funded). */
+  pendingValue: bigint;
+  /** Σ over open tasks of (max_deliverables − accepted) × bounty: what the open tasks promise. */
+  openCapacity: bigint;
+  heldBackTotal: bigint;
+  /** Σ deliverable bonds currently held for pending submissions (scouts' money, not budget). */
+  bondsHeld: bigint;
   totalDeposited: bigint;
   totalPaid: bigint;
-  reviewWindowSeconds: bigint;
-  /** Snapshot of `Config::fee_bps` at creation, so later fee changes don't affect open roles. */
-  feeBps: number;
-  /** Optional delegate (the AI agent) allowed to accept on the company's behalf. */
-  agent: Option<Address>;
-  status: RoleStatus;
+  status: Status;
   bump: number;
 };
 
@@ -87,18 +110,39 @@ export type RoleVaultArgs = {
   roleId: number | bigint;
   mint: Address;
   vaultTokenAccount: Address;
-  bountyPerCandidate: number | bigint;
-  maxCandidates: number;
+  /** The AI agent's wallet: may create/close tasks, accept/reject deliverables and attest outcomes. */
+  agent: OptionOrNullable<Address>;
+  /** Snapshots of Config at creation: later config changes never alter an open role's terms. */
+  feeBps: number;
+  minBounty: number | bigint;
+  minReputableBounty: number | bigint;
+  /**
+   * Company-signed limits on the agent: per-task bounty, and the total its tasks may ever pay
+   * (accepted + still promised). Bounds the damage of a compromised agent key.
+   */
+  agentMaxBounty: number | bigint;
+  agentMaxCommitment: number | bigint;
+  /** Σ over agent-created tasks of max_deliverables × bounty, minus unused slots of closed ones. */
+  agentCommitted: number | bigint;
+  reviewWindowSeconds: number | bigint;
+  /** After this long a company/agent may release an exclusive claim with nothing pending. */
+  claimTimeoutSeconds: number | bigint;
+  holdbackWindowSeconds: number | bigint;
+  /** Next task id; tasks are numbered 0, 1, 2, ... */
+  taskCount: number;
+  openTaskCount: number;
   acceptedCount: number;
   pendingCount: number;
+  /** Σ over pending deliverables of their task bounty (each one fully funded). */
+  pendingValue: number | bigint;
+  /** Σ over open tasks of (max_deliverables − accepted) × bounty: what the open tasks promise. */
+  openCapacity: number | bigint;
+  heldBackTotal: number | bigint;
+  /** Σ deliverable bonds currently held for pending submissions (scouts' money, not budget). */
+  bondsHeld: number | bigint;
   totalDeposited: number | bigint;
   totalPaid: number | bigint;
-  reviewWindowSeconds: number | bigint;
-  /** Snapshot of `Config::fee_bps` at creation, so later fee changes don't affect open roles. */
-  feeBps: number;
-  /** Optional delegate (the AI agent) allowed to accept on the company's behalf. */
-  agent: OptionOrNullable<Address>;
-  status: RoleStatusArgs;
+  status: StatusArgs;
   bump: number;
 };
 
@@ -111,16 +155,27 @@ export function getRoleVaultEncoder(): Encoder<RoleVaultArgs> {
       ["roleId", getU64Encoder()],
       ["mint", getAddressEncoder()],
       ["vaultTokenAccount", getAddressEncoder()],
-      ["bountyPerCandidate", getU64Encoder()],
-      ["maxCandidates", getU16Encoder()],
-      ["acceptedCount", getU16Encoder()],
-      ["pendingCount", getU16Encoder()],
+      ["agent", getOptionEncoder(getAddressEncoder())],
+      ["feeBps", getU16Encoder()],
+      ["minBounty", getU64Encoder()],
+      ["minReputableBounty", getU64Encoder()],
+      ["agentMaxBounty", getU64Encoder()],
+      ["agentMaxCommitment", getU64Encoder()],
+      ["agentCommitted", getU64Encoder()],
+      ["reviewWindowSeconds", getI64Encoder()],
+      ["claimTimeoutSeconds", getI64Encoder()],
+      ["holdbackWindowSeconds", getI64Encoder()],
+      ["taskCount", getU32Encoder()],
+      ["openTaskCount", getU32Encoder()],
+      ["acceptedCount", getU32Encoder()],
+      ["pendingCount", getU32Encoder()],
+      ["pendingValue", getU64Encoder()],
+      ["openCapacity", getU64Encoder()],
+      ["heldBackTotal", getU64Encoder()],
+      ["bondsHeld", getU64Encoder()],
       ["totalDeposited", getU64Encoder()],
       ["totalPaid", getU64Encoder()],
-      ["reviewWindowSeconds", getI64Encoder()],
-      ["feeBps", getU16Encoder()],
-      ["agent", getOptionEncoder(getAddressEncoder())],
-      ["status", getRoleStatusEncoder()],
+      ["status", getStatusEncoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: ROLE_VAULT_DISCRIMINATOR }),
@@ -135,16 +190,27 @@ export function getRoleVaultDecoder(): Decoder<RoleVault> {
     ["roleId", getU64Decoder()],
     ["mint", getAddressDecoder()],
     ["vaultTokenAccount", getAddressDecoder()],
-    ["bountyPerCandidate", getU64Decoder()],
-    ["maxCandidates", getU16Decoder()],
-    ["acceptedCount", getU16Decoder()],
-    ["pendingCount", getU16Decoder()],
+    ["agent", getOptionDecoder(getAddressDecoder())],
+    ["feeBps", getU16Decoder()],
+    ["minBounty", getU64Decoder()],
+    ["minReputableBounty", getU64Decoder()],
+    ["agentMaxBounty", getU64Decoder()],
+    ["agentMaxCommitment", getU64Decoder()],
+    ["agentCommitted", getU64Decoder()],
+    ["reviewWindowSeconds", getI64Decoder()],
+    ["claimTimeoutSeconds", getI64Decoder()],
+    ["holdbackWindowSeconds", getI64Decoder()],
+    ["taskCount", getU32Decoder()],
+    ["openTaskCount", getU32Decoder()],
+    ["acceptedCount", getU32Decoder()],
+    ["pendingCount", getU32Decoder()],
+    ["pendingValue", getU64Decoder()],
+    ["openCapacity", getU64Decoder()],
+    ["heldBackTotal", getU64Decoder()],
+    ["bondsHeld", getU64Decoder()],
     ["totalDeposited", getU64Decoder()],
     ["totalPaid", getU64Decoder()],
-    ["reviewWindowSeconds", getI64Decoder()],
-    ["feeBps", getU16Decoder()],
-    ["agent", getOptionDecoder(getAddressDecoder())],
-    ["status", getRoleStatusDecoder()],
+    ["status", getStatusDecoder()],
     ["bump", getU8Decoder()],
   ]);
 }

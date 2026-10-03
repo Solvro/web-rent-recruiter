@@ -19,6 +19,8 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getOptionDecoder,
+  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -30,14 +32,16 @@ import {
   transformEncoder,
   type Account,
   type Address,
+  type Codec,
+  type Decoder,
   type EncodedAccount,
+  type Encoder,
   type FetchAccountConfig,
   type FetchAccountsConfig,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
   type MaybeAccount,
   type MaybeEncodedAccount,
+  type Option,
+  type OptionOrNullable,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
@@ -57,7 +61,16 @@ export type ScoutProfile = {
   submitted: number;
   accepted: number;
   rejected: number;
+  sourcingAccepted: number;
+  screeningAccepted: number;
+  referenceAccepted: number;
+  /** Accepted deliverables the company/agent later confirmed as `Advanced`. */
+  advanced: number;
+  /** Accepted deliverables attested as `Fabricated`. */
+  flagged: number;
   totalEarned: bigint;
+  /** Operator PDA that vouched for this scout; takes `fee_bps` of payouts. */
+  operator: Option<Address>;
   bump: number;
 };
 
@@ -66,12 +79,21 @@ export type ScoutProfileArgs = {
   submitted: number;
   accepted: number;
   rejected: number;
+  sourcingAccepted: number;
+  screeningAccepted: number;
+  referenceAccepted: number;
+  /** Accepted deliverables the company/agent later confirmed as `Advanced`. */
+  advanced: number;
+  /** Accepted deliverables attested as `Fabricated`. */
+  flagged: number;
   totalEarned: number | bigint;
+  /** Operator PDA that vouched for this scout; takes `fee_bps` of payouts. */
+  operator: OptionOrNullable<Address>;
   bump: number;
 };
 
 /** Gets the encoder for {@link ScoutProfileArgs} account data. */
-export function getScoutProfileEncoder(): FixedSizeEncoder<ScoutProfileArgs> {
+export function getScoutProfileEncoder(): Encoder<ScoutProfileArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
@@ -79,7 +101,13 @@ export function getScoutProfileEncoder(): FixedSizeEncoder<ScoutProfileArgs> {
       ["submitted", getU32Encoder()],
       ["accepted", getU32Encoder()],
       ["rejected", getU32Encoder()],
+      ["sourcingAccepted", getU32Encoder()],
+      ["screeningAccepted", getU32Encoder()],
+      ["referenceAccepted", getU32Encoder()],
+      ["advanced", getU32Encoder()],
+      ["flagged", getU32Encoder()],
       ["totalEarned", getU64Encoder()],
+      ["operator", getOptionEncoder(getAddressEncoder())],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SCOUT_PROFILE_DISCRIMINATOR }),
@@ -87,23 +115,26 @@ export function getScoutProfileEncoder(): FixedSizeEncoder<ScoutProfileArgs> {
 }
 
 /** Gets the decoder for {@link ScoutProfile} account data. */
-export function getScoutProfileDecoder(): FixedSizeDecoder<ScoutProfile> {
+export function getScoutProfileDecoder(): Decoder<ScoutProfile> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["scout", getAddressDecoder()],
     ["submitted", getU32Decoder()],
     ["accepted", getU32Decoder()],
     ["rejected", getU32Decoder()],
+    ["sourcingAccepted", getU32Decoder()],
+    ["screeningAccepted", getU32Decoder()],
+    ["referenceAccepted", getU32Decoder()],
+    ["advanced", getU32Decoder()],
+    ["flagged", getU32Decoder()],
     ["totalEarned", getU64Decoder()],
+    ["operator", getOptionDecoder(getAddressDecoder())],
     ["bump", getU8Decoder()],
   ]);
 }
 
 /** Gets the codec for {@link ScoutProfile} account data. */
-export function getScoutProfileCodec(): FixedSizeCodec<
-  ScoutProfileArgs,
-  ScoutProfile
-> {
+export function getScoutProfileCodec(): Codec<ScoutProfileArgs, ScoutProfile> {
   return combineCodec(getScoutProfileEncoder(), getScoutProfileDecoder());
 }
 
@@ -158,8 +189,4 @@ export async function fetchAllMaybeScoutProfile(
 ): Promise<MaybeAccount<ScoutProfile>[]> {
   const maybeAccounts = await fetchEncodedAccounts(rpc, addresses, config);
   return maybeAccounts.map((maybeAccount) => decodeScoutProfile(maybeAccount));
-}
-
-export function getScoutProfileSize(): number {
-  return 61;
 }

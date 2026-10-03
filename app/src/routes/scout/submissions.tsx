@@ -1,165 +1,144 @@
-import type { Me, SubmissionView, TaskView } from "@scout/shared";
-import { REJECT_REASON_LABELS } from "@scout/shared";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, Inbox, Loader2, Share2 } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
-import {
-	Countdown,
-	EmptyState,
-	PageHeader,
-	Stat,
-	StatusBadge,
-	secondsUntil,
-	useNow,
-} from "@/components/bits";
-import { ExplorerLink } from "@/components/explorer-link";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { api, errorMessage } from "@/lib/api";
-import { formatUsdc, hostOf, netOfFee, timeAgo } from "@/lib/format";
-import { useMySubmissions, useScout, useTasks } from "@/lib/queries";
-import { useWallet } from "@/lib/wallet";
+import { Appeal } from "@/components/appeal";
+import { Chip, EmptyState, ErrorState } from "@/components/bits";
+import { CopyButton } from "@/components/copy";
+import { FollowUps } from "@/components/follow-ups";
+import { Avatar } from "@/components/person";
+import { Receipt, type ReceiptDetails } from "@/components/receipt";
+import { buttonVariants } from "@/components/ui/button";
+import { firstName, formatMoney, personInTitle } from "@/lib/format";
+import { GIG_TYPES } from "@/lib/gig-types";
+import { useMyWork } from "@/lib/gigs/api";
+import type { DeliverableView } from "@/lib/gigs/schemas";
+import { inCents } from "@/lib/payout";
 
 export const Route = createFileRoute("/scout/submissions")({
-	component: () => <RequireAccount kind="scout">{(me) => <MySubmissions me={me} />}</RequireAccount>,
+	component: () => (
+		<RequireAccount kind="scout">
+			{(me) => <Earnings operator={me.operator?.name ?? null} slug={me.slug} />}
+		</RequireAccount>
+	),
 });
 
-function MySubmissions({ me }: { me: Me }) {
-	const { address } = useWallet();
-	const subs = useMySubmissions();
-	const tasks = useTasks();
-	const profile = useScout(address ?? "");
-	const byRole = new Map((tasks.data ?? []).map((t) => [t.id, t]));
-	const list = subs.data ?? [];
-	const accepted = list.filter((s) => s.status === "ACCEPTED").length;
-	const waiting = list.filter((s) => s.status === "PENDING").length;
+/** What the recruiter has been paid: accepted parts now, plus held parts once released. */
+function earnedOf(list: DeliverableView[]) {
+	return list.reduce((sum, d) => {
+		if (d.status !== "ACCEPTED" || !d.payout) return sum;
+		return sum + BigInt(d.payout.now) + (d.payout.laterStatus === "RELEASED" ? BigInt(d.payout.later) : 0n);
+	}, 0n);
+}
 
-	const share = async () => {
-		const url = `${location.origin}/scouts/${address}`;
-		try {
-			await navigator.clipboard.writeText(url);
-			toast.success("Profile link copied");
-		} catch {
-			toast(url);
-		}
-	};
-
-	return (
-		<div className="space-y-8">
-			<PageHeader
-				title="My submissions"
-				description="Every candidate you submitted, and where the money is."
-				actions={
-					address && (
-						<>
-							<Link
-								to="/scouts/$pubkey"
-								params={{ pubkey: address }}
-								className={buttonVariants({ variant: "outline" })}
-							>
-								Public profile
-							</Link>
-							<Button variant="outline" onClick={share}>
-								<Share2 /> Copy link
-							</Button>
-						</>
-					)
+function Earnings({ operator, slug }: { operator: string | null; slug: string }) {
+	const work = useMyWork();
+	if (work.isError) return <ErrorState />;
+	if (work.isPending) return <PageSkeleton />;
+	const list = work.data;
+	if (!list.length)
+		return (
+			<EmptyState
+				title="You haven't done any gigs yet."
+				action={
+					<Link to="/scout" className={buttonVariants({ size: "lg" })}>
+						Browse gigs
+					</Link>
 				}
 			/>
-			<Card>
-				<CardContent className="grid grid-cols-2 gap-6 md:grid-cols-4">
-					<Stat
-						label="Total earned"
-						value={profile.data ? formatUsdc(profile.data.reputation.totalEarned) : "—"}
-						hint={`Balance ${formatUsdc(me.usdcBalance)}`}
-					/>
-					<Stat label="Accepted" value={`${accepted} / ${list.length}`} />
-					<Stat
-						label="Acceptance rate"
-						value={
-							list.length
-								? `${Math.round((accepted / Math.max(1, accepted + list.filter((s) => s.status === "REJECTED").length)) * 100)}%`
-								: "—"
-						}
-					/>
-					<Stat label="In review" value={waiting} />
-				</CardContent>
-			</Card>
-			{subs.isPending ? (
-				<PageSkeleton />
-			) : list.length ? (
-				<div className="space-y-3">
-					{list.map((s) => (
-						<SubmissionRow key={s.id} sub={s} task={byRole.get(s.roleId)} />
-					))}
+		);
+
+	return (
+		<div className="mx-auto max-w-3xl space-y-12">
+			<div className="flex flex-wrap items-end justify-between gap-4">
+				<div className="space-y-2">
+					<h1 className="type-display">You've earned {formatMoney(earnedOf(list))}</h1>
+					{operator && <p className="type-label text-muted-foreground">Vouched by {operator}</p>}
 				</div>
-			) : (
-				<EmptyState
-					icon={<Inbox className="size-5" />}
-					title="No submissions yet"
-					action={
-						<Link to="/scout" className={buttonVariants()}>
-							Browse open tasks
-						</Link>
-					}
+				<Link
+					to="/r/$slug"
+					params={{ slug }}
+					className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
 				>
-					Pick a task and submit someone from your network.
-				</EmptyState>
-			)}
+					Your public profile
+				</Link>
+			</div>
+			<ul className="divide-y">
+				{list.map((d) => (
+					<Row key={d.id} work={d} />
+				))}
+			</ul>
 		</div>
 	);
 }
 
-function SubmissionRow({ sub, task }: { sub: SubmissionView; task?: TaskView }) {
-	const now = useNow();
-	const qc = useQueryClient();
-	const expired = sub.status === "PENDING" && secondsUntil(sub.reviewDeadline, now) <= 0;
-	const claim = useMutation({
-		mutationFn: () => api.settle(sub.id),
-		onSuccess: () => void qc.invalidateQueries(),
-		onError: (e) => toast.error(errorMessage(e)),
-	});
-	const payout = task ? formatUsdc(netOfFee(task.bounty, task.feeBps)) : null;
+const LATER: Record<string, { label: string; tone: "accent" | "good" | "neutral" }> = {
+	HELD: { label: "after the interview", tone: "accent" },
+	RELEASED: { label: "paid", tone: "good" },
+	REFUNDED: { label: "refunded", tone: "neutral" },
+};
+
+function personOf(d: DeliverableView) {
+	if (d.deliverable.type === "SOURCING") return d.deliverable.name;
+	return personInTitle(d.gigTitle);
+}
+
+function Row({ work: d }: { work: DeliverableView }) {
+	const info = GIG_TYPES[/^language check/i.test(d.gigTitle) ? "LANGUAGE_CHECK" : d.gigType];
+	const person = personOf(d);
+	const p = d.payout && { ...d.payout, ...inCents(d.payout.now, d.payout.later) };
+	const later = p && p.laterStatus !== "NONE" ? LATER[p.laterStatus] : null;
+	const receipt: ReceiptDetails | undefined = p
+		? {
+				title: `Paid ${formatMoney(p.laterStatus === "RELEASED" ? BigInt(p.now) + BigInt(p.later) : p.now)} to you`,
+				lines: [`${info.name} · ${person}`, d.roleTitle],
+			}
+		: undefined;
 
 	return (
-		<div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:flex-row sm:items-center">
-			<div className="min-w-0 flex-1 space-y-0.5">
-				<p className="font-medium">{sub.candidateName}</p>
-				<p className="truncate text-sm text-muted-foreground">
-					{task ? `${task.title} · ${task.companyName}` : "Closed role"} · {timeAgo(sub.submittedAt)}
+		<li className="flex items-center gap-4 py-5">
+			{d.gigType === "SOURCING" ? (
+				<Avatar name={person} />
+			) : (
+				<span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground">
+					<info.icon className="size-4" />
+				</span>
+			)}
+			<div className="min-w-0 flex-1">
+				<p className="truncate">{person}</p>
+				<p className="truncate type-label text-muted-foreground">
+					{info.name} · {d.roleTitle}
 				</p>
-				<a
-					href={sub.profileUrl}
-					target="_blank"
-					rel="noreferrer"
-					className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-				>
-					{hostOf(sub.profileUrl)} <ExternalLink className="size-3" />
-				</a>
 			</div>
-			<div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
-				<div className="flex items-center gap-2">
-					{sub.status === "ACCEPTED" && payout && (
-						<span className="tabular font-semibold text-success">+{payout}</span>
-					)}
-					<StatusBadge status={sub.status} />
-				</div>
-				{sub.status === "PENDING" &&
-					(expired ? (
-						<Button size="sm" onClick={() => claim.mutate()} disabled={claim.isPending}>
-							{claim.isPending && <Loader2 className="animate-spin" />}
-							Claim payout
-						</Button>
-					) : (
-						<Countdown deadline={sub.reviewDeadline} prefix="Paid automatically in" />
-					))}
-				{sub.status === "REJECTED" && sub.rejectReason && (
-					<span className="text-xs text-muted-foreground">{REJECT_REASON_LABELS[sub.rejectReason]}</span>
+			<div className="flex shrink-0 flex-col items-end gap-1.5">
+				<FollowUps d={d} />
+				{d.status === "PENDING" && d.confirmation?.status === "PENDING" ? (
+					<>
+						<Chip tone="accent">Waiting for {firstName(person)} to confirm</Chip>
+						{d.confirmation.url && <CopyButton text={d.confirmation.url} />}
+					</>
+				) : d.status === "PENDING" ? (
+					<Chip tone="accent">
+						<Loader2 className="size-3.5 animate-spin" /> The agent is checking
+					</Chip>
+				) : d.status === "REJECTED" ? (
+					<>
+						<Chip>Not accepted</Chip>
+						<Appeal d={d} align="end" />
+					</>
+				) : (
+					<>
+						<div className="flex items-center gap-2">
+							{p && <span className="type-label tabular text-success">+{formatMoney(p.now)}</span>}
+							{later && p && (
+								<Chip tone={later.tone}>
+									<span className="tabular">{formatMoney(p.later)}</span> {later.label}
+								</Chip>
+							)}
+						</div>
+						<Receipt signature={d.settlementTx} details={receipt} />
+					</>
 				)}
-				{sub.settlementTx && <ExplorerLink signature={sub.settlementTx} />}
 			</div>
-		</div>
+		</li>
 	);
 }

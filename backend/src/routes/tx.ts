@@ -1,24 +1,15 @@
-import { explorerTxUrl, SubmitTxRequest, SubmitTxResponse } from "@scout/shared";
+/** @deprecated REST transport; the app uses tRPC (src/trpc). Kept for scripts. */
+import { SubmitTxRequest, SubmitTxResponse } from "@scout/shared";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import { submitTx } from "../api/tx.ts";
 import { subscribe } from "../events.ts";
-import { processSignature } from "../indexer/sync.ts";
-import { relayUserTx } from "../solana/tx.ts";
 
 export const txRoutes: FastifyPluginAsyncZod = async (app) => {
-	app.post(
-		"/tx/submit",
-		{ schema: { body: SubmitTxRequest, response: { 200: SubmitTxResponse } } },
-		async (req) => {
-			const signature = await relayUserTx(req.body.signedTx);
-			// Apply events right away so the UI sees the new state on its next fetch (indexer would also catch it).
-			await processSignature(signature).catch((err) =>
-				req.log.warn(`processSignature: ${(err as Error).message}`),
-			);
-			return { signature, explorerUrl: explorerTxUrl(signature) };
-		},
+	app.post("/tx/submit", { schema: { body: SubmitTxRequest, response: { 200: SubmitTxResponse } } }, (req) =>
+		submitTx(req.body),
 	);
 
-	/** Server-sent events: role/submission updates from the indexer. */
+	/** Server-sent events: role/submission updates from the indexer. Superseded by the tRPC `events` subscription. */
 	app.get("/events", (req, reply) => {
 		reply.raw.writeHead(200, {
 			"content-type": "text/event-stream",

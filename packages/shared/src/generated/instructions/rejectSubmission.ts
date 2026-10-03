@@ -55,9 +55,11 @@ export function getRejectSubmissionDiscriminatorBytes(): ReadonlyUint8Array {
 export type RejectSubmissionInstruction<
   TProgram extends string = typeof SCOUT_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
-  TAccountCompany extends string | AccountMeta<string> = string,
+  TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountRoleVault extends string | AccountMeta<string> = string,
+  TAccountTask extends string | AccountMeta<string> = string,
   TAccountSubmission extends string | AccountMeta<string> = string,
+  TAccountRentPayer extends string | AccountMeta<string> = string,
   TAccountScoutProfile extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -68,16 +70,22 @@ export type RejectSubmissionInstruction<
         ? WritableSignerAccount<TAccountPayer> &
             AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
-      TAccountCompany extends string
-        ? ReadonlySignerAccount<TAccountCompany> &
-            AccountSignerMeta<TAccountCompany>
-        : TAccountCompany,
+      TAccountAuthority extends string
+        ? ReadonlySignerAccount<TAccountAuthority> &
+            AccountSignerMeta<TAccountAuthority>
+        : TAccountAuthority,
       TAccountRoleVault extends string
         ? WritableAccount<TAccountRoleVault>
         : TAccountRoleVault,
+      TAccountTask extends string
+        ? WritableAccount<TAccountTask>
+        : TAccountTask,
       TAccountSubmission extends string
         ? WritableAccount<TAccountSubmission>
         : TAccountSubmission,
+      TAccountRentPayer extends string
+        ? WritableAccount<TAccountRentPayer>
+        : TAccountRentPayer,
       TAccountScoutProfile extends string
         ? WritableAccount<TAccountScoutProfile>
         : TAccountScoutProfile,
@@ -88,15 +96,20 @@ export type RejectSubmissionInstruction<
 export type RejectSubmissionInstructionData = {
   discriminator: ReadonlyUint8Array;
   reasonCode: number;
+  reasonHash: ReadonlyUint8Array;
 };
 
-export type RejectSubmissionInstructionDataArgs = { reasonCode: number };
+export type RejectSubmissionInstructionDataArgs = {
+  reasonCode: number;
+  reasonHash: ReadonlyUint8Array;
+};
 
 export function getRejectSubmissionInstructionDataEncoder(): FixedSizeEncoder<RejectSubmissionInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["reasonCode", getU8Encoder()],
+      ["reasonHash", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: REJECT_SUBMISSION_DISCRIMINATOR }),
   );
@@ -106,6 +119,7 @@ export function getRejectSubmissionInstructionDataDecoder(): FixedSizeDecoder<Re
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["reasonCode", getU8Decoder()],
+    ["reasonHash", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
@@ -121,33 +135,47 @@ export function getRejectSubmissionInstructionDataCodec(): FixedSizeCodec<
 
 export type RejectSubmissionInput<
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
-  TAccountCompany extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
   TAccountRoleVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput = InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput = InstructionAccountInput,
+  TAccountRentPayer extends InstructionAccountInput = InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
-  company: TAccountCompany;
+  /** The company or `role_vault.agent`. */
+  authority: TAccountAuthority;
   roleVault: TAccountRoleVault;
+  task: TAccountTask;
+  /**
+   * Closed: a rejected deliverable leaves no account behind; its rent goes back to whoever paid it.
+   * (Accepted submissions stay: they are the dedupe record and the reputation trail.)
+   */
   submission: TAccountSubmission;
+  rentPayer: TAccountRentPayer;
   scoutProfile: TAccountScoutProfile;
   reasonCode: RejectSubmissionInstructionDataArgs["reasonCode"];
+  reasonHash: RejectSubmissionInstructionDataArgs["reasonHash"];
 };
 
 export function getRejectSubmissionInstruction<
   TAccountPayer extends InstructionSignerInput,
-  TAccountCompany extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
   TAccountRoleVault extends InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput,
+  TAccountRentPayer extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SCOUT_PROGRAM_ADDRESS,
 >(
   input: RejectSubmissionInput<
     TAccountPayer,
-    TAccountCompany,
+    TAccountAuthority,
     TAccountRoleVault,
+    TAccountTask,
     TAccountSubmission,
+    TAccountRentPayer,
     TAccountScoutProfile
   >,
   config?: { programAddress?: TProgramAddress },
@@ -158,16 +186,24 @@ export function getRejectSubmissionInstruction<
     InstructionAccountInputAddress<TAccountPayer>
   >,
   ResolvedInstructionAccountMeta<
-    TAccountCompany,
-    InstructionAccountInputAddress<TAccountCompany>
+    TAccountAuthority,
+    InstructionAccountInputAddress<TAccountAuthority>
   >,
   ResolvedInstructionAccountMeta<
     TAccountRoleVault,
     InstructionAccountInputAddress<TAccountRoleVault>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountTask,
+    InstructionAccountInputAddress<TAccountTask>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountSubmission,
     InstructionAccountInputAddress<TAccountSubmission>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountRentPayer,
+    InstructionAccountInputAddress<TAccountRentPayer>
   >,
   ResolvedInstructionAccountMeta<
     TAccountScoutProfile,
@@ -183,8 +219,8 @@ export function getRejectSubmissionInstruction<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
-    company: {
-      value: input.company ?? null,
+    authority: {
+      value: input.authority ?? null,
       isSigner: true,
       isWritable: false,
     },
@@ -193,8 +229,14 @@ export function getRejectSubmissionInstruction<
       isSigner: false,
       isWritable: true,
     },
+    task: { value: input.task ?? null, isSigner: false, isWritable: true },
     submission: {
       value: input.submission ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    rentPayer: {
+      value: input.rentPayer ?? null,
       isSigner: false,
       isWritable: true,
     },
@@ -215,9 +257,11 @@ export function getRejectSubmissionInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("payer", accounts.payer),
-      getAccountMeta("company", accounts.company),
+      getAccountMeta("authority", accounts.authority),
       getAccountMeta("roleVault", accounts.roleVault),
+      getAccountMeta("task", accounts.task),
       getAccountMeta("submission", accounts.submission),
+      getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
     ],
     data: getRejectSubmissionInstructionDataEncoder().encode(
@@ -231,16 +275,24 @@ export function getRejectSubmissionInstruction<
       InstructionAccountInputAddress<TAccountPayer>
     >,
     ResolvedInstructionAccountMeta<
-      TAccountCompany,
-      InstructionAccountInputAddress<TAccountCompany>
+      TAccountAuthority,
+      InstructionAccountInputAddress<TAccountAuthority>
     >,
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountSubmission,
       InstructionAccountInputAddress<TAccountSubmission>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountRentPayer,
+      InstructionAccountInputAddress<TAccountRentPayer>
     >,
     ResolvedInstructionAccountMeta<
       TAccountScoutProfile,
@@ -256,10 +308,17 @@ export type ParsedRejectSubmissionInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     payer: TAccountMetas[0];
-    company: TAccountMetas[1];
+    /** The company or `role_vault.agent`. */
+    authority: TAccountMetas[1];
     roleVault: TAccountMetas[2];
-    submission: TAccountMetas[3];
-    scoutProfile: TAccountMetas[4];
+    task: TAccountMetas[3];
+    /**
+     * Closed: a rejected deliverable leaves no account behind; its rent goes back to whoever paid it.
+     * (Accepted submissions stay: they are the dedupe record and the reputation trail.)
+     */
+    submission: TAccountMetas[4];
+    rentPayer: TAccountMetas[5];
+    scoutProfile: TAccountMetas[6];
   };
   data: RejectSubmissionInstructionData;
 };
@@ -272,12 +331,12 @@ export function parseRejectSubmissionInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedRejectSubmissionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 5,
+        expectedAccountMetas: 7,
       },
     );
   }
@@ -291,9 +350,11 @@ export function parseRejectSubmissionInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       payer: getNextAccount(),
-      company: getNextAccount(),
+      authority: getNextAccount(),
       roleVault: getNextAccount(),
+      task: getNextAccount(),
       submission: getNextAccount(),
+      rentPayer: getNextAccount(),
       scoutProfile: getNextAccount(),
     },
     data: getRejectSubmissionInstructionDataDecoder().decode(instruction.data),

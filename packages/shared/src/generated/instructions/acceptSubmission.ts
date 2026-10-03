@@ -58,11 +58,14 @@ export type AcceptSubmissionInstruction<
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRoleVault extends string | AccountMeta<string> = string,
+  TAccountTask extends string | AccountMeta<string> = string,
   TAccountSubmission extends string | AccountMeta<string> = string,
   TAccountScoutProfile extends string | AccountMeta<string> = string,
   TAccountVaultTokenAccount extends string | AccountMeta<string> = string,
   TAccountScoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountTreasuryTokenAccount extends string | AccountMeta<string> = string,
+  TAccountOperator extends string | AccountMeta<string> = string,
+  TAccountOperatorTokenAccount extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -85,6 +88,9 @@ export type AcceptSubmissionInstruction<
       TAccountRoleVault extends string
         ? WritableAccount<TAccountRoleVault>
         : TAccountRoleVault,
+      TAccountTask extends string
+        ? WritableAccount<TAccountTask>
+        : TAccountTask,
       TAccountSubmission extends string
         ? WritableAccount<TAccountSubmission>
         : TAccountSubmission,
@@ -100,6 +106,12 @@ export type AcceptSubmissionInstruction<
       TAccountTreasuryTokenAccount extends string
         ? WritableAccount<TAccountTreasuryTokenAccount>
         : TAccountTreasuryTokenAccount,
+      TAccountOperator extends string
+        ? WritableAccount<TAccountOperator>
+        : TAccountOperator,
+      TAccountOperatorTokenAccount extends string
+        ? WritableAccount<TAccountOperatorTokenAccount>
+        : TAccountOperatorTokenAccount,
       TAccountMint extends string
         ? ReadonlyAccount<TAccountMint>
         : TAccountMint,
@@ -112,13 +124,19 @@ export type AcceptSubmissionInstruction<
 
 export type AcceptSubmissionInstructionData = {
   discriminator: ReadonlyUint8Array;
+  reviewHash: ReadonlyUint8Array;
 };
 
-export type AcceptSubmissionInstructionDataArgs = {};
+export type AcceptSubmissionInstructionDataArgs = {
+  reviewHash: ReadonlyUint8Array;
+};
 
 export function getAcceptSubmissionInstructionDataEncoder(): FixedSizeEncoder<AcceptSubmissionInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["reviewHash", fixEncoderSize(getBytesEncoder(), 32)],
+    ]),
     (value) => ({ ...value, discriminator: ACCEPT_SUBMISSION_DISCRIMINATOR }),
   );
 }
@@ -126,6 +144,7 @@ export function getAcceptSubmissionInstructionDataEncoder(): FixedSizeEncoder<Ac
 export function getAcceptSubmissionInstructionDataDecoder(): FixedSizeDecoder<AcceptSubmissionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["reviewHash", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
@@ -144,6 +163,7 @@ export type AcceptSubmissionAsyncInput<
   TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput = InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput = InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput =
     InstructionAccountInput,
@@ -153,22 +173,30 @@ export type AcceptSubmissionAsyncInput<
     InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
-  /** The company, or the delegated agent if the role has one. */
+  /** The company or `role_vault.agent`. */
   authority: TAccountAuthority;
   config?: TAccountConfig;
   roleVault: TAccountRoleVault;
+  task: TAccountTask;
   submission: TAccountSubmission;
   scoutProfile: TAccountScoutProfile;
   vaultTokenAccount: TAccountVaultTokenAccount;
   scoutTokenAccount: TAccountScoutTokenAccount;
   treasuryTokenAccount: TAccountTreasuryTokenAccount;
+  /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+  operator?: TAccountOperator;
+  operatorTokenAccount?: TAccountOperatorTokenAccount;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
+  reviewHash: AcceptSubmissionInstructionDataArgs["reviewHash"];
 };
 
 export async function getAcceptSubmissionInstructionAsync<
@@ -176,11 +204,14 @@ export async function getAcceptSubmissionInstructionAsync<
   TAccountAuthority extends InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountVaultTokenAccount extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SCOUT_PROGRAM_ADDRESS,
@@ -190,11 +221,14 @@ export async function getAcceptSubmissionInstructionAsync<
     TAccountAuthority,
     TAccountConfig,
     TAccountRoleVault,
+    TAccountTask,
     TAccountSubmission,
     TAccountScoutProfile,
     TAccountVaultTokenAccount,
     TAccountScoutTokenAccount,
     TAccountTreasuryTokenAccount,
+    TAccountOperator,
+    TAccountOperatorTokenAccount,
     TAccountMint,
     TAccountTokenProgram
   >,
@@ -219,6 +253,10 @@ export async function getAcceptSubmissionInstructionAsync<
       InstructionAccountInputAddress<TAccountRoleVault>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountSubmission,
       InstructionAccountInputAddress<TAccountSubmission>
     >,
@@ -237,6 +275,14 @@ export async function getAcceptSubmissionInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountTreasuryTokenAccount,
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
       TAccountMint,
@@ -268,6 +314,7 @@ export async function getAcceptSubmissionInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    task: { value: input.task ?? null, isSigner: false, isWritable: true },
     submission: {
       value: input.submission ?? null,
       isSigner: false,
@@ -293,6 +340,16 @@ export async function getAcceptSubmissionInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorTokenAccount: {
+      value: input.operatorTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     tokenProgram: {
       value: input.tokenProgram ?? null,
@@ -304,6 +361,9 @@ export async function getAcceptSubmissionInstructionAsync<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.config.value) {
@@ -320,15 +380,20 @@ export async function getAcceptSubmissionInstructionAsync<
       getAccountMeta("authority", accounts.authority),
       getAccountMeta("config", accounts.config),
       getAccountMeta("roleVault", accounts.roleVault),
+      getAccountMeta("task", accounts.task),
       getAccountMeta("submission", accounts.submission),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("vaultTokenAccount", accounts.vaultTokenAccount),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorTokenAccount", accounts.operatorTokenAccount),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
-    data: getAcceptSubmissionInstructionDataEncoder().encode({}),
+    data: getAcceptSubmissionInstructionDataEncoder().encode(
+      args as AcceptSubmissionInstructionDataArgs,
+    ),
     programAddress,
   } as AcceptSubmissionInstruction<
     TProgramAddress,
@@ -347,6 +412,10 @@ export async function getAcceptSubmissionInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSubmission,
@@ -369,6 +438,14 @@ export async function getAcceptSubmissionInstructionAsync<
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -384,6 +461,7 @@ export type AcceptSubmissionInput<
   TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput = InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput = InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput =
     InstructionAccountInput,
@@ -393,22 +471,30 @@ export type AcceptSubmissionInput<
     InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
-  /** The company, or the delegated agent if the role has one. */
+  /** The company or `role_vault.agent`. */
   authority: TAccountAuthority;
   config: TAccountConfig;
   roleVault: TAccountRoleVault;
+  task: TAccountTask;
   submission: TAccountSubmission;
   scoutProfile: TAccountScoutProfile;
   vaultTokenAccount: TAccountVaultTokenAccount;
   scoutTokenAccount: TAccountScoutTokenAccount;
   treasuryTokenAccount: TAccountTreasuryTokenAccount;
+  /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+  operator?: TAccountOperator;
+  operatorTokenAccount?: TAccountOperatorTokenAccount;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
+  reviewHash: AcceptSubmissionInstructionDataArgs["reviewHash"];
 };
 
 export function getAcceptSubmissionInstruction<
@@ -416,11 +502,14 @@ export function getAcceptSubmissionInstruction<
   TAccountAuthority extends InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountVaultTokenAccount extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SCOUT_PROGRAM_ADDRESS,
@@ -430,11 +519,14 @@ export function getAcceptSubmissionInstruction<
     TAccountAuthority,
     TAccountConfig,
     TAccountRoleVault,
+    TAccountTask,
     TAccountSubmission,
     TAccountScoutProfile,
     TAccountVaultTokenAccount,
     TAccountScoutTokenAccount,
     TAccountTreasuryTokenAccount,
+    TAccountOperator,
+    TAccountOperatorTokenAccount,
     TAccountMint,
     TAccountTokenProgram
   >,
@@ -458,6 +550,10 @@ export function getAcceptSubmissionInstruction<
     InstructionAccountInputAddress<TAccountRoleVault>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountTask,
+    InstructionAccountInputAddress<TAccountTask>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountSubmission,
     InstructionAccountInputAddress<TAccountSubmission>
   >,
@@ -476,6 +572,14 @@ export function getAcceptSubmissionInstruction<
   ResolvedInstructionAccountMeta<
     TAccountTreasuryTokenAccount,
     InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountOperator,
+    InstructionAccountInputAddress<TAccountOperator>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountOperatorTokenAccount,
+    InstructionAccountInputAddress<TAccountOperatorTokenAccount>
   >,
   ResolvedInstructionAccountMeta<
     TAccountMint,
@@ -506,6 +610,7 @@ export function getAcceptSubmissionInstruction<
       isSigner: false,
       isWritable: true,
     },
+    task: { value: input.task ?? null, isSigner: false, isWritable: true },
     submission: {
       value: input.submission ?? null,
       isSigner: false,
@@ -531,6 +636,16 @@ export function getAcceptSubmissionInstruction<
       isSigner: false,
       isWritable: true,
     },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorTokenAccount: {
+      value: input.operatorTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     tokenProgram: {
       value: input.tokenProgram ?? null,
@@ -542,6 +657,9 @@ export function getAcceptSubmissionInstruction<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
@@ -555,15 +673,20 @@ export function getAcceptSubmissionInstruction<
       getAccountMeta("authority", accounts.authority),
       getAccountMeta("config", accounts.config),
       getAccountMeta("roleVault", accounts.roleVault),
+      getAccountMeta("task", accounts.task),
       getAccountMeta("submission", accounts.submission),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("vaultTokenAccount", accounts.vaultTokenAccount),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorTokenAccount", accounts.operatorTokenAccount),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
-    data: getAcceptSubmissionInstructionDataEncoder().encode({}),
+    data: getAcceptSubmissionInstructionDataEncoder().encode(
+      args as AcceptSubmissionInstructionDataArgs,
+    ),
     programAddress,
   } as AcceptSubmissionInstruction<
     TProgramAddress,
@@ -582,6 +705,10 @@ export function getAcceptSubmissionInstruction<
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSubmission,
@@ -604,6 +731,14 @@ export function getAcceptSubmissionInstruction<
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -621,17 +756,21 @@ export type ParsedAcceptSubmissionInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     payer: TAccountMetas[0];
-    /** The company, or the delegated agent if the role has one. */
+    /** The company or `role_vault.agent`. */
     authority: TAccountMetas[1];
     config: TAccountMetas[2];
     roleVault: TAccountMetas[3];
-    submission: TAccountMetas[4];
-    scoutProfile: TAccountMetas[5];
-    vaultTokenAccount: TAccountMetas[6];
-    scoutTokenAccount: TAccountMetas[7];
-    treasuryTokenAccount: TAccountMetas[8];
-    mint: TAccountMetas[9];
-    tokenProgram: TAccountMetas[10];
+    task: TAccountMetas[4];
+    submission: TAccountMetas[5];
+    scoutProfile: TAccountMetas[6];
+    vaultTokenAccount: TAccountMetas[7];
+    scoutTokenAccount: TAccountMetas[8];
+    treasuryTokenAccount: TAccountMetas[9];
+    /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+    operator?: TAccountMetas[10] | undefined;
+    operatorTokenAccount?: TAccountMetas[11] | undefined;
+    mint: TAccountMetas[12];
+    tokenProgram: TAccountMetas[13];
   };
   data: AcceptSubmissionInstructionData;
 };
@@ -644,12 +783,12 @@ export function parseAcceptSubmissionInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAcceptSubmissionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 14) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 14,
       },
     );
   }
@@ -659,6 +798,12 @@ export function parseAcceptSubmissionInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === SCOUT_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
@@ -666,11 +811,14 @@ export function parseAcceptSubmissionInstruction<
       authority: getNextAccount(),
       config: getNextAccount(),
       roleVault: getNextAccount(),
+      task: getNextAccount(),
       submission: getNextAccount(),
       scoutProfile: getNextAccount(),
       vaultTokenAccount: getNextAccount(),
       scoutTokenAccount: getNextAccount(),
       treasuryTokenAccount: getNextAccount(),
+      operator: getNextOptionalAccount(),
+      operatorTokenAccount: getNextOptionalAccount(),
       mint: getNextAccount(),
       tokenProgram: getNextAccount(),
     },

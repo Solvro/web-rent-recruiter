@@ -36,61 +36,105 @@ import {
 } from "@solana/program-client-core";
 import {
   getConfigCodec,
+  getOperatorCodec,
   getRoleVaultCodec,
   getScoutProfileCodec,
   getSubmissionCodec,
+  getTaskCodec,
   type Config,
   type ConfigArgs,
+  type Operator,
+  type OperatorArgs,
   type RoleVault,
   type RoleVaultArgs,
   type ScoutProfile,
   type ScoutProfileArgs,
   type Submission,
   type SubmissionArgs,
+  type Task,
+  type TaskArgs,
 } from "../accounts";
 import {
   getAcceptSubmissionInstructionAsync,
+  getAttestOutcomeInstruction,
+  getClaimTaskInstructionAsync,
   getCloseRoleInstruction,
+  getCloseTaskInstruction,
   getCreateRoleInstructionAsync,
+  getCreateTaskInstructionAsync,
   getInitializeConfigInstructionAsync,
+  getRegisterOperatorInstructionAsync,
   getRegisterScoutInstructionAsync,
   getRejectSubmissionInstruction,
+  getReleaseClaimInstruction,
+  getReleaseHoldbackInstruction,
+  getSetAgentInstruction,
   getSettleExpiredInstructionAsync,
-  getSubmitCandidateInstructionAsync,
+  getSubmitDeliverableInstructionAsync,
   getTopUpInstruction,
+  getUpdateConfigInstructionAsync,
   parseAcceptSubmissionInstruction,
+  parseAttestOutcomeInstruction,
+  parseClaimTaskInstruction,
   parseCloseRoleInstruction,
+  parseCloseTaskInstruction,
   parseCreateRoleInstruction,
+  parseCreateTaskInstruction,
   parseInitializeConfigInstruction,
+  parseRegisterOperatorInstruction,
   parseRegisterScoutInstruction,
   parseRejectSubmissionInstruction,
+  parseReleaseClaimInstruction,
+  parseReleaseHoldbackInstruction,
+  parseSetAgentInstruction,
   parseSettleExpiredInstruction,
-  parseSubmitCandidateInstruction,
+  parseSubmitDeliverableInstruction,
   parseTopUpInstruction,
+  parseUpdateConfigInstruction,
   type AcceptSubmissionAsyncInput,
+  type AttestOutcomeInput,
+  type ClaimTaskAsyncInput,
   type CloseRoleInput,
+  type CloseTaskInput,
   type CreateRoleAsyncInput,
+  type CreateTaskAsyncInput,
   type InitializeConfigAsyncInput,
   type ParsedAcceptSubmissionInstruction,
+  type ParsedAttestOutcomeInstruction,
+  type ParsedClaimTaskInstruction,
   type ParsedCloseRoleInstruction,
+  type ParsedCloseTaskInstruction,
   type ParsedCreateRoleInstruction,
+  type ParsedCreateTaskInstruction,
   type ParsedInitializeConfigInstruction,
+  type ParsedRegisterOperatorInstruction,
   type ParsedRegisterScoutInstruction,
   type ParsedRejectSubmissionInstruction,
+  type ParsedReleaseClaimInstruction,
+  type ParsedReleaseHoldbackInstruction,
+  type ParsedSetAgentInstruction,
   type ParsedSettleExpiredInstruction,
-  type ParsedSubmitCandidateInstruction,
+  type ParsedSubmitDeliverableInstruction,
   type ParsedTopUpInstruction,
+  type ParsedUpdateConfigInstruction,
+  type RegisterOperatorAsyncInput,
   type RegisterScoutAsyncInput,
   type RejectSubmissionInput,
+  type ReleaseClaimInput,
+  type ReleaseHoldbackInput,
+  type SetAgentInput,
   type SettleExpiredAsyncInput,
-  type SubmitCandidateAsyncInput,
+  type SubmitDeliverableAsyncInput,
   type TopUpInput,
+  type UpdateConfigAsyncInput,
 } from "../instructions";
 import {
   findConfigPda,
+  findOperatorPda,
   findRoleVaultPda,
   findScoutProfilePda,
   findSubmissionPda,
+  findTaskPda,
 } from "../pdas";
 
 export const SCOUT_PROGRAM_ADDRESS =
@@ -98,9 +142,11 @@ export const SCOUT_PROGRAM_ADDRESS =
 
 export enum ScoutAccount {
   Config,
+  Operator,
   RoleVault,
   ScoutProfile,
   Submission,
+  Task,
 }
 
 export function identifyScoutAccount(
@@ -117,6 +163,17 @@ export function identifyScoutAccount(
     )
   ) {
     return ScoutAccount.Config;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([219, 31, 188, 145, 69, 139, 204, 117]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutAccount.Operator;
   }
   if (
     containsBytes(
@@ -151,6 +208,17 @@ export function identifyScoutAccount(
   ) {
     return ScoutAccount.Submission;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([79, 34, 229, 55, 88, 90, 55, 84]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutAccount.Task;
+  }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT,
     { accountData: data, programName: "scout" },
@@ -158,12 +226,23 @@ export function identifyScoutAccount(
 }
 
 export enum ScoutEvent {
-  CandidateSubmitted,
+  AgentUpdated,
+  BondForfeited,
+  ClaimReleased,
+  ConfigUpdated,
+  DeliverableSubmitted,
+  HoldbackReleased,
+  OperatorRegistered,
+  OutcomeAttested,
   RoleClosed,
   RoleCreated,
   RoleToppedUp,
+  ScoutRegistered,
   SubmissionAccepted,
   SubmissionRejected,
+  TaskClaimed,
+  TaskClosed,
+  TaskCreated,
 }
 
 export function identifyScoutEvent(
@@ -174,12 +253,89 @@ export function identifyScoutEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([205, 53, 115, 164, 182, 183, 197, 94]),
+        new Uint8Array([210, 179, 162, 250, 123, 250, 210, 166]),
       ),
       0,
     )
   ) {
-    return ScoutEvent.CandidateSubmitted;
+    return ScoutEvent.AgentUpdated;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([141, 46, 102, 234, 31, 16, 129, 169]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.BondForfeited;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([245, 109, 113, 221, 103, 69, 45, 93]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.ClaimReleased;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([40, 241, 230, 122, 11, 19, 198, 194]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.ConfigUpdated;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([128, 198, 110, 44, 67, 73, 255, 99]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.DeliverableSubmitted;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([252, 242, 159, 138, 36, 150, 69, 241]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.HoldbackReleased;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([173, 220, 230, 105, 117, 97, 22, 133]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.OperatorRegistered;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([249, 112, 243, 78, 100, 115, 176, 160]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.OutcomeAttested;
   }
   if (
     containsBytes(
@@ -218,6 +374,17 @@ export function identifyScoutEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([161, 74, 164, 115, 156, 51, 14, 8]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.ScoutRegistered;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([71, 157, 109, 94, 96, 129, 57, 216]),
       ),
       0,
@@ -236,6 +403,39 @@ export function identifyScoutEvent(
   ) {
     return ScoutEvent.SubmissionRejected;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([208, 90, 243, 116, 80, 15, 228, 202]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.TaskClaimed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([158, 183, 233, 176, 74, 66, 243, 77]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.TaskClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 174, 6, 7, 71, 159, 69, 175]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutEvent.TaskCreated;
+  }
   throw new Error(
     "The provided event could not be identified as a scout event.",
   );
@@ -243,14 +443,23 @@ export function identifyScoutEvent(
 
 export enum ScoutInstruction {
   AcceptSubmission,
+  AttestOutcome,
+  ClaimTask,
   CloseRole,
+  CloseTask,
   CreateRole,
+  CreateTask,
   InitializeConfig,
+  RegisterOperator,
   RegisterScout,
   RejectSubmission,
+  ReleaseClaim,
+  ReleaseHoldback,
+  SetAgent,
   SettleExpired,
-  SubmitCandidate,
+  SubmitDeliverable,
   TopUp,
+  UpdateConfig,
 }
 
 export function identifyScoutInstruction(
@@ -272,12 +481,45 @@ export function identifyScoutInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([115, 210, 81, 230, 222, 14, 85, 209]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.AttestOutcome;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 222, 219, 238, 155, 68, 221, 136]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.ClaimTask;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([139, 108, 157, 18, 175, 150, 155, 26]),
       ),
       0,
     )
   ) {
     return ScoutInstruction.CloseRole;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([55, 234, 77, 69, 245, 208, 54, 167]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.CloseTask;
   }
   if (
     containsBytes(
@@ -294,12 +536,34 @@ export function identifyScoutInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([194, 80, 6, 180, 232, 127, 48, 171]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.CreateTask;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([208, 127, 21, 1, 194, 190, 196, 70]),
       ),
       0,
     )
   ) {
     return ScoutInstruction.InitializeConfig;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 242, 151, 125, 212, 136, 31, 89]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.RegisterOperator;
   }
   if (
     containsBytes(
@@ -327,6 +591,39 @@ export function identifyScoutInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([109, 194, 80, 47, 30, 93, 16, 253]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.ReleaseClaim;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([202, 172, 106, 197, 19, 222, 161, 215]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.ReleaseHoldback;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([154, 74, 121, 91, 137, 19, 101, 166]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.SetAgent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([187, 68, 57, 40, 121, 72, 73, 161]),
       ),
       0,
@@ -338,12 +635,12 @@ export function identifyScoutInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([243, 205, 174, 112, 158, 104, 210, 134]),
+        new Uint8Array([38, 137, 64, 44, 237, 11, 125, 101]),
       ),
       0,
     )
   ) {
-    return ScoutInstruction.SubmitCandidate;
+    return ScoutInstruction.SubmitDeliverable;
   }
   if (
     containsBytes(
@@ -355,6 +652,17 @@ export function identifyScoutInstruction(
     )
   ) {
     return ScoutInstruction.TopUp;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([29, 158, 252, 191, 10, 83, 219, 99]),
+      ),
+      0,
+    )
+  ) {
+    return ScoutInstruction.UpdateConfig;
   }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
@@ -369,14 +677,29 @@ export type ParsedScoutInstruction<
       instructionType: ScoutInstruction.AcceptSubmission;
     } & ParsedAcceptSubmissionInstruction<TProgram>)
   | ({
+      instructionType: ScoutInstruction.AttestOutcome;
+    } & ParsedAttestOutcomeInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.ClaimTask;
+    } & ParsedClaimTaskInstruction<TProgram>)
+  | ({
       instructionType: ScoutInstruction.CloseRole;
     } & ParsedCloseRoleInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.CloseTask;
+    } & ParsedCloseTaskInstruction<TProgram>)
   | ({
       instructionType: ScoutInstruction.CreateRole;
     } & ParsedCreateRoleInstruction<TProgram>)
   | ({
+      instructionType: ScoutInstruction.CreateTask;
+    } & ParsedCreateTaskInstruction<TProgram>)
+  | ({
       instructionType: ScoutInstruction.InitializeConfig;
     } & ParsedInitializeConfigInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.RegisterOperator;
+    } & ParsedRegisterOperatorInstruction<TProgram>)
   | ({
       instructionType: ScoutInstruction.RegisterScout;
     } & ParsedRegisterScoutInstruction<TProgram>)
@@ -384,14 +707,26 @@ export type ParsedScoutInstruction<
       instructionType: ScoutInstruction.RejectSubmission;
     } & ParsedRejectSubmissionInstruction<TProgram>)
   | ({
+      instructionType: ScoutInstruction.ReleaseClaim;
+    } & ParsedReleaseClaimInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.ReleaseHoldback;
+    } & ParsedReleaseHoldbackInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.SetAgent;
+    } & ParsedSetAgentInstruction<TProgram>)
+  | ({
       instructionType: ScoutInstruction.SettleExpired;
     } & ParsedSettleExpiredInstruction<TProgram>)
   | ({
-      instructionType: ScoutInstruction.SubmitCandidate;
-    } & ParsedSubmitCandidateInstruction<TProgram>)
+      instructionType: ScoutInstruction.SubmitDeliverable;
+    } & ParsedSubmitDeliverableInstruction<TProgram>)
   | ({
       instructionType: ScoutInstruction.TopUp;
-    } & ParsedTopUpInstruction<TProgram>);
+    } & ParsedTopUpInstruction<TProgram>)
+  | ({
+      instructionType: ScoutInstruction.UpdateConfig;
+    } & ParsedUpdateConfigInstruction<TProgram>);
 
 export function parseScoutInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -405,11 +740,32 @@ export function parseScoutInstruction<TProgram extends string>(
         ...parseAcceptSubmissionInstruction(instruction),
       };
     }
+    case ScoutInstruction.AttestOutcome: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.AttestOutcome,
+        ...parseAttestOutcomeInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.ClaimTask: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.ClaimTask,
+        ...parseClaimTaskInstruction(instruction),
+      };
+    }
     case ScoutInstruction.CloseRole: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: ScoutInstruction.CloseRole,
         ...parseCloseRoleInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.CloseTask: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.CloseTask,
+        ...parseCloseTaskInstruction(instruction),
       };
     }
     case ScoutInstruction.CreateRole: {
@@ -419,11 +775,25 @@ export function parseScoutInstruction<TProgram extends string>(
         ...parseCreateRoleInstruction(instruction),
       };
     }
+    case ScoutInstruction.CreateTask: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.CreateTask,
+        ...parseCreateTaskInstruction(instruction),
+      };
+    }
     case ScoutInstruction.InitializeConfig: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: ScoutInstruction.InitializeConfig,
         ...parseInitializeConfigInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.RegisterOperator: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.RegisterOperator,
+        ...parseRegisterOperatorInstruction(instruction),
       };
     }
     case ScoutInstruction.RegisterScout: {
@@ -440,6 +810,27 @@ export function parseScoutInstruction<TProgram extends string>(
         ...parseRejectSubmissionInstruction(instruction),
       };
     }
+    case ScoutInstruction.ReleaseClaim: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.ReleaseClaim,
+        ...parseReleaseClaimInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.ReleaseHoldback: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.ReleaseHoldback,
+        ...parseReleaseHoldbackInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.SetAgent: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.SetAgent,
+        ...parseSetAgentInstruction(instruction),
+      };
+    }
     case ScoutInstruction.SettleExpired: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -447,11 +838,11 @@ export function parseScoutInstruction<TProgram extends string>(
         ...parseSettleExpiredInstruction(instruction),
       };
     }
-    case ScoutInstruction.SubmitCandidate: {
+    case ScoutInstruction.SubmitDeliverable: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: ScoutInstruction.SubmitCandidate,
-        ...parseSubmitCandidateInstruction(instruction),
+        instructionType: ScoutInstruction.SubmitDeliverable,
+        ...parseSubmitDeliverableInstruction(instruction),
       };
     }
     case ScoutInstruction.TopUp: {
@@ -459,6 +850,13 @@ export function parseScoutInstruction<TProgram extends string>(
       return {
         instructionType: ScoutInstruction.TopUp,
         ...parseTopUpInstruction(instruction),
+      };
+    }
+    case ScoutInstruction.UpdateConfig: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: ScoutInstruction.UpdateConfig,
+        ...parseUpdateConfigInstruction(instruction),
       };
     }
     default:
@@ -481,12 +879,15 @@ export type ScoutPlugin = {
 export type ScoutPluginAccounts = {
   config: ReturnType<typeof getConfigCodec> &
     SelfFetchFunctions<ConfigArgs, Config>;
+  operator: ReturnType<typeof getOperatorCodec> &
+    SelfFetchFunctions<OperatorArgs, Operator>;
   roleVault: ReturnType<typeof getRoleVaultCodec> &
     SelfFetchFunctions<RoleVaultArgs, RoleVault>;
   scoutProfile: ReturnType<typeof getScoutProfileCodec> &
     SelfFetchFunctions<ScoutProfileArgs, ScoutProfile>;
   submission: ReturnType<typeof getSubmissionCodec> &
     SelfFetchFunctions<SubmissionArgs, Submission>;
+  task: ReturnType<typeof getTaskCodec> & SelfFetchFunctions<TaskArgs, Task>;
 };
 
 export type ScoutPluginInstructions = {
@@ -494,16 +895,35 @@ export type ScoutPluginInstructions = {
     input: MakeOptional<AcceptSubmissionAsyncInput, "payer">,
   ) => ReturnType<typeof getAcceptSubmissionInstructionAsync> &
     SelfPlanAndSendFunctions;
+  attestOutcome: (
+    input: MakeOptional<AttestOutcomeInput, "payer">,
+  ) => ReturnType<typeof getAttestOutcomeInstruction> &
+    SelfPlanAndSendFunctions;
+  claimTask: (
+    input: MakeOptional<ClaimTaskAsyncInput, "payer">,
+  ) => ReturnType<typeof getClaimTaskInstructionAsync> &
+    SelfPlanAndSendFunctions;
   closeRole: (
     input: MakeOptional<CloseRoleInput, "payer">,
   ) => ReturnType<typeof getCloseRoleInstruction> & SelfPlanAndSendFunctions;
+  closeTask: (
+    input: MakeOptional<CloseTaskInput, "payer">,
+  ) => ReturnType<typeof getCloseTaskInstruction> & SelfPlanAndSendFunctions;
   createRole: (
     input: MakeOptional<CreateRoleAsyncInput, "payer">,
   ) => ReturnType<typeof getCreateRoleInstructionAsync> &
     SelfPlanAndSendFunctions;
+  createTask: (
+    input: MakeOptional<CreateTaskAsyncInput, "payer">,
+  ) => ReturnType<typeof getCreateTaskInstructionAsync> &
+    SelfPlanAndSendFunctions;
   initializeConfig: (
     input: MakeOptional<InitializeConfigAsyncInput, "payer">,
   ) => ReturnType<typeof getInitializeConfigInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  registerOperator: (
+    input: MakeOptional<RegisterOperatorAsyncInput, "payer">,
+  ) => ReturnType<typeof getRegisterOperatorInstructionAsync> &
     SelfPlanAndSendFunctions;
   registerScout: (
     input: MakeOptional<RegisterScoutAsyncInput, "payer">,
@@ -513,23 +933,39 @@ export type ScoutPluginInstructions = {
     input: MakeOptional<RejectSubmissionInput, "payer">,
   ) => ReturnType<typeof getRejectSubmissionInstruction> &
     SelfPlanAndSendFunctions;
+  releaseClaim: (
+    input: MakeOptional<ReleaseClaimInput, "payer">,
+  ) => ReturnType<typeof getReleaseClaimInstruction> & SelfPlanAndSendFunctions;
+  releaseHoldback: (
+    input: MakeOptional<ReleaseHoldbackInput, "payer">,
+  ) => ReturnType<typeof getReleaseHoldbackInstruction> &
+    SelfPlanAndSendFunctions;
+  setAgent: (
+    input: MakeOptional<SetAgentInput, "payer">,
+  ) => ReturnType<typeof getSetAgentInstruction> & SelfPlanAndSendFunctions;
   settleExpired: (
     input: MakeOptional<SettleExpiredAsyncInput, "payer">,
   ) => ReturnType<typeof getSettleExpiredInstructionAsync> &
     SelfPlanAndSendFunctions;
-  submitCandidate: (
-    input: MakeOptional<SubmitCandidateAsyncInput, "payer">,
-  ) => ReturnType<typeof getSubmitCandidateInstructionAsync> &
+  submitDeliverable: (
+    input: MakeOptional<SubmitDeliverableAsyncInput, "payer">,
+  ) => ReturnType<typeof getSubmitDeliverableInstructionAsync> &
     SelfPlanAndSendFunctions;
   topUp: (
     input: MakeOptional<TopUpInput, "payer">,
   ) => ReturnType<typeof getTopUpInstruction> & SelfPlanAndSendFunctions;
+  updateConfig: (
+    input: MakeOptional<UpdateConfigAsyncInput, "payer">,
+  ) => ReturnType<typeof getUpdateConfigInstructionAsync> &
+    SelfPlanAndSendFunctions;
 };
 
 export type ScoutPluginPdas = {
   config: typeof findConfigPda;
-  roleVault: typeof findRoleVaultPda;
   scoutProfile: typeof findScoutProfilePda;
+  roleVault: typeof findRoleVaultPda;
+  task: typeof findTaskPda;
+  operator: typeof findOperatorPda;
   submission: typeof findSubmissionPda;
 };
 
@@ -548,15 +984,33 @@ export function scoutProgram() {
       scout: <ScoutPlugin>{
         accounts: {
           config: addSelfFetchFunctions(client, getConfigCodec()),
+          operator: addSelfFetchFunctions(client, getOperatorCodec()),
           roleVault: addSelfFetchFunctions(client, getRoleVaultCodec()),
           scoutProfile: addSelfFetchFunctions(client, getScoutProfileCodec()),
           submission: addSelfFetchFunctions(client, getSubmissionCodec()),
+          task: addSelfFetchFunctions(client, getTaskCodec()),
         },
         instructions: {
           acceptSubmission: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getAcceptSubmissionInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
+          attestOutcome: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getAttestOutcomeInstruction({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
+          claimTask: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getClaimTaskInstructionAsync({
                 ...input,
                 payer: input.payer ?? client.payer,
               }),
@@ -569,6 +1023,14 @@ export function scoutProgram() {
                 payer: input.payer ?? client.payer,
               }),
             ),
+          closeTask: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCloseTaskInstruction({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
           createRole: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -577,10 +1039,26 @@ export function scoutProgram() {
                 payer: input.payer ?? client.payer,
               }),
             ),
+          createTask: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCreateTaskInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
           initializeConfig: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getInitializeConfigInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
+          registerOperator: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRegisterOperatorInstructionAsync({
                 ...input,
                 payer: input.payer ?? client.payer,
               }),
@@ -601,6 +1079,30 @@ export function scoutProgram() {
                 payer: input.payer ?? client.payer,
               }),
             ),
+          releaseClaim: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getReleaseClaimInstruction({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
+          releaseHoldback: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getReleaseHoldbackInstruction({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
+          setAgent: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetAgentInstruction({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
           settleExpired: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -609,10 +1111,10 @@ export function scoutProgram() {
                 payer: input.payer ?? client.payer,
               }),
             ),
-          submitCandidate: (input) =>
+          submitDeliverable: (input) =>
             addSelfPlanAndSendFunctions(
               client,
-              getSubmitCandidateInstructionAsync({
+              getSubmitDeliverableInstructionAsync({
                 ...input,
                 payer: input.payer ?? client.payer,
               }),
@@ -625,11 +1127,21 @@ export function scoutProgram() {
                 payer: input.payer ?? client.payer,
               }),
             ),
+          updateConfig: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getUpdateConfigInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
         },
         pdas: {
           config: findConfigPda,
-          roleVault: findRoleVaultPda,
           scoutProfile: findScoutProfilePda,
+          roleVault: findRoleVaultPda,
+          task: findTaskPda,
+          operator: findOperatorPda,
           submission: findSubmissionPda,
         },
         identifyAccount: identifyScoutAccount,

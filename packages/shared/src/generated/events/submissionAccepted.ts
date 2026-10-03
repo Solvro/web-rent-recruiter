@@ -9,26 +9,40 @@
 import {
   combineCodec,
   containsBytes,
+  fixDecoderSize,
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
   getBooleanDecoder,
   getBooleanEncoder,
+  getBytesDecoder,
   getBytesEncoder,
   getConstantDecoder,
   getConstantEncoder,
   getHiddenPrefixDecoder,
   getHiddenPrefixEncoder,
+  getI64Decoder,
+  getI64Encoder,
+  getOptionDecoder,
+  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
   getU64Encoder,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
+  type Option,
+  type OptionOrNullable,
   type ReadonlyUint8Array,
 } from "@solana/kit";
+import {
+  getTaskTypeDecoder,
+  getTaskTypeEncoder,
+  type TaskType,
+  type TaskTypeArgs,
+} from "../types";
 
 export const SUBMISSION_ACCEPTED_EVENT_DISCRIMINATOR: ReadonlyUint8Array =
   new Uint8Array([71, 157, 109, 94, 96, 129, 57, 216]);
@@ -41,54 +55,94 @@ export function getSubmissionAcceptedEventDiscriminatorBytes(): ReadonlyUint8Arr
 
 export type SubmissionAcceptedEvent = {
   roleVault: Address;
+  task: Address;
   submission: Address;
   scout: Address;
+  taskType: TaskType;
+  /** Paid to the scout now. */
   payout: bigint;
   fee: bigint;
+  operator: Option<Address>;
+  operatorFee: bigint;
+  /** Parked in the vault until `attest_outcome` or `release_holdback`. */
+  heldBack: bigint;
+  holdbackDeadline: bigint;
+  bondRefunded: bigint;
   autoSettled: boolean;
+  acceptedBy: Address;
+  reviewHash: ReadonlyUint8Array;
 };
 
 export type SubmissionAcceptedEventArgs = {
   roleVault: Address;
+  task: Address;
   submission: Address;
   scout: Address;
+  taskType: TaskTypeArgs;
+  /** Paid to the scout now. */
   payout: number | bigint;
   fee: number | bigint;
+  operator: OptionOrNullable<Address>;
+  operatorFee: number | bigint;
+  /** Parked in the vault until `attest_outcome` or `release_holdback`. */
+  heldBack: number | bigint;
+  holdbackDeadline: number | bigint;
+  bondRefunded: number | bigint;
   autoSettled: boolean;
+  acceptedBy: Address;
+  reviewHash: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link SubmissionAcceptedEventArgs} event data. */
-export function getSubmissionAcceptedEventEncoder(): FixedSizeEncoder<SubmissionAcceptedEventArgs> {
+export function getSubmissionAcceptedEventEncoder(): Encoder<SubmissionAcceptedEventArgs> {
   return getHiddenPrefixEncoder(
     getStructEncoder([
       ["roleVault", getAddressEncoder()],
+      ["task", getAddressEncoder()],
       ["submission", getAddressEncoder()],
       ["scout", getAddressEncoder()],
+      ["taskType", getTaskTypeEncoder()],
       ["payout", getU64Encoder()],
       ["fee", getU64Encoder()],
+      ["operator", getOptionEncoder(getAddressEncoder())],
+      ["operatorFee", getU64Encoder()],
+      ["heldBack", getU64Encoder()],
+      ["holdbackDeadline", getI64Encoder()],
+      ["bondRefunded", getU64Encoder()],
       ["autoSettled", getBooleanEncoder()],
+      ["acceptedBy", getAddressEncoder()],
+      ["reviewHash", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     [getConstantEncoder(SUBMISSION_ACCEPTED_EVENT_DISCRIMINATOR)],
   );
 }
 
 /** Gets the decoder for {@link SubmissionAcceptedEvent} event data. */
-export function getSubmissionAcceptedEventDecoder(): FixedSizeDecoder<SubmissionAcceptedEvent> {
+export function getSubmissionAcceptedEventDecoder(): Decoder<SubmissionAcceptedEvent> {
   return getHiddenPrefixDecoder(
     getStructDecoder([
       ["roleVault", getAddressDecoder()],
+      ["task", getAddressDecoder()],
       ["submission", getAddressDecoder()],
       ["scout", getAddressDecoder()],
+      ["taskType", getTaskTypeDecoder()],
       ["payout", getU64Decoder()],
       ["fee", getU64Decoder()],
+      ["operator", getOptionDecoder(getAddressDecoder())],
+      ["operatorFee", getU64Decoder()],
+      ["heldBack", getU64Decoder()],
+      ["holdbackDeadline", getI64Decoder()],
+      ["bondRefunded", getU64Decoder()],
       ["autoSettled", getBooleanDecoder()],
+      ["acceptedBy", getAddressDecoder()],
+      ["reviewHash", fixDecoderSize(getBytesDecoder(), 32)],
     ]),
     [getConstantDecoder(SUBMISSION_ACCEPTED_EVENT_DISCRIMINATOR)],
   );
 }
 
 /** Gets the codec for {@link SubmissionAcceptedEvent} event data. */
-export function getSubmissionAcceptedEventCodec(): FixedSizeCodec<
+export function getSubmissionAcceptedEventCodec(): Codec<
   SubmissionAcceptedEventArgs,
   SubmissionAcceptedEvent
 > {

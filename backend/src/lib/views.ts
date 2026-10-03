@@ -2,10 +2,12 @@ import {
 	BPS_DENOMINATOR,
 	type RoleDetail,
 	type RoleSummary,
+	type SubmissionPayout,
 	type SubmissionView,
 	type TaskView,
 } from "@scout/shared";
 import type { schema } from "../db/index.ts";
+import { splitBounty } from "./money.ts";
 
 type RoleRow = typeof schema.roles.$inferSelect;
 type SubmissionRow = typeof schema.submissions.$inferSelect;
@@ -13,9 +15,17 @@ type AccountRow = typeof schema.accounts.$inferSelect;
 
 export const feeOf = (bounty: bigint, feeBps: number) => (bounty * BigInt(feeBps)) / BigInt(BPS_DENOMINATOR);
 
+/**
+ * "Left" = what the agent can still commit: vault − held back − (pending deliverables + open gig slots).
+ * One definition for the company UI and the agent's snapshot.
+ */
+export function availableBudget(role: Pick<RoleRow, "remaining" | "heldBack" | "committed">) {
+	const left = role.remaining - role.heldBack - role.committed;
+	return left > 0n ? left : 0n;
+}
+
 export function roleSummary(role: RoleRow, companyName: string): RoleSummary {
-	const reserved = role.bounty * BigInt(role.pendingCount);
-	const available = role.remaining > reserved ? role.remaining - reserved : 0n;
+	const available = availableBudget(role);
 	return {
 		id: role.id,
 		onchainRoleId: String(role.onchainRoleId),
@@ -31,11 +41,15 @@ export function roleSummary(role: RoleRow, companyName: string): RoleSummary {
 		acceptedCount: role.acceptedCount,
 		pendingCount: role.pendingCount,
 		reviewWindowSeconds: role.reviewWindowSeconds,
+		holdbackBps: role.holdbackBps,
+		holdbackWindowSeconds: role.holdbackWindowSeconds,
 		budget: {
-			deposited: role.deposited.toString(),
+			deposited: (role.deposited - role.bondsForfeited).toString(),
+			bondsForfeited: role.bondsForfeited.toString(),
 			paid: role.paid.toString(),
 			remaining: role.remaining.toString(),
 			available: available.toString(),
+			heldBack: role.heldBack.toString(),
 		},
 		createdAt: role.createdAt.toISOString(),
 	};
@@ -45,13 +59,19 @@ export function submissionView(
 	sub: SubmissionRow,
 	scout: Pick<AccountRow, "wallet" | "displayName" | "avatarUrl">,
 	review: SubmissionView["review"],
-	roleTitle: string,
+	role: Pick<RoleRow, "title" | "bounty" | "feeBps" | "holdbackBps">,
 ): SubmissionView {
 	return {
 		id: sub.id,
 		roleId: sub.roleId,
-		roleTitle,
+		roleTitle: role.title,
 		candidateName: sub.candidateName,
+		candidate: {
+			avatarUrl: sub.candidateAvatarUrl,
+			currentTitle: sub.candidateTitle,
+			currentCompany: sub.candidateCompany,
+			location: sub.candidateLocation,
+		},
 		profileUrl: sub.profileUrl,
 		notes: sub.notes,
 		candidateHash: sub.candidateHash,
@@ -63,6 +83,27 @@ export function submissionView(
 		reviewDeadline: sub.reviewDeadline.toISOString(),
 		settlementTx: sub.settlementTx,
 		review,
+		payout: submissionPayout(sub, role),
+	};
+}
+
+/** Actual split once accepted (from SubmissionAccepted), projected from the role's terms while pending. */
+export function submissionPayout(
+	sub: SubmissionRow,
+	role: Pick<RoleRow, "bounty" | "feeBps" | "holdbackBps">,
+): SubmissionPayout | null {
+	if (sub.status === "REJECTED") return null;
+	const projected = splitBounty(role.bounty, role.feeBps, sub.operatorFeeBps, role.holdbackBps);
+	const now = sub.payoutNow ?? projected.now;
+	const later = sub.payoutLater ?? projected.later;
+	return {
+		now: now.toString(),
+		later: later.toString(),
+		operatorFee: (sub.operatorFee ?? projected.operatorFee).toString(),
+		platformFee: (sub.platformFee ?? projected.platformFee).toString(),
+		laterReleasesAt: sub.holdbackDeadline?.toISOString() ?? null,
+		outcome: sub.outcome,
+		laterStatus: sub.status === "ACCEPTED" ? sub.laterStatus : "NONE",
 	};
 }
 

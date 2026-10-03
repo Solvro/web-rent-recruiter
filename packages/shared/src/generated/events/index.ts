@@ -6,9 +6,20 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./candidateSubmitted";
+export * from "./agentUpdated";
+export * from "./bondForfeited";
+export * from "./claimReleased";
+export * from "./configUpdated";
+export * from "./deliverableSubmitted";
+export * from "./holdbackReleased";
+export * from "./operatorRegistered";
+export * from "./outcomeAttested";
 export * from "./roleClosed";
 export * from "./roleCreated";
 export * from "./roleToppedUp";
+export * from "./scoutRegistered";
 export * from "./submissionAccepted";
 export * from "./submissionRejected";
+export * from "./taskClaimed";
+export * from "./taskClosed";
+export * from "./taskCreated";

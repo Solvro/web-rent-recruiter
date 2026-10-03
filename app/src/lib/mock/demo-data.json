@@ -1,0 +1,381 @@
+{
+	"meta": {
+		"purpose": "Fictional demo data for Scout: companies, people and URLs are made up.",
+		"generatedAt": "2026-10-03",
+		"generatedFrom": "backend/src/agent/fixtures/demo-manifest.json (Stream C)"
+	},
+	"recruiters": [
+		{
+			"key": "ola",
+			"displayName": "Ola Wiśniewska",
+			"country": "Poland",
+			"specialty": "Freelance tech recruiter, backend and platform engineers in Warsaw and Kraków"
+		},
+		{
+			"key": "lucia",
+			"displayName": "Lucía Fernández",
+			"country": "Spain",
+			"specialty": "Freelance sourcer, TypeScript and AI-native startups across the EU"
+		},
+		{
+			"key": "andreea",
+			"displayName": "Andreea Popescu",
+			"country": "Romania",
+			"specialty": "Boutique agency owner, Java, enterprise software and DACH sales hires"
+		}
+	],
+	"roles": [
+		{
+			"key": "senior-backend-ts",
+			"demo": true,
+			"title": "Senior Rust Engineer (Solana programs)",
+			"company": "Seed-stage Solana DeFi startup · Warsaw",
+			"locationLabel": "Warsaw · hybrid, 2 days in office",
+			"salaryLabel": "30,000–38,000 PLN / month (B2B)",
+			"jobDescription": "Senior Rust Engineer (Solana programs)\n\nWe're a seed-stage DeFi startup in Warsaw building an on-chain credit marketplace on Solana: lenders and borrowers matched by programs, with no bank in the middle. The team is five people, led by our founder Hanna Lewicka, and we're hiring our second protocol engineer.\n\nYou'll design, ship and maintain our Anchor programs (lending pools, liquidations, fee splits), write the tests and fuzzing that keep them safe, and help build the TypeScript SDK our app uses.\n\nWhat we need:\n- 4+ years of production Rust\n- Solana programs you shipped to mainnet (Anchor or native)\n- Experience with DeFi protocols: a DEX, lending or AMM\n- A security mindset: property tests, fuzzing, working with auditors\n- Fluent English (C1); our investors and auditors are international\n\nNice to have: TypeScript SDKs for programs, open-source Solana work, early-stage experience.\n\nHybrid: 2 days a week in our Warsaw office. 30,000–38,000 PLN/month on B2B, plus tokens.",
+			"criteria": {
+				"mustHave": [
+					{
+						"id": "rust-production",
+						"label": "4+ years of production Rust",
+						"weight": 5
+					},
+					{
+						"id": "solana-programs",
+						"label": "Shipped Solana programs to mainnet (Anchor or native)",
+						"weight": 5
+					},
+					{
+						"id": "defi-protocols",
+						"label": "DeFi protocol experience (DEX, lending or AMM)",
+						"weight": 4
+					},
+					{
+						"id": "program-security",
+						"label": "Program security: property tests, fuzzing, audits",
+						"weight": 3
+					},
+					{
+						"id": "fluent-english",
+						"label": "Fluent English (C1)",
+						"weight": 3
+					}
+				],
+				"niceToHave": [
+					{
+						"id": "typescript-sdk",
+						"label": "TypeScript SDKs or clients for programs",
+						"weight": 2
+					},
+					{
+						"id": "solana-open-source",
+						"label": "Open-source Solana contributions",
+						"weight": 2
+					},
+					{
+						"id": "early-stage",
+						"label": "Early-stage startup experience",
+						"weight": 1
+					}
+				],
+				"seniority": "SENIOR",
+				"location": {
+					"mode": "HYBRID",
+					"places": ["Warsaw"]
+				},
+				"salaryRange": {
+					"min": 30000,
+					"max": 38000,
+					"currency": "PLN",
+					"period": "MONTH"
+				},
+				"languages": ["English (C1)"],
+				"dealBreakers": [
+					{
+						"id": "only-remote",
+						"label": "Only open to fully remote work",
+						"weight": 4
+					}
+				]
+			},
+			"bountyUsd": 5,
+			"maxCandidates": 20,
+			"payoutToRecruiterUsd": 4.5
+		},
+		{
+			"key": "forward-deployed-engineer",
+			"title": "Forward Deployed Engineer",
+			"company": "Pre-seed robotics and physical-security software startup, Zürich",
+			"locationLabel": "Zürich · on-site, ~50% travel in Europe",
+			"salaryLabel": "CHF 120,000–150,000 / year",
+			"jobDescription": "An early-stage startup builds the software layer that orchestrates cameras, sensors and autonomous robots for industrial sites and critical infrastructure. As a Forward Deployed Engineer you own customer deployments end to end: installing and debugging edge hardware on site, integrating video management systems and sensors, and turning technical pilots into production contracts. You sit between the core engineering team and the customer, so you need both deep debugging skills across hardware, network and models, and the calm to manage stakeholders when a pilot goes sideways. The role is based in Zürich with roughly half of the time spent at customer sites across Europe. German, defense or critical-infrastructure experience and a zero-to-one startup background are a plus.",
+			"criteria": {
+				"mustHave": [
+					{
+						"id": "edge-hardware",
+						"label": "Deployed on-prem or edge hardware (e.g. Jetson-class GPUs)",
+						"weight": 5
+					},
+					{
+						"id": "hw-sw-integration",
+						"label": "Integrated cameras, sensors or robotics with software",
+						"weight": 4
+					},
+					{
+						"id": "customer-facing-deployments",
+						"label": "Customer-facing deployment role (FDE, field or solutions engineer)",
+						"weight": 4
+					},
+					{
+						"id": "eu-nato-citizenship",
+						"label": "EU / NATO-country citizen (defense-site access)",
+						"weight": 3
+					}
+				],
+				"niceToHave": [
+					{
+						"id": "german",
+						"label": "Speaks German",
+						"weight": 2
+					},
+					{
+						"id": "defense-infra",
+						"label": "Defense, government or critical-infrastructure clients",
+						"weight": 2
+					},
+					{
+						"id": "zero-to-one",
+						"label": "Early-stage startup experience",
+						"weight": 1
+					}
+				],
+				"seniority": "SENIOR",
+				"location": {
+					"mode": "ONSITE",
+					"places": ["Zürich"]
+				},
+				"salaryRange": {
+					"min": 120000,
+					"max": 150000,
+					"currency": "CHF",
+					"period": "YEAR"
+				},
+				"languages": ["English"],
+				"dealBreakers": [
+					{
+						"id": "internal-only",
+						"label": "Only internal-facing engineering, never on a customer site",
+						"weight": 5
+					},
+					{
+						"id": "no-travel",
+						"label": "Not willing to travel ~50% of the time",
+						"weight": 4
+					}
+				]
+			},
+			"bountyUsd": 20,
+			"maxCandidates": 10,
+			"payoutToRecruiterUsd": 18
+		},
+		{
+			"key": "account-executive-dach",
+			"title": "Account Executive, DACH",
+			"company": "Growth-stage B2B SaaS for maintenance and facility management",
+			"locationLabel": "Kraków or Warsaw · hybrid, 2–3 days in office",
+			"salaryLabel": "15,000–22,000 PLN / month base + commission",
+			"jobDescription": "A fast-growing B2B SaaS company that recently added a mobile-first maintenance product is hiring a German-speaking Account Executive to own the DACH market for it. You run the full cycle: outbound prospecting, discovery-led demos, negotiation and closing, with your own quota, pipeline and forecast. Buyers are maintenance managers and operations leaders at manufacturing and facility-management companies. The team sits in Kraków and Warsaw and works hybrid. We want someone who treats sales as a process, has hit a quota in B2B SaaS and is comfortable building pipeline from scratch rather than waiting for inbound. Experience selling maintenance, facility or industrial software is a strong plus.",
+			"criteria": {
+				"mustHave": [
+					{
+						"id": "fluent-german",
+						"label": "Fluent German",
+						"weight": 5
+					},
+					{
+						"id": "b2b-saas-sales",
+						"label": "B2B SaaS closing experience",
+						"weight": 4
+					},
+					{
+						"id": "own-quota",
+						"label": "Owned quota, pipeline and forecast end to end",
+						"weight": 4
+					},
+					{
+						"id": "krakow-warsaw-hybrid",
+						"label": "Based in Kraków or Warsaw, hybrid",
+						"weight": 3
+					}
+				],
+				"niceToHave": [
+					{
+						"id": "maintenance-software",
+						"label": "Sold maintenance, facility or industrial software",
+						"weight": 2
+					},
+					{
+						"id": "industrial-buyers",
+						"label": "Sold to manufacturing or operations buyers",
+						"weight": 2
+					}
+				],
+				"seniority": "MID",
+				"location": {
+					"mode": "HYBRID",
+					"places": ["Kraków", "Warsaw"]
+				},
+				"salaryRange": {
+					"min": 15000,
+					"max": 22000,
+					"currency": "PLN",
+					"period": "MONTH"
+				},
+				"languages": ["English", "German"],
+				"dealBreakers": [
+					{
+						"id": "no-german",
+						"label": "No professional German",
+						"weight": 5
+					},
+					{
+						"id": "inbound-only",
+						"label": "Inbound or account management only, never built outbound pipeline",
+						"weight": 4
+					}
+				]
+			},
+			"bountyUsd": 15,
+			"maxCandidates": 12,
+			"payoutToRecruiterUsd": 13.5
+		},
+		{
+			"key": "java-backend-insurance",
+			"title": "Java Backend Engineer (Insurance platform)",
+			"company": "Enterprise insurtech platform vendor, Poland",
+			"locationLabel": "Kraków, Gdańsk, Łódź or Poznań · hybrid, 3 days in office",
+			"salaryLabel": "20,000–28,000 PLN / month (B2B or employment)",
+			"jobDescription": "An established vendor of policy and claims platforms for insurers is growing the team behind its financial and claims modules, which process millions of operations a month. You will design and build backend services and REST APIs in Java and Spring Boot, working with both document and relational databases, in a team that uses AI agents for specs, documentation and tests. The role starts backend-heavy and gradually grows into full-stack work with Angular, so openness to the frontend matters. Hybrid in one of four Polish offices. Docker and Elastic experience, insurance or claims domain knowledge and familiarity with DDD or event-driven design are welcome.",
+			"criteria": {
+				"mustHave": [
+					{
+						"id": "java-spring-5y",
+						"label": "5+ years Java and Spring Boot",
+						"weight": 5
+					},
+					{
+						"id": "rest-api-design",
+						"label": "Designed and built REST APIs",
+						"weight": 4
+					},
+					{
+						"id": "doc-and-relational-db",
+						"label": "MongoDB plus PostgreSQL or Oracle",
+						"weight": 3
+					},
+					{
+						"id": "english-b2",
+						"label": "English B2 or better",
+						"weight": 3
+					}
+				],
+				"niceToHave": [
+					{
+						"id": "insurance-domain",
+						"label": "Insurance, claims or finance domain",
+						"weight": 2
+					},
+					{
+						"id": "ddd-eda",
+						"label": "DDD or event-driven architecture",
+						"weight": 2
+					},
+					{
+						"id": "docker-elastic",
+						"label": "Docker and Elastic stack",
+						"weight": 1
+					}
+				],
+				"seniority": "MID",
+				"location": {
+					"mode": "HYBRID",
+					"places": ["Kraków", "Gdańsk", "Łódź", "Poznań"]
+				},
+				"salaryRange": {
+					"min": 20000,
+					"max": 28000,
+					"currency": "PLN",
+					"period": "MONTH"
+				},
+				"languages": ["English"],
+				"dealBreakers": [
+					{
+						"id": "no-hybrid",
+						"label": "Not open to 3 office days a week",
+						"weight": 5
+					},
+					{
+						"id": "refuses-frontend",
+						"label": "Refuses to pick up Angular / frontend work",
+						"weight": 3
+					}
+				]
+			},
+			"bountyUsd": 15,
+			"maxCandidates": 12,
+			"payoutToRecruiterUsd": 13.5
+		}
+	],
+	"demoSubmissions": [
+		{
+			"roleKey": "senior-backend-ts",
+			"recruiterKey": "ola",
+			"intent": "strong (~95, ADVANCE): accept live",
+			"candidate": {
+				"name": "Karolina Mazurek",
+				"profileUrl": "https://linkedin.com/in/karolina-mazurek-backend-demo",
+				"notes": "6 years of production Rust, the last 3 writing Anchor programs at Kelp Labs, a Solana DEX and lending protocol. She shipped their lending pool and liquidation programs to mainnet and maintains the swap program. Wrote the Trident fuzz tests and worked through two external audits. Also maintains the TypeScript SDK. Fluent English, lives in Warsaw, fine with 2 office days, open to 32-36k PLN B2B."
+			},
+			"measuredScore": {
+				"jev": "95 ADVANCE"
+			}
+		},
+		{
+			"roleKey": "senior-backend-ts",
+			"recruiterKey": "andreea",
+			"intent": "medium (~51, MAYBE): asks the company",
+			"candidate": {
+				"name": "Tomasz Brzeziński",
+				"profileUrl": "https://linkedin.com/in/tomasz-brzezinski-demo",
+				"notes": "5 years of production Rust building low-latency order routing and market-data infrastructure at a high-frequency trading firm. Uses property-based tests (proptest) and cargo-fuzz on the order router, and owns its incident reviews. No on-chain experience yet: he has read the Anchor book but hasn't shipped a Solana program. Good English, lives in Warsaw and is fine with 2 office days."
+			},
+			"measuredScore": {
+				"jev": "51 MAYBE"
+			}
+		},
+		{
+			"roleKey": "senior-backend-ts",
+			"recruiterKey": "lucia",
+			"intent": "weak (~26, PASS): fully-remote deal breaker",
+			"candidate": {
+				"name": "Piotr Lewandowski",
+				"profileUrl": "https://linkedin.com/in/piotr-lewandowski-demo",
+				"notes": "4 years of React and TypeScript, the last 2 building dApp frontends: wallet connection and transaction flows on Solana with web3.js. No Rust and has never written a Solana program. Good English. He only wants fully remote work and won't come to an office."
+			},
+			"measuredScore": {
+				"jev": "26 PASS"
+			}
+		},
+		{
+			"roleKey": "senior-backend-ts",
+			"recruiterKey": "lucia",
+			"intent": "duplicate of the strong candidate: blocked",
+			"candidate": {
+				"name": "Karolina Mazurek",
+				"profileUrl": "https://www.linkedin.com/in/karolina-mazurek-backend-demo/",
+				"notes": "Solana protocol engineer in Warsaw, strong Rust and Anchor. Open to new roles."
+			},
+			"measuredScore": null
+		}
+	]
+}

@@ -45,5 +45,13 @@ async function run(submissionId: string): Promise<AgentReview> {
 
 /** Fire-and-forget variant used by the indexer. */
 export function reviewInBackground(submissionId: string) {
-	ensureReview(submissionId).catch((err) => console.error(`[review] ${submissionId}:`, err));
+	(async () => {
+		const [row] = await db
+			.select({ gigId: schema.submissions.gigId })
+			.from(schema.submissions)
+			.where(eq(schema.submissions.id, submissionId));
+		// Gig deliverables are reviewed by the role's agent (agent-runner), not here.
+		if (!row || row.gigId) return;
+		await ensureReview(submissionId);
+	})().catch((err) => console.error(`[review] ${submissionId}:`, err));
 }

@@ -2,38 +2,53 @@ import type { SubmitTxResponse, UnsignedTx } from "@scout/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { ExplorerLink } from "@/components/explorer-link";
-import { ApiError, api, errorMessage } from "./api";
+import { Receipt } from "@/components/receipt";
+import { errorData, errorMessage } from "./errors";
+import { useTRPCClient } from "./trpc";
 import { useWallet } from "./wallet";
 
 /**
- * Sign a backend-built transaction with the user's wallet, hand it to the relayer
- * (which pays the fee), and confirm with a toast that links to the explorer.
+ * Confirm an action the backend prepared. The user's account approves it silently,
+ * our service covers the fees, and a quiet "Receipt" link is the only trace.
  */
 export function useTransact() {
 	const wallet = useWallet();
+	const client = useTRPCClient();
 	const queryClient = useQueryClient();
 	const [pending, setPending] = useState(false);
 
 	const transact = useCallback(
-		async (unsigned: UnsignedTx, success: string): Promise<SubmitTxResponse | null> => {
+		async (
+			unsigned: UnsignedTx,
+			labels: { pending: string; success: string; receipt?: boolean },
+		): Promise<SubmitTxResponse | null> => {
 			setPending(true);
-			const id = toast.loading(unsigned.summary, { description: "Confirming…" });
+			const id = toast.loading(labels.pending);
 			try {
 				const signedTx = await wallet.signTransaction(unsigned.transaction);
-				const res = await api.submitTx({ signedTx });
-				toast.success(success, { id, description: <ExplorerLink signature={res.signature} /> });
+				// Roles reviewed by the company or its own agent: they co-sign later, nothing lands yet.
+				if (unsigned.cosigner) {
+					await client.tx.submitForCosign.mutate({ signedTx });
+					toast.success("Sent. Waiting for the company to approve.", { id });
+					await queryClient.invalidateQueries();
+					return { signature: "", explorerUrl: "" };
+				}
+				const res = await client.tx.submit.mutate({ signedTx });
+				toast.success(labels.success, {
+					id,
+					description: labels.receipt ? <Receipt signature={res.signature} /> : undefined,
+				});
 				await queryClient.invalidateQueries();
 				return res;
 			} catch (e) {
-				console.error("[transact]", unsigned.summary, e instanceof ApiError ? e.data : e);
+				console.error("[transact]", unsigned.summary, errorData(e) ?? e);
 				toast.error(errorMessage(e), { id, description: undefined });
 				return null;
 			} finally {
 				setPending(false);
 			}
 		},
-		[wallet, queryClient],
+		[wallet, client, queryClient],
 	);
 
 	return { transact, pending };

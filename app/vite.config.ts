@@ -9,6 +9,6 @@ export default defineConfig({
 	server: {
 		port: 5173,
 		// Backend dev server (backend/.env PORT). Override with API_PROXY_TARGET.
-		proxy: { "/api": { target: process.env.API_PROXY_TARGET ?? "http://localhost:8788", changeOrigin: true } },
+		proxy: { "/trpc": { target: process.env.API_PROXY_TARGET ?? "http://localhost:8788", changeOrigin: true } },
 	},
 });

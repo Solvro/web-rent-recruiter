@@ -10,22 +10,33 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CTokenRouteImport } from './routes/c.$token'
 import { Route as CompanyIndexRouteImport } from './routes/company/index'
+import { Route as RSlugRouteImport } from './routes/r.$slug'
 import { Route as ScoutIndexRouteImport } from './routes/scout/index'
 import { Route as ScoutSubmissionsRouteImport } from './routes/scout/submissions'
-import { Route as ScoutsPubkeyRouteImport } from './routes/scouts.$pubkey'
 import { Route as CompanyRolesRoleIdRouteImport } from './routes/company/roles.$roleId'
 import { Route as CompanyRolesNewRouteImport } from './routes/company/roles.new'
-import { Route as ScoutTasksRoleIdRouteImport } from './routes/scout/tasks.$roleId'
+import { Route as ScoutGigsGigIdRouteImport } from './routes/scout/gigs.$gigId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CTokenRoute = CTokenRouteImport.update({
+  id: '/c/$token',
+  path: '/c/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CompanyIndexRoute = CompanyIndexRouteImport.update({
   id: '/company/',
   path: '/company/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RSlugRoute = RSlugRouteImport.update({
+  id: '/r/$slug',
+  path: '/r/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScoutIndexRoute = ScoutIndexRouteImport.update({
@@ -38,11 +49,6 @@ const ScoutSubmissionsRoute = ScoutSubmissionsRouteImport.update({
   path: '/scout/submissions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScoutsPubkeyRoute = ScoutsPubkeyRouteImport.update({
-  id: '/scouts/$pubkey',
-  path: '/scouts/$pubkey',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CompanyRolesRoleIdRoute = CompanyRolesRoleIdRouteImport.update({
   id: '/company/roles/$roleId',
   path: '/company/roles/$roleId',
@@ -53,85 +59,92 @@ const CompanyRolesNewRoute = CompanyRolesNewRouteImport.update({
   path: '/company/roles/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScoutTasksRoleIdRoute = ScoutTasksRoleIdRouteImport.update({
-  id: '/scout/tasks/$roleId',
-  path: '/scout/tasks/$roleId',
+const ScoutGigsGigIdRoute = ScoutGigsGigIdRouteImport.update({
+  id: '/scout/gigs/$gigId',
+  path: '/scout/gigs/$gigId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/c/$token': typeof CTokenRoute
+  '/r/$slug': typeof RSlugRoute
   '/scout/submissions': typeof ScoutSubmissionsRoute
-  '/scouts/$pubkey': typeof ScoutsPubkeyRoute
   '/company/': typeof CompanyIndexRoute
   '/scout/': typeof ScoutIndexRoute
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
-  '/scout/tasks/$roleId': typeof ScoutTasksRoleIdRoute
+  '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/c/$token': typeof CTokenRoute
+  '/r/$slug': typeof RSlugRoute
   '/scout/submissions': typeof ScoutSubmissionsRoute
-  '/scouts/$pubkey': typeof ScoutsPubkeyRoute
   '/company': typeof CompanyIndexRoute
   '/scout': typeof ScoutIndexRoute
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
-  '/scout/tasks/$roleId': typeof ScoutTasksRoleIdRoute
+  '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/c/$token': typeof CTokenRoute
+  '/r/$slug': typeof RSlugRoute
   '/scout/submissions': typeof ScoutSubmissionsRoute
-  '/scouts/$pubkey': typeof ScoutsPubkeyRoute
   '/company/': typeof CompanyIndexRoute
   '/scout/': typeof ScoutIndexRoute
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
-  '/scout/tasks/$roleId': typeof ScoutTasksRoleIdRoute
+  '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/c/$token'
+    | '/r/$slug'
     | '/scout/submissions'
-    | '/scouts/$pubkey'
     | '/company/'
     | '/scout/'
     | '/company/roles/$roleId'
     | '/company/roles/new'
-    | '/scout/tasks/$roleId'
+    | '/scout/gigs/$gigId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/c/$token'
+    | '/r/$slug'
     | '/scout/submissions'
-    | '/scouts/$pubkey'
     | '/company'
     | '/scout'
     | '/company/roles/$roleId'
     | '/company/roles/new'
-    | '/scout/tasks/$roleId'
+    | '/scout/gigs/$gigId'
   id:
     | '__root__'
     | '/'
+    | '/c/$token'
+    | '/r/$slug'
     | '/scout/submissions'
-    | '/scouts/$pubkey'
     | '/company/'
     | '/scout/'
     | '/company/roles/$roleId'
     | '/company/roles/new'
-    | '/scout/tasks/$roleId'
+    | '/scout/gigs/$gigId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CTokenRoute: typeof CTokenRoute
+  RSlugRoute: typeof RSlugRoute
   ScoutSubmissionsRoute: typeof ScoutSubmissionsRoute
-  ScoutsPubkeyRoute: typeof ScoutsPubkeyRoute
   CompanyIndexRoute: typeof CompanyIndexRoute
   ScoutIndexRoute: typeof ScoutIndexRoute
   CompanyRolesRoleIdRoute: typeof CompanyRolesRoleIdRoute
   CompanyRolesNewRoute: typeof CompanyRolesNewRoute
-  ScoutTasksRoleIdRoute: typeof ScoutTasksRoleIdRoute
+  ScoutGigsGigIdRoute: typeof ScoutGigsGigIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -143,11 +156,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/c/$token': {
+      id: '/c/$token'
+      path: '/c/$token'
+      fullPath: '/c/$token'
+      preLoaderRoute: typeof CTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/company/': {
       id: '/company/'
       path: '/company'
       fullPath: '/company/'
       preLoaderRoute: typeof CompanyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/r/$slug': {
+      id: '/r/$slug'
+      path: '/r/$slug'
+      fullPath: '/r/$slug'
+      preLoaderRoute: typeof RSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scout/': {
@@ -164,13 +191,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScoutSubmissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scouts/$pubkey': {
-      id: '/scouts/$pubkey'
-      path: '/scouts/$pubkey'
-      fullPath: '/scouts/$pubkey'
-      preLoaderRoute: typeof ScoutsPubkeyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/company/roles/$roleId': {
       id: '/company/roles/$roleId'
       path: '/company/roles/$roleId'
@@ -185,11 +205,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CompanyRolesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scout/tasks/$roleId': {
-      id: '/scout/tasks/$roleId'
-      path: '/scout/tasks/$roleId'
-      fullPath: '/scout/tasks/$roleId'
-      preLoaderRoute: typeof ScoutTasksRoleIdRouteImport
+    '/scout/gigs/$gigId': {
+      id: '/scout/gigs/$gigId'
+      path: '/scout/gigs/$gigId'
+      fullPath: '/scout/gigs/$gigId'
+      preLoaderRoute: typeof ScoutGigsGigIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -197,13 +217,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CTokenRoute: CTokenRoute,
+  RSlugRoute: RSlugRoute,
   ScoutSubmissionsRoute: ScoutSubmissionsRoute,
-  ScoutsPubkeyRoute: ScoutsPubkeyRoute,
   CompanyIndexRoute: CompanyIndexRoute,
   ScoutIndexRoute: ScoutIndexRoute,
   CompanyRolesRoleIdRoute: CompanyRolesRoleIdRoute,
   CompanyRolesNewRoute: CompanyRolesNewRoute,
-  ScoutTasksRoleIdRoute: ScoutTasksRoleIdRoute,
+  ScoutGigsGigIdRoute: ScoutGigsGigIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

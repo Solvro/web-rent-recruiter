@@ -21,8 +21,6 @@ import {
   getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
   getU64Decoder,
   getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -125,20 +123,24 @@ export type CreateRoleInstruction<
 export type CreateRoleInstructionData = {
   discriminator: ReadonlyUint8Array;
   roleId: bigint;
-  bountyPerCandidate: bigint;
-  maxCandidates: number;
-  reviewWindowSeconds: bigint;
-  initialDeposit: bigint;
   agent: Option<Address>;
+  reviewWindowSeconds: bigint;
+  claimTimeoutSeconds: bigint;
+  holdbackWindowSeconds: bigint;
+  initialDeposit: bigint;
+  agentMaxBounty: bigint;
+  agentMaxCommitment: bigint;
 };
 
 export type CreateRoleInstructionDataArgs = {
   roleId: number | bigint;
-  bountyPerCandidate: number | bigint;
-  maxCandidates: number;
-  reviewWindowSeconds: number | bigint;
-  initialDeposit: number | bigint;
   agent: OptionOrNullable<Address>;
+  reviewWindowSeconds: number | bigint;
+  claimTimeoutSeconds: number | bigint;
+  holdbackWindowSeconds: number | bigint;
+  initialDeposit: number | bigint;
+  agentMaxBounty: number | bigint;
+  agentMaxCommitment: number | bigint;
 };
 
 export function getCreateRoleInstructionDataEncoder(): Encoder<CreateRoleInstructionDataArgs> {
@@ -146,11 +148,13 @@ export function getCreateRoleInstructionDataEncoder(): Encoder<CreateRoleInstruc
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["roleId", getU64Encoder()],
-      ["bountyPerCandidate", getU64Encoder()],
-      ["maxCandidates", getU16Encoder()],
-      ["reviewWindowSeconds", getI64Encoder()],
-      ["initialDeposit", getU64Encoder()],
       ["agent", getOptionEncoder(getAddressEncoder())],
+      ["reviewWindowSeconds", getI64Encoder()],
+      ["claimTimeoutSeconds", getI64Encoder()],
+      ["holdbackWindowSeconds", getI64Encoder()],
+      ["initialDeposit", getU64Encoder()],
+      ["agentMaxBounty", getU64Encoder()],
+      ["agentMaxCommitment", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_ROLE_DISCRIMINATOR }),
   );
@@ -160,11 +164,13 @@ export function getCreateRoleInstructionDataDecoder(): Decoder<CreateRoleInstruc
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["roleId", getU64Decoder()],
-    ["bountyPerCandidate", getU64Decoder()],
-    ["maxCandidates", getU16Decoder()],
-    ["reviewWindowSeconds", getI64Decoder()],
-    ["initialDeposit", getU64Decoder()],
     ["agent", getOptionDecoder(getAddressDecoder())],
+    ["reviewWindowSeconds", getI64Decoder()],
+    ["claimTimeoutSeconds", getI64Decoder()],
+    ["holdbackWindowSeconds", getI64Decoder()],
+    ["initialDeposit", getU64Decoder()],
+    ["agentMaxBounty", getU64Decoder()],
+    ["agentMaxCommitment", getU64Decoder()],
   ]);
 }
 
@@ -206,11 +212,13 @@ export type CreateRoleAsyncInput<
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
   systemProgram?: TAccountSystemProgram;
   roleId: CreateRoleInstructionDataArgs["roleId"];
-  bountyPerCandidate: CreateRoleInstructionDataArgs["bountyPerCandidate"];
-  maxCandidates: CreateRoleInstructionDataArgs["maxCandidates"];
-  reviewWindowSeconds: CreateRoleInstructionDataArgs["reviewWindowSeconds"];
-  initialDeposit: CreateRoleInstructionDataArgs["initialDeposit"];
   agent: CreateRoleInstructionDataArgs["agent"];
+  reviewWindowSeconds: CreateRoleInstructionDataArgs["reviewWindowSeconds"];
+  claimTimeoutSeconds: CreateRoleInstructionDataArgs["claimTimeoutSeconds"];
+  holdbackWindowSeconds: CreateRoleInstructionDataArgs["holdbackWindowSeconds"];
+  initialDeposit: CreateRoleInstructionDataArgs["initialDeposit"];
+  agentMaxBounty: CreateRoleInstructionDataArgs["agentMaxBounty"];
+  agentMaxCommitment: CreateRoleInstructionDataArgs["agentMaxCommitment"];
 };
 
 export async function getCreateRoleInstructionAsync<
@@ -481,11 +489,13 @@ export type CreateRoleInput<
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
   systemProgram?: TAccountSystemProgram;
   roleId: CreateRoleInstructionDataArgs["roleId"];
-  bountyPerCandidate: CreateRoleInstructionDataArgs["bountyPerCandidate"];
-  maxCandidates: CreateRoleInstructionDataArgs["maxCandidates"];
-  reviewWindowSeconds: CreateRoleInstructionDataArgs["reviewWindowSeconds"];
-  initialDeposit: CreateRoleInstructionDataArgs["initialDeposit"];
   agent: CreateRoleInstructionDataArgs["agent"];
+  reviewWindowSeconds: CreateRoleInstructionDataArgs["reviewWindowSeconds"];
+  claimTimeoutSeconds: CreateRoleInstructionDataArgs["claimTimeoutSeconds"];
+  holdbackWindowSeconds: CreateRoleInstructionDataArgs["holdbackWindowSeconds"];
+  initialDeposit: CreateRoleInstructionDataArgs["initialDeposit"];
+  agentMaxBounty: CreateRoleInstructionDataArgs["agentMaxBounty"];
+  agentMaxCommitment: CreateRoleInstructionDataArgs["agentMaxCommitment"];
 };
 
 export function getCreateRoleInstruction<

@@ -1,0 +1,1 @@
+ALTER TABLE "roles" ADD COLUMN "committed" bigint DEFAULT 0 NOT NULL;

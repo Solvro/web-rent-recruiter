@@ -7,6 +7,8 @@
  */
 
 export * from "./config";
+export * from "./operator";
 export * from "./roleVault";
 export * from "./scoutProfile";
 export * from "./submission";
+export * from "./task";

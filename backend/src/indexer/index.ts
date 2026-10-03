@@ -30,7 +30,7 @@ export function startIndexer(log: { info: (m: string) => void; warn: (m: string)
 				const notifications = await rpcSubscriptions
 					.logsNotifications({ mentions: [program] }, { commitment: "confirmed" })
 					.subscribe({ abortSignal: sub.signal });
-				log.info(`[indexer] subscribed to logs of ${program} via ${env.wsUrl}`);
+				log.info(`[indexer] subscribed to logs of ${program} via ${env.wsUrl.replace(/\?.*$/, "")}`);
 				// Anything that happened while we were disconnected.
 				if (connectedOnce) void catchUp();
 				connectedOnce = true;

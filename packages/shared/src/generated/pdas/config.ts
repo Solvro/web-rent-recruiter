@@ -22,7 +22,9 @@ export async function findConfigPda(
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(new Uint8Array([99, 111, 110, 102, 105, 103])),
+      getBytesEncoder().encode(
+        new Uint8Array([99, 111, 110, 102, 105, 103, 95, 118, 50]),
+      ),
     ],
   });
 }

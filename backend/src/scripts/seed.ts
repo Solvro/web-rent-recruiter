@@ -1,181 +1,183 @@
 /**
- * Demo data for read-only views (task board, scout profiles). Seeded roles have no on-chain vault: the live demo
- * role is created through the app. Usage:
- *   pnpm seed            # upsert demo data
- *   pnpm seed --reset    # wipe all tables first
+ * Demo data from docs/research/demo-use-cases.json (anonymized composites, fictional people and companies).
+ *
+ *   pnpm reset:demo        # chain: close old roles, fresh scout keypairs (devnet), refill company USDC
+ *   pnpm seed --reset      # DB: wipe, then seed accounts + read-only roles for the CURRENT keypairs
+ *
+ * Run them in that order: the seed maps personas onto whatever keypairs reset:demo just wrote.
+ *
+ * What it creates:
+ * - Demo company wallet (client.json) as the main role's company. The main role itself is NOT seeded: it is
+ *   created live in the demo (paste backend/src/agent/fixtures/demo-jd-senior-backend-ts.txt).
+ * - Ola (recruiter.json = app "scout") and Lucía (scout2.json = app "scout2") with NO history, so their
+ *   on-chain reputation starts at 0/0 and the demo shows the first payout.
+ * - Andreea on a seeded wallet, with history on the read-only roles (her specialty: Java, DACH sales).
+ * - The 3 other roles as OPEN but unfunded (no vault): visible on the task board, submit returns 409.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { type AgentReview, type Criteria, toBaseUnits } from "@scout/shared";
-import { createKeyPairSignerFromBytes, createKeyPairSignerFromPrivateKeyBytes } from "@solana/kit";
-import { sql } from "drizzle-orm";
+import {
+	type Address,
+	createKeyPairSignerFromBytes,
+	createKeyPairSignerFromPrivateKeyBytes,
+} from "@solana/kit";
+import { eq, sql } from "drizzle-orm";
 import { closeDb, db, runMigrations, schema } from "../db/index.ts";
+import { env } from "../env.ts";
+import { demoAvatar } from "../lib/avatars.ts";
 import { candidateHash, newRoleSalt, toHex } from "../lib/candidate-hash.ts";
+import { splitBounty } from "../lib/money.ts";
+import { backfillSlugs } from "../lib/slug.ts";
+import { loadDeployment } from "../solana/chain.ts";
 
+type UseCases = {
+	recruiters: { key: string; displayName: string; country: string; specialty: string }[];
+	roles: {
+		key: string;
+		demo?: boolean;
+		title: string;
+		company: string;
+		locationLabel: string;
+		salaryLabel: string;
+		jobDescription: string;
+		criteria: Criteria;
+		bountyUsd: number;
+		maxCandidates: number;
+	}[];
+};
+
+const data = JSON.parse(
+	readFileSync(resolve(env.repoRoot, "docs/research/demo-use-cases.json"), "utf8"),
+) as UseCases;
 const reset = process.argv.includes("--reset");
 
-async function walletFromFile(path: string, fallbackSeed: number) {
+/** Canonical demo story (Stream C): backend/src/agent/fixtures/demo-manifest.json → role file. */
+const DEMO_ROLE = JSON.parse(
+	readFileSync(new URL("../agent/fixtures/demo-role-senior-backend-ts.json", import.meta.url), "utf8"),
+) as { title: string; company: string; founder: string; budgetUsd: number };
+
+const avatar = demoAvatar;
+
+/** Short, generic company names shown in the UI (no real clients). Keyed by role. */
+const COMPANY: Record<string, { companyName: string; contact: string }> = {
+	// The live demo role's company comes from Stream C's canonical fixture (demo-manifest.json).
+	"senior-backend-ts": { companyName: DEMO_ROLE.company, contact: DEMO_ROLE.founder },
+	"forward-deployed-engineer": {
+		companyName: "Pre-seed robotics startup · Zürich",
+		contact: "Felix Brunner",
+	},
+	"account-executive-dach": { companyName: "Growth-stage B2B SaaS · Kraków", contact: "Agnieszka Sowa" },
+	"java-backend-insurance": { companyName: "Enterprise insurtech vendor · Poland", contact: "Marek Duda" },
+};
+
+/** Read-only history so the seeded roles and Andreea's profile don't look empty. Fictional, `-demo` slugs. */
+const HISTORY: Record<
+	string,
+	{
+		name: string;
+		card: { currentTitle: string; currentCompany: string; location: string };
+		profileUrl: string;
+		notes: string;
+		status: "ACCEPTED" | "PENDING";
+		score: number;
+		recommendation: AgentReview["recommendation"];
+	}[]
+> = {
+	"java-backend-insurance": [
+		{
+			name: "Marek Zieliński",
+			profileUrl: "https://linkedin.com/in/marek-zielinski-java-demo",
+			card: {
+				currentTitle: "Lead Java Developer",
+				currentCompany: "Regional insurer (P&C)",
+				location: "Łódź, Poland",
+			},
+			notes:
+				"9 years of Java, the last 5 on a policy administration system at a Polish insurer (Spring Boot, Kafka, Oracle → Postgres migration). Led a team of 4. Lives in Łódź, fine with 3 office days. Wants 26k PLN B2B; 1 month notice.",
+			status: "ACCEPTED",
+			score: 88,
+			recommendation: "ADVANCE",
+		},
+		{
+			name: "Julia Kowalska",
+			profileUrl: "https://linkedin.com/in/julia-kowalska-backend-demo",
+			card: {
+				currentTitle: "Senior Kotlin/Java Engineer",
+				currentCompany: "Payments bank",
+				location: "Gdańsk, Poland",
+			},
+			notes:
+				"6 years of Java/Kotlin in banking (payments, Spring). No insurance domain yet but has done claims-like workflow engines. Based in Gdańsk, hybrid OK. Expects 24k PLN employment contract.",
+			status: "PENDING",
+			score: 71,
+			recommendation: "MAYBE",
+		},
+	],
+	"account-executive-dach": [
+		{
+			name: "Lukas Brandt",
+			profileUrl: "https://linkedin.com/in/lukas-brandt-sales-demo",
+			card: {
+				currentTitle: "Account Executive, DACH",
+				currentCompany: "CMMS SaaS vendor",
+				location: "Kraków, Poland",
+			},
+			notes:
+				"Native German, moved to Kraków in 2024. 4 years closing mid-market SaaS deals for a CMMS vendor (facility managers, plant maintenance), 112% of quota last year. Wants base 20k PLN + commission.",
+			status: "ACCEPTED",
+			score: 84,
+			recommendation: "ADVANCE",
+		},
+	],
+	"forward-deployed-engineer": [],
+};
+
+const keypairAddress = async (path: string, fallbackSeed: number): Promise<Address> => {
 	const full = resolve(homedir(), path);
 	if (existsSync(full)) {
-		return (await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(readFileSync(full, "utf8")))))
-			.address;
+		const bytes = Uint8Array.from(JSON.parse(readFileSync(full, "utf8")) as number[]);
+		return (await createKeyPairSignerFromBytes(bytes)).address;
 	}
-	return deterministicWallet(fallbackSeed);
-}
-const deterministicWallet = async (n: number) =>
+	return seededAddress(fallbackSeed);
+};
+const seededAddress = async (n: number) =>
 	(await createKeyPairSignerFromPrivateKeyBytes(new Uint8Array(32).fill(n))).address;
-
-const c = (id: string, label: string, weight: number) => ({ id, label, weight });
-
-const roles: {
-	company: "demoCompany" | "otherCompany";
-	title: string;
-	summary: string;
-	jobDescription: string;
-	criteria: Criteria;
-	bountyUsdc: number;
-	maxCandidates: number;
-	accepted: number;
-	pending: number;
-}[] = [
-	{
-		company: "otherCompany",
-		title: "Senior Rust Engineer, Payments Infrastructure",
-		summary: "Own the ledger and settlement services behind cross-border payouts. Remote within ±3h of CET.",
-		jobDescription:
-			"Fernway is a cross-border payouts platform used by 1,200 marketplaces. We're hiring a Senior Rust Engineer to own our ledger and settlement services. You will design idempotent payment flows, run Postgres at high write volume, and work with our compliance team on reconciliation. Requirements: 5+ years of backend experience, 2+ years of production Rust, experience with double-entry ledgers or payment systems, strong Postgres skills. Nice to have: experience with ISO 20022, Kafka, or on-call leadership. Remote within ±3h of CET. Salary 150k–190k EUR. English required; Polish or German a plus.",
-		criteria: {
-			mustHave: [
-				c("rust-prod", "2+ years of production Rust", 5),
-				c("payments", "Built payment, ledger or settlement systems", 5),
-				c("postgres", "Strong Postgres at high write volume", 4),
-			],
-			niceToHave: [
-				c("iso20022", "ISO 20022 / SEPA experience", 2),
-				c("kafka", "Kafka or event streaming", 2),
-			],
-			seniority: "SENIOR",
-			location: { mode: "REMOTE", places: ["Europe (CET ±3h)"] },
-			salaryRange: { min: 150000, max: 190000, currency: "EUR", period: "YEAR" },
-			languages: ["English"],
-			dealBreakers: [c("no-backend", "No backend ownership in the last 3 years", 5)],
-		},
-		bountyUsdc: 30,
-		maxCandidates: 8,
-		accepted: 2,
-		pending: 1,
-	},
-	{
-		company: "otherCompany",
-		title: "Product Designer, B2B Onboarding",
-		summary: "Redesign self-serve onboarding for a finance product. Hybrid in Warsaw, 2 days a week.",
-		jobDescription:
-			"Fernway is looking for a Product Designer to own self-serve onboarding for our merchant dashboard. You will run discovery with customers, prototype in Figma, and ship with two engineering squads. Requirements: 3+ years designing B2B SaaS, a portfolio with end-to-end case studies, comfort with data and experiments. Nice to have: fintech or compliance-heavy flows, design systems work. Hybrid in Warsaw (2 days/week). Salary 18k–24k PLN/month.",
-		criteria: {
-			mustHave: [
-				c("b2b-saas", "3+ years designing B2B SaaS", 5),
-				c("case-studies", "Portfolio with end-to-end case studies", 4),
-			],
-			niceToHave: [
-				c("fintech", "Fintech or compliance-heavy flows", 3),
-				c("design-system", "Design systems work", 2),
-			],
-			seniority: "MID",
-			location: { mode: "HYBRID", places: ["Warsaw"] },
-			salaryRange: { min: 18000, max: 24000, currency: "PLN", period: "MONTH" },
-			languages: ["English", "Polish"],
-			dealBreakers: [],
-		},
-		bountyUsdc: 20,
-		maxCandidates: 10,
-		accepted: 1,
-		pending: 0,
-	},
-	{
-		company: "otherCompany",
-		title: "Founding Account Executive, DACH",
-		summary: "First sales hire for the German-speaking market. Remote in Germany or Austria.",
-		jobDescription:
-			"Fernway is opening the DACH market and needs its first Account Executive there. You will run the full cycle from outbound to close with mid-market marketplaces. Requirements: 4+ years of B2B SaaS closing experience, native-level German, a track record of hitting quota, experience selling to finance or operations buyers. Nice to have: payments or fintech sales, first-sales-hire experience. Remote in Germany or Austria. OTE 120k–150k EUR.",
-		criteria: {
-			mustHave: [
-				c("closing", "4+ years closing B2B SaaS deals", 5),
-				c("german", "Native-level German", 5),
-				c("quota", "Documented quota attainment", 4),
-			],
-			niceToHave: [
-				c("fintech-sales", "Payments or fintech sales", 3),
-				c("first-hire", "Was a first sales hire before", 2),
-			],
-			seniority: "SENIOR",
-			location: { mode: "REMOTE", places: ["Germany", "Austria"] },
-			salaryRange: { min: 120000, max: 150000, currency: "EUR", period: "YEAR" },
-			languages: ["German", "English"],
-			dealBreakers: [c("no-german", "Cannot sell in German", 5)],
-		},
-		bountyUsdc: 40,
-		maxCandidates: 5,
-		accepted: 0,
-		pending: 1,
-	},
-];
-
-const candidates = [
-	{
-		name: "Tomasz Wieczorek",
-		profileUrl: "https://www.linkedin.com/in/tomasz-wieczorek-rust",
-		notes:
-			"6y backend, 3y Rust at a PSP building a settlement engine. Open to remote; notice period 1 month.",
-		review: { score: 88, recommendation: "ADVANCE" },
-	},
-	{
-		name: "Ana Ribeiro",
-		profileUrl: "https://www.linkedin.com/in/ana-ribeiro-ledger",
-		notes: "Led ledger migration at a neobank (Go → Rust). Strong Postgres. Lives in Lisbon, wants remote.",
-		review: { score: 81, recommendation: "ADVANCE" },
-	},
-	{
-		name: "Jonas Becker",
-		profileUrl: "https://www.linkedin.com/in/jonas-becker-ae",
-		notes:
-			"Native German, 5y AE at a logistics SaaS, 118% of quota last year. Interested, wants a call next week.",
-		review: { score: 74, recommendation: "MAYBE" },
-	},
-	{
-		name: "Zofia Nowak",
-		profileUrl: "https://dribbble.com/zofia-nowak",
-		notes: "4y product designer at a Warsaw B2B SaaS; portfolio has two onboarding case studies.",
-		review: { score: 79, recommendation: "ADVANCE" },
-	},
-] as const;
 
 function review(
 	criteria: Criteria,
 	score: number,
 	recommendation: AgentReview["recommendation"],
 ): AgentReview {
-	const all = [...criteria.mustHave, ...criteria.niceToHave];
 	return {
 		score,
 		recommendation,
 		summary:
 			recommendation === "ADVANCE"
-				? "Strong match on the must-haves; worth a first call."
-				: "Partial match; one must-have needs confirmation in a call.",
-		verdicts: all.map((cr, i) => ({
-			criterionId: cr.id,
-			verdict: i < criteria.mustHave.length ? (score > 80 ? "MET" : "PARTIAL") : "UNKNOWN",
-			reasoning:
-				i < criteria.mustHave.length
-					? `Notes mention experience relevant to "${cr.label}".`
-					: "Not covered in the notes.",
-		})),
+				? "Meets every must-have in the notes; worth a first call this week."
+				: "Solid background, but one must-have is only partly covered and needs a call to confirm.",
+		verdicts: [
+			...criteria.mustHave.map((c, i) => ({
+				criterionId: c.id,
+				verdict: (score >= 80 || i > 0 ? "MET" : "PARTIAL") as "MET" | "PARTIAL",
+				reasoning: `The notes describe experience that matches "${c.label}".`,
+			})),
+			...criteria.niceToHave.map((c) => ({
+				criterionId: c.id,
+				verdict: "UNKNOWN" as const,
+				reasoning: "Not mentioned in the recruiter's notes.",
+			})),
+		],
 	};
 }
 
-await runMigrations();
+function splitColumns(bounty: bigint) {
+	const s = splitBounty(bounty, 1000, 0, env.holdbackBps);
+	return { payoutNow: s.now, payoutLater: s.later, operatorFee: s.operatorFee, platformFee: s.platformFee };
+}
 
+await runMigrations();
 if (reset) {
 	await db.execute(
 		sql`truncate table agent_reviews, submissions, tx_log, roles, accounts restart identity cascade`,
@@ -183,43 +185,65 @@ if (reset) {
 	console.log("tables truncated");
 }
 
-const demoCompany = await walletFromFile(".config/solana/superrecruiter/client.json", 1);
-const demoScout = await walletFromFile(".config/solana/superrecruiter/recruiter.json", 2);
-const otherCompany = await deterministicWallet(3);
-const scouts = [demoScout, await deterministicWallet(4), await deterministicWallet(5)];
+// ---- Accounts ----------------------------------------------------------------
 
-const accountRows = [
-	{ wallet: demoCompany, kind: "company" as const, displayName: "Hanna Lis", companyName: "Kestrel Labs" },
-	{ wallet: otherCompany, kind: "company" as const, displayName: "Piotr Zając", companyName: "Fernway" },
-	{ wallet: scouts[0], kind: "scout" as const, displayName: "Marta Kowalczyk", companyName: null },
-	{ wallet: scouts[1], kind: "scout" as const, displayName: "Daniel Okafor", companyName: null },
-	{ wallet: scouts[2], kind: "scout" as const, displayName: "Lena Fischer", companyName: null },
+const demoCompany = await keypairAddress(".config/solana/superrecruiter/client.json", 1);
+const recruiterWallets: Record<string, Address> = {
+	ola: await keypairAddress(".config/solana/superrecruiter/recruiter.json", 2),
+	lucia: await keypairAddress(".config/solana/superrecruiter/scout2.json", 3),
+	andreea: await seededAddress(4),
+};
+const companyWallets: Record<string, Address> = {};
+for (const [i, role] of data.roles.entries()) {
+	companyWallets[role.key] = role.demo ? demoCompany : await seededAddress(10 + i);
+}
+
+const accounts = [
+	...data.roles.map((r) => ({
+		wallet: companyWallets[r.key],
+		kind: "company" as const,
+		displayName: COMPANY[r.key]?.contact ?? "Hiring manager",
+		companyName: COMPANY[r.key]?.companyName ?? r.company,
+	})),
+	...data.recruiters.map((r) => ({
+		wallet: recruiterWallets[r.key],
+		kind: "scout" as const,
+		displayName: r.displayName,
+		companyName: null,
+	})),
 ];
-for (const a of accountRows) {
+for (const a of accounts) {
+	const set = {
+		kind: a.kind,
+		displayName: a.displayName,
+		companyName: a.companyName,
+		avatarUrl: avatar(a.displayName),
+	};
 	await db
 		.insert(schema.accounts)
-		.values({ ...a, avatarUrl: null })
-		.onConflictDoUpdate({
-			target: schema.accounts.wallet,
-			set: { kind: a.kind, displayName: a.displayName, companyName: a.companyName },
-		});
+		.values({ wallet: a.wallet, ...set })
+		.onConflictDoUpdate({ target: schema.accounts.wallet, set });
 }
+
+// ---- Read-only roles (everything except the live demo role) -------------------
 
 const existingTitles = new Set(
 	(await db.select({ title: schema.roles.title }).from(schema.roles)).map((r) => r.title),
 );
-let candidateIdx = 0;
-for (const r of roles) {
-	if (existingTitles.has(r.title)) continue;
-	const bounty = toBaseUnits(r.bountyUsdc);
+for (const r of data.roles) {
+	if (r.demo || existingTitles.has(r.title)) continue;
+	const history = HISTORY[r.key] ?? [];
+	const accepted = history.filter((h) => h.status === "ACCEPTED").length;
+	const pending = history.filter((h) => h.status === "PENDING").length;
+	const bounty = toBaseUnits(r.bountyUsd);
 	const deposited = bounty * BigInt(r.maxCandidates);
-	const paid = bounty * BigInt(r.accepted);
+	const paid = bounty * BigInt(accepted);
 	const [role] = await db
 		.insert(schema.roles)
 		.values({
-			companyWallet: r.company === "demoCompany" ? demoCompany : otherCompany,
+			companyWallet: companyWallets[r.key],
 			title: r.title,
-			summary: r.summary,
+			summary: `${r.locationLabel}. ${r.salaryLabel}.`,
 			jobDescription: r.jobDescription,
 			criteria: r.criteria,
 			roleSalt: newRoleSalt(),
@@ -227,43 +251,126 @@ for (const r of roles) {
 			maxCandidates: r.maxCandidates,
 			reviewWindowSeconds: 72 * 3600,
 			feeBps: 1000,
+			holdbackBps: env.holdbackBps,
+			holdbackWindowSeconds: env.holdbackWindowSeconds,
 			status: "OPEN",
 			deposited,
 			paid,
 			remaining: deposited - paid,
-			acceptedCount: r.accepted,
-			pendingCount: r.pending,
+			acceptedCount: accepted,
+			pendingCount: pending,
 		})
 		.returning();
 
-	const statuses = [
-		...Array<"ACCEPTED">(r.accepted).fill("ACCEPTED"),
-		...Array<"PENDING">(r.pending).fill("PENDING"),
-	];
-	for (const [i, status] of statuses.entries()) {
-		const cand = candidates[candidateIdx++ % candidates.length];
+	for (const [i, h] of history.entries()) {
+		const submittedAt = new Date(Date.now() - (i + 1) * 30 * 3600 * 1000);
 		const [sub] = await db
 			.insert(schema.submissions)
 			.values({
 				roleId: role.id,
-				scoutWallet: scouts[i % scouts.length],
-				candidateName: cand.name,
-				profileUrl: cand.profileUrl,
-				notes: cand.notes,
+				scoutWallet: recruiterWallets.andreea,
+				candidateName: h.name,
+				candidateAvatarUrl: avatar(h.name),
+				candidateTitle: h.card.currentTitle,
+				candidateCompany: h.card.currentCompany,
+				candidateLocation: h.card.location,
+				profileUrl: h.profileUrl,
+				notes: h.notes,
 				consent: true,
-				candidateHash: toHex(candidateHash(role.roleSalt, cand.profileUrl)),
+				candidateHash: toHex(candidateHash(role.roleSalt, h.profileUrl)),
 				confirmed: true,
-				status,
-				submittedAt: new Date(Date.now() - (i + 1) * 26 * 3600 * 1000),
-				reviewDeadline: new Date(Date.now() + 48 * 3600 * 1000),
+				status: h.status,
+				// Old placements: confirmed long ago, held-back part already paid out.
+				...(h.status === "ACCEPTED"
+					? {
+							...splitColumns(bounty),
+							holdbackDeadline: new Date(submittedAt.getTime() + 96 * 3600 * 1000),
+							outcome: "ADVANCED" as const,
+							laterStatus: "RELEASED" as const,
+						}
+					: {}),
+				submittedAt,
+				reviewDeadline: new Date(submittedAt.getTime() + 72 * 3600 * 1000),
 			})
 			.returning();
-		await db.insert(schema.agentReviews).values({
-			submissionId: sub.id,
-			review: review(r.criteria, cand.review.score, cand.review.recommendation),
-		});
+		await db
+			.insert(schema.agentReviews)
+			.values({ submissionId: sub.id, review: review(r.criteria, h.score, h.recommendation) });
 	}
 }
 
-console.log(`seeded: demo company ${demoCompany} (Kestrel Labs), demo scout ${demoScout} (Marta Kowalczyk)`);
+const main = data.roles.find((r) => r.demo);
+console.log(`seeded ${accounts.length} accounts and ${data.roles.length - 1} read-only roles`);
+console.log(
+	`  company  ${demoCompany}  ${COMPANY[main?.key ?? ""]?.companyName} (creates "${DEMO_ROLE.title}" live)`,
+);
+console.log(`  scout    ${recruiterWallets.ola}  Ola Wiśniewska`);
+console.log(`  scout2   ${recruiterWallets.lucia}  Lucía Fernández`);
+console.log("  fixtures backend/src/agent/fixtures/demo-*");
+// ---- Demo personas: skills + seeded history (labelled "seeded demo history" in the UI, never on-chain) ----
+// Ola (vouched by the demo operator) qualifies for screening and reference gigs; Lucía is a sourcing recruiter.
+const operatorName =
+	(loadDeployment() as unknown as { operator?: { name?: string } } | null)?.operator?.name ?? "the operator";
+const PERSONAS: {
+	wallet: Address;
+	skills: { skill: string; source: "self" | "operator" | "seeded" }[];
+	stats: {
+		gigType: "SOURCING" | "SCREENING_CALL" | "REFERENCE_CHECK";
+		accepted: number;
+		decided: number;
+		advanced: number;
+	}[];
+}[] = [
+	{
+		wallet: recruiterWallets.ola,
+		skills: [
+			{ skill: "engineer:rust", source: "self" },
+			{ skill: "engineer:solana", source: "self" },
+			{ skill: "lang:pl:native", source: "self" },
+			{ skill: "lang:en:C2", source: "self" },
+			{ skill: "tech-screener", source: "operator" },
+		],
+		stats: [
+			{ gigType: "SOURCING", accepted: 14, decided: 17, advanced: 5 },
+			{ gigType: "SCREENING_CALL", accepted: 6, decided: 7, advanced: 3 },
+			{ gigType: "REFERENCE_CHECK", accepted: 3, decided: 3, advanced: 1 },
+		],
+	},
+	{
+		wallet: recruiterWallets.lucia,
+		skills: [
+			{ skill: "engineer:typescript", source: "self" },
+			{ skill: "lang:es:native", source: "self" },
+			{ skill: "lang:en:C2", source: "self" },
+		],
+		stats: [{ gigType: "SOURCING", accepted: 4, decided: 6, advanced: 1 }],
+	},
+	{
+		wallet: recruiterWallets.andreea,
+		skills: [
+			{ skill: "engineer:java", source: "self" },
+			{ skill: "lang:ro:native", source: "self" },
+			{ skill: "lang:de:C2", source: "self" },
+		],
+		stats: [{ gigType: "SOURCING", accepted: 9, decided: 12, advanced: 2 }],
+	},
+];
+for (const p of PERSONAS) {
+	await db.delete(schema.recruiterSkills).where(eq(schema.recruiterSkills.wallet, p.wallet));
+	await db.delete(schema.recruiterSeededStats).where(eq(schema.recruiterSeededStats.wallet, p.wallet));
+	await db.insert(schema.recruiterSkills).values(
+		p.skills.map((k) => ({
+			wallet: p.wallet,
+			skill: k.skill,
+			source: k.source,
+			verifiedBy: k.source === "operator" ? operatorName : null,
+		})),
+	);
+	await db.insert(schema.recruiterSeededStats).values(p.stats.map((x) => ({ wallet: p.wallet, ...x })));
+}
+console.log(
+	`  personas: skills + seeded demo history (Ola: screening-eligible, verified by ${operatorName})`,
+);
+
+await backfillSlugs(db);
 await closeDb();

@@ -1,346 +1,395 @@
-import type { Criteria, DraftRoleResponse } from "@scout/shared";
-import {
-	BPS_DENOMINATOR,
-	DEFAULT_FEE_BPS,
-	DEFAULT_REVIEW_WINDOW_SECONDS,
-	DEMO_REVIEW_WINDOW_SECONDS,
-	toBaseUnits,
-} from "@scout/shared";
+import type { Criteria, Me } from "@scout/shared";
+import { DEMO_REVIEW_WINDOW_SECONDS, toBaseUnits } from "@scout/shared";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Bot, Loader2, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Loader2, Minus, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RequireAccount } from "@/components/account";
-import { PageHeader } from "@/components/bits";
-import { CriteriaEditor } from "@/components/criteria";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Disclosure } from "@/components/bits";
+import { ReviewerChoice, validReviewer } from "@/components/reviewer";
+import { Curtain } from "@/components/role-draft/curtain";
+import { followInto, useFollow } from "@/components/role-draft/follow";
+import { bestSentence, JdBackdrop, splitSentences } from "@/components/role-draft/jd-reader";
+import { JobPost, type JobPostData } from "@/components/role-draft/job-post";
+import { PlanView } from "@/components/role-draft/plan";
+import { type FieldKey, useReveal } from "@/components/role-draft/reveal";
+import { type PartialDraft, useDraftStream } from "@/components/role-draft/stream";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { api, errorMessage } from "@/lib/api";
-import { formatUsdc } from "@/lib/format";
+import { errorMessage } from "@/lib/errors";
+import { formatMoney } from "@/lib/format";
+import { BUDGET_STEP_USD, DEFAULT_BUDGET_USD, planGigs } from "@/lib/gigs/plan";
+import { type ReviewerModeValue, reviewApi } from "@/lib/gigs/review";
+import { DEMO_JOB_DESCRIPTION } from "@/lib/mock/store";
+import { useTRPCClient } from "@/lib/trpc";
 import { useTransact } from "@/lib/use-transact";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/company/roles/new")({
-	component: () => (
-		<RequireAccount kind="company">{(me) => <NewRole balance={me.usdcBalance} />}</RequireAccount>
-	),
+	component: () => <RequireAccount kind="company">{(me) => <NewRole me={me} />}</RequireAccount>,
 });
 
-const EXAMPLE_JD = `Senior Full-stack Engineer (TypeScript)
-Northwind Robotics builds fleet software for warehouse robots used across 40+ logistics sites in Europe.
+/** Short window so the "no answer → paid automatically" path is visible in the live demo. */
+const REVIEW_WINDOW = DEMO_REVIEW_WINDOW_SECONDS;
 
-You'll build the operator console that shift managers use to plan robot missions in real time.
+function useReducedMotion() {
+	const [reduced, setReduced] = useState(
+		() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+	);
+	useEffect(() => {
+		const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+		const on = () => setReduced(mq.matches);
+		mq.addEventListener("change", on);
+		return () => mq.removeEventListener("change", on);
+	}, []);
+	return reduced;
+}
 
-What we're looking for
-- 5+ years with TypeScript, React and Node.js in production
-- PostgreSQL and data modelling for real-time dashboards
-- Experience with event-driven systems (Kafka or similar)
-- Nice to have: Kubernetes, AWS, mentoring other engineers, early-stage startup experience
+function NewRole({ me }: { me: Me }) {
+	const [jd, setJd] = useState("");
+	const stream = useDraftStream();
 
-Hybrid in Kraków, 2 days a week in the office. English required, Polish is a plus.
-Salary 25 000 - 33 000 PLN per month on B2B.`;
+	if (stream.phase === "idle") {
+		return (
+			<div className="rd-page mx-auto max-w-2xl space-y-8">
+				<h1 className="type-display">Who are you hiring?</h1>
+				<Textarea
+					value={jd}
+					onChange={(e) => setJd(e.target.value)}
+					placeholder="Paste the job description"
+					aria-label="Job description"
+					className="min-h-72 rounded-3xl p-5"
+				/>
+				<div className="flex items-center gap-4">
+					<Button
+						size="lg"
+						className="h-12 px-8"
+						onClick={() => stream.start(jd)}
+						disabled={jd.trim().length < 50}
+					>
+						Next
+					</Button>
+					{!jd && DEMO_JOB_DESCRIPTION && (
+						<button
+							type="button"
+							onClick={() => setJd(DEMO_JOB_DESCRIPTION)}
+							className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+						>
+							Use an example
+						</button>
+					)}
+				</div>
+			</div>
+		);
+	}
 
-const WINDOWS = [
-	{ value: String(DEMO_REVIEW_WINDOW_SECONDS), label: "60 seconds (live demo)" },
-	{ value: String(24 * 3600), label: "24 hours" },
-	{ value: String(DEFAULT_REVIEW_WINDOW_SECONDS), label: "72 hours" },
-	{ value: String(7 * 86400), label: "7 days" },
-];
+	return <Drafting jd={jd} me={me} stream={stream} />;
+}
 
-function NewRole({ balance }: { balance: string }) {
+/** The text a field came from, to find its sentence in the job description. */
+function fieldText(key: FieldKey, p: PartialDraft): string {
+	const c = p.criteria;
+	const [kind, i] = key.split(":");
+	const list = { must: c?.mustHave, nice: c?.niceToHave, deal: c?.dealBreakers }[kind];
+	if (list) return list[Number(i)]?.label ?? "";
+	switch (key) {
+		case "title":
+			return p.title ?? "";
+		case "summary":
+			return p.summary ?? "";
+		case "seniority":
+			return `${c?.seniority ?? ""} ${p.title ?? ""}`;
+		case "location":
+			return `${(c?.location?.places ?? []).join(" ")} ${c?.location?.mode ?? ""} office remote hybrid`;
+		case "salary":
+			return `${c?.salaryRange?.min ?? ""} ${c?.salaryRange?.max ?? ""} ${c?.salaryRange?.currency ?? ""} salary`;
+		case "languages":
+			return (c?.languages ?? []).join(" ");
+		default:
+			return "";
+	}
+}
+
+function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<typeof useDraftStream> }) {
+	const reduced = useReducedMotion();
+	const done = stream.phase === "done";
+	const result = stream.result;
+	const reveal = useReveal(result ?? stream.partial, done, reduced);
+
+	// One page throughout. The pasted text sits where the post will be; the agent turns it into the post line by
+	// line, the leftover text folds away, the plan lands under it, and the Start controls (already laid out with the
+	// plan) fade in. Nothing is swapped, so nothing moves when the agent finishes.
+	const [stage, setStage] = useState<"post" | "plan" | "edit">("post");
+	const instant = reveal.skipped || reduced;
+	useEffect(() => {
+		if (stage !== "post" || !reveal.complete || !result) return;
+		// Let the leftover text finish folding before the plan arrives below it.
+		const t = setTimeout(() => setStage("plan"), instant ? 0 : 700);
+		return () => clearTimeout(t);
+	}, [stage, reveal.complete, instant, result]);
+	useEffect(() => {
+		if (stage !== "plan") return;
+		const t = setTimeout(() => setStage("edit"), instant ? 0 : 1100);
+		return () => clearTimeout(t);
+	}, [stage, instant]);
+
+	// The company's edits on top of the agent's draft.
+	const [title, setTitle] = useState<string | null>(null);
+	const [edits, setEdits] = useState<Partial<Criteria>>({});
+	const partial: PartialDraft = result
+		? { ...result, title: title ?? result.title, criteria: { ...result.criteria, ...edits } }
+		: stream.partial;
+	const criteria: Criteria | null = result ? { ...result.criteria, ...edits } : null;
+
+	// The pasted text, read along with the agent: before anything resolves a cursor reads through it; then the
+	// sentence behind the next field is highlighted, and it's marked used once that field appears.
+	const sentences = useMemo(() => splitSentences(jd).flat(), [jd]);
+	const [cursor, setCursor] = useState(0);
+	const [used, setUsed] = useState<Set<number>>(() => new Set());
+	const reading = reveal.lastKey === null && !reveal.nextKey && stream.phase === "reading";
+	useEffect(() => {
+		if (!reading) return;
+		const t = setInterval(() => setCursor((c) => Math.min(c + 1, sentences.length - 1)), 420);
+		return () => clearInterval(t);
+	}, [reading, sentences.length]);
+	const nextText = reveal.nextKey ? fieldText(reveal.nextKey, partial) : "";
+	const lastText = reveal.lastKey ? fieldText(reveal.lastKey, partial) : "";
+	const next = nextText ? bestSentence(sentences, nextText) : -1;
+	useEffect(() => {
+		if (!lastText) return;
+		const i = bestSentence(sentences, lastText);
+		if (i >= 0) setUsed((u) => (u.has(i) ? u : new Set(u).add(i)));
+	}, [lastText, sentences]);
+	const active = next >= 0 ? next : reading ? cursor : -1;
+
+	// Keep the newest field (then the plan, then the Start button) in view, unless the person scrolled back up.
+	const column = useRef<HTMLDivElement>(null);
+	const postRef = useRef<HTMLDivElement>(null);
+	const backdropRef = useRef<HTMLDivElement>(null);
+	const follow = useFollow(stage !== "edit");
+	useEffect(() => {
+		if (!follow.following) return;
+		const target = stage === "edit" ? "start" : stage === "plan" ? "plan" : reveal.lastKey;
+		if (!target) return;
+		followInto(
+			column.current?.querySelector(`[data-field="${target}"]`),
+			reduced,
+			stage === "post" ? 160 : 40,
+		);
+	}, [stage, reveal.lastKey, follow.following, reduced]);
+
+	// Budget and start.
+	const client = useTRPCClient();
 	const navigate = useNavigate();
 	const { transact, pending } = useTransact();
-	const [jd, setJd] = useState("");
-	const [draft, setDraft] = useState<DraftRoleResponse | null>(null);
-	const [title, setTitle] = useState("");
-	const [criteria, setCriteria] = useState<Criteria | null>(null);
-	const [bounty, setBounty] = useState("20");
-	const [maxCandidates, setMaxCandidates] = useState("10");
-	const [deposit, setDeposit] = useState("200");
-	const [windowSeconds, setWindowSeconds] = useState(String(DEMO_REVIEW_WINDOW_SECONDS));
-	const [depositTouched, setDepositTouched] = useState(false);
-
-	const analyze = useMutation({
-		mutationFn: () => api.draftRole({ jobDescription: jd }),
-		onSuccess: (d) => {
-			setDraft(d);
-			setTitle(d.title);
-			setCriteria(d.criteria);
-			const b = Number(d.suggestedBounty) / 1e6;
-			setBounty(String(b));
-			setMaxCandidates(String(d.suggestedMaxCandidates));
-			setDeposit(String(b * d.suggestedMaxCandidates));
-			setDepositTouched(false);
-		},
+	const [budgetUsd, setBudgetUsd] = useState(DEFAULT_BUDGET_USD);
+	const [reviewer, setReviewer] = useState<{ mode: ReviewerModeValue; key: string }>({
+		mode: "scout",
+		key: "",
 	});
-
-	useEffect(() => {
-		if (!depositTouched) setDeposit(String((Number(bounty) || 0) * (Number(maxCandidates) || 0)));
-	}, [bounty, maxCandidates, depositTouched]);
-
-	const bountyBase = toBaseUnits(Number(bounty) || 0);
-	const fee = (bountyBase * BigInt(DEFAULT_FEE_BPS)) / BigInt(BPS_DENOMINATOR);
-	const depositBase = toBaseUnits(Number(deposit) || 0);
-	const coversCandidates = bountyBase > 0n ? Number(depositBase / bountyBase) : 0;
-	const tooMuch = depositBase > BigInt(balance);
-	const invalid = !criteria || !title.trim() || bountyBase <= 0n || depositBase < bountyBase || tooMuch;
-
-	const publish = useMutation({
+	const budget = toBaseUnits(budgetUsd);
+	// The agent re-splits the work for every budget the company tries.
+	const plan = criteria ? planGigs(criteria, budgetUsd) : null;
+	const tooLittle = !!plan && !plan.gigs.some((g) => g.kind === "SCREENING_CALL");
+	const tooMuch = budget > BigInt(me.usdcBalance);
+	const start = useMutation({
 		mutationFn: async () => {
-			if (!draft || !criteria) throw new Error("Analyze the job description first");
-			const res = await api.createRole({
-				title,
-				summary: draft.summary,
+			if (!result || !criteria) return;
+			const res = await client.roles.create.mutate({
+				title: title?.trim() || result.title,
+				summary: result.summary,
 				jobDescription: jd,
 				criteria,
 				taskType: "SOURCING",
-				bounty: bountyBase.toString(),
-				maxCandidates: Number(maxCandidates),
-				reviewWindowSeconds: Number(windowSeconds),
-				deposit: depositBase.toString(),
+				reviewWindowSeconds: REVIEW_WINDOW,
+				deposit: budget.toString(),
 			});
-			const tx = await transact(res.unsignedTx, `${title} is live. ${formatUsdc(depositBase)} funded.`);
-			if (tx) navigate({ to: "/company/roles/$roleId", params: { roleId: res.roleId } });
+			const ok = await transact(res.unsignedTx, {
+				pending: "Starting your agent…",
+				success: `Your agent is on it. ${formatMoney(budget)} set aside.`,
+				receipt: true,
+			});
+			if (!ok) return;
+			// Someone other than the Scout agent checks the work: record it on the role right away.
+			if (reviewer.mode !== "scout") {
+				const set = await reviewApi.setReviewer(res.roleId, reviewer.mode, reviewer.key.trim());
+				await transact(set.unsignedTx, {
+					pending: "Saving who checks the work…",
+					success: reviewer.mode === "self" ? "You check the work yourself." : "Your agent checks the work.",
+				});
+			}
+			navigate({ to: "/company/roles/$roleId", params: { roleId: res.roleId } });
 		},
 	});
 
+	if (stream.phase === "error") {
+		return (
+			<div className="mx-auto max-w-2xl space-y-6">
+				<p>Your agent couldn't read this one. {stream.error}</p>
+				<Button variant="outline" onClick={stream.reset}>
+					Back to the job description
+				</Button>
+			</div>
+		);
+	}
+
+	const c = partial.criteria;
+	const post: JobPostData = {
+		title: partial.title,
+		company: me.companyName ?? me.displayName,
+		seniority: c?.seniority,
+		location: c?.location,
+		salary: c?.salaryRange,
+		summary: partial.summary,
+		mustHave: c?.mustHave,
+		niceToHave: c?.niceToHave,
+		dealBreakers: c?.dealBreakers,
+		languages: c?.languages,
+	};
+	const editing = stage === "edit";
+	const status =
+		stage === "post"
+			? stream.status || "Reading the job description…"
+			: stage === "plan"
+				? "Pricing the work…"
+				: null;
+
 	return (
-		<div className="space-y-8">
-			<PageHeader
-				eyebrow={
+		<div ref={column} className="rd-page mx-auto max-w-2xl">
+			<div className="flex h-6 items-center justify-between gap-4">
+				<p
+					className={cn("type-label text-muted-foreground", status && "shimmer")}
+					aria-live="polite"
+					style={{ visibility: status ? "visible" : "hidden" }}
+				>
+					{status ?? "Ready"}
+				</p>
+				<button
+					type="button"
+					onClick={stage === "post" ? reveal.skip : stream.reset}
+					className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+				>
+					{stage === "post" ? "Skip" : "Edit job description"}
+				</button>
+			</div>
+
+			{/*
+			 * The post is built over the pasted text, which stays exactly where it sat in the textarea: same width and
+			 * left edge as the textarea's text box (1px border + 20px padding), and the same top (form: 36.8px heading +
+			 * 32px gap + 21px; here: 24px status row + 40px margin, so 25.8px). The post layer defines the height; the
+			 * backdrop is absolutely positioned and only ever changes colour/opacity.
+			 */}
+			<div className="rd-cover relative mt-10">
+				<JdBackdrop
+					ref={backdropRef}
+					text={jd}
+					active={stage === "post" ? active : -1}
+					used={used}
+					quiet={reveal.lastKey !== null}
+					hidden={reveal.complete}
+					className="absolute inset-x-[21px] top-[25.8px]"
+				/>
+				<Curtain post={postRef} backdrop={backdropRef} />
+				<div ref={postRef} className="relative">
+					<JobPost
+						data={post}
+						reveal={{ isShown: reveal.isShown, isPending: () => false }}
+						edit={
+							editing
+								? {
+										onTitle: setTitle,
+										onCriteria: (patch) => setEdits((e) => ({ ...e, ...patch })),
+									}
+								: undefined
+						}
+					/>
+				</div>
+			</div>
+
+			{stage !== "post" && plan && (
+				<section data-field="plan" className="space-y-4 pt-12">
+					<h2 className="type-label text-muted-foreground">Your agent's plan</h2>
+					<PlanView plan={plan} animate={!reduced} />
+
+					{/* Laid out with the plan, usable once the agent is done: appears in place. */}
+					<div
+						data-field="start"
+						inert={!editing}
+						className={cn("space-y-6 pt-2 transition-opacity duration-300 ease-out", !editing && "opacity-0")}
+					>
+						<div className="flex flex-wrap items-center gap-4">
+							<div className="inline-flex items-center gap-1 rounded-full bg-secondary p-1">
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Less budget"
+									onClick={() => setBudgetUsd((b) => Math.max(BUDGET_STEP_USD * 2, b - BUDGET_STEP_USD))}
+								>
+									<Minus />
+								</Button>
+								<span className="w-28 text-center tabular">{formatMoney(budget)} budget</span>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label="More budget"
+									onClick={() => setBudgetUsd((b) => b + BUDGET_STEP_USD)}
+								>
+									<Plus />
+								</Button>
+							</div>
+							<span className="type-label text-muted-foreground">Unused budget comes back to you.</span>
+						</div>
+
+						<div className="space-y-4">
+							<Button
+								size="lg"
+								className="h-12 w-full sm:w-auto sm:px-10"
+								disabled={
+									tooMuch ||
+									tooLittle ||
+									!validReviewer(reviewer.mode, reviewer.key) ||
+									start.isPending ||
+									pending
+								}
+								onClick={() => start.mutate()}
+							>
+								{(start.isPending || pending) && <Loader2 className="animate-spin" />}
+								Start agent · {formatMoney(budget)}
+							</Button>
+							{tooMuch && (
+								<p className="type-label text-destructive">
+									That's more than your balance of {formatMoney(me.usdcBalance)}.
+								</p>
+							)}
+							{tooLittle && (
+								<p className="type-label text-muted-foreground">
+									Add budget so your agent can book at least one screening call.
+								</p>
+							)}
+							{start.isError && <p className="type-label text-destructive">{errorMessage(start.error)}</p>}
+							<Disclosure label="Change who checks the work">
+								<ReviewerChoice
+									mode={reviewer.mode}
+									agentKey={reviewer.key}
+									onChange={(mode, key) => setReviewer({ mode, key })}
+								/>
+							</Disclosure>
+						</div>
+					</div>
+				</section>
+			)}
+
+			{!editing && !follow.following && (
+				<div className="pointer-events-none fixed inset-x-0 bottom-6 z-20 flex justify-center">
 					<button
 						type="button"
-						onClick={() => history.back()}
-						className="inline-flex items-center gap-1 hover:text-foreground"
+						onClick={follow.resume}
+						className="rd-in pointer-events-auto h-9 rounded-full bg-foreground px-4 type-label text-background shadow-sm"
 					>
-						<ArrowLeft className="size-3.5" /> Roles
+						Follow along ↓
 					</button>
-				}
-				title="New role"
-				description="Paste the job description. The agent drafts the criteria scouts work against and suggests a fair bounty."
-			/>
-
-			<div className="grid items-start gap-6 lg:grid-cols-[1fr_1.1fr]">
-				<Card>
-					<CardHeader>
-						<CardTitle>Job description</CardTitle>
-						<CardDescription>
-							The full text is fine. Requirements, location and salary help the most.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						<Textarea
-							value={jd}
-							onChange={(e) => setJd(e.target.value)}
-							placeholder="Senior Backend Engineer…"
-							className="min-h-80 font-mono text-[13px] leading-relaxed"
-							aria-label="Job description"
-						/>
-						<div className="flex flex-wrap items-center gap-2">
-							<Button onClick={() => analyze.mutate()} disabled={jd.trim().length < 50 || analyze.isPending}>
-								{analyze.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
-								{draft ? "Analyze again" : "Analyze with agent"}
-							</Button>
-							{!jd && (
-								<Button variant="ghost" onClick={() => setJd(EXAMPLE_JD)}>
-									Use an example
-								</Button>
-							)}
-							{jd && jd.trim().length < 50 && (
-								<span className="text-xs text-muted-foreground">A few more lines, please.</span>
-							)}
-						</div>
-						{analyze.isError && <p className="text-sm text-destructive">{errorMessage(analyze.error)}</p>}
-					</CardContent>
-				</Card>
-
-				{analyze.isPending ? (
-					<AgentThinking />
-				) : draft && criteria ? (
-					<div className="space-y-6">
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center gap-2">
-									<Bot className="size-4 text-primary" /> Criteria
-								</CardTitle>
-								<CardDescription>{draft.summary} Edit anything before you publish.</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-5">
-								<div className="space-y-1.5">
-									<Label htmlFor="title">Role title</Label>
-									<Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-								</div>
-								<CriteriaEditor value={criteria} onChange={setCriteria} />
-							</CardContent>
-						</Card>
-
-						<Card>
-							<CardHeader>
-								<CardTitle>Budget</CardTitle>
-								<CardDescription className="rounded-xl bg-accent/60 p-3 text-accent-foreground">
-									{draft.rationale}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-5">
-								<div className="grid gap-4 sm:grid-cols-3">
-									<div className="space-y-1.5">
-										<Label htmlFor="bounty">Per accepted candidate</Label>
-										<UsdcInput id="bounty" value={bounty} onChange={setBounty} />
-									</div>
-									<div className="space-y-1.5">
-										<Label htmlFor="max">Candidates</Label>
-										<Input
-											id="max"
-											type="number"
-											min={1}
-											value={maxCandidates}
-											onChange={(e) => setMaxCandidates(e.target.value)}
-										/>
-									</div>
-									<div className="space-y-1.5">
-										<Label htmlFor="deposit">Fund now</Label>
-										<UsdcInput
-											id="deposit"
-											value={deposit}
-											onChange={(v) => {
-												setDeposit(v);
-												setDepositTouched(true);
-											}}
-										/>
-									</div>
-								</div>
-								<div className="space-y-1.5">
-									<Label>If you don't respond to a candidate</Label>
-									<Select
-										value={windowSeconds}
-										onValueChange={(v) => v && setWindowSeconds(v)}
-										items={WINDOWS}
-									>
-										<SelectTrigger className="w-full" aria-label="Review window">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{WINDOWS.map((w) => (
-												<SelectItem key={w.value} value={w.value}>
-													{w.label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-									<p className="text-xs text-muted-foreground">
-										After this window the candidate counts as accepted and the scout is paid automatically.
-									</p>
-								</div>
-								<ul className="space-y-1.5 rounded-xl border p-3 text-sm">
-									<li className="flex justify-between">
-										<span className="text-muted-foreground">Scout receives per candidate</span>
-										<span className="tabular font-medium">{formatUsdc(bountyBase - fee)}</span>
-									</li>
-									<li className="flex justify-between">
-										<span className="text-muted-foreground">Platform fee (10%)</span>
-										<span className="tabular">{formatUsdc(fee)}</span>
-									</li>
-									<li className="flex justify-between">
-										<span className="text-muted-foreground">Budget covers</span>
-										<span className="tabular">
-											{coversCandidates} candidate{coversCandidates === 1 ? "" : "s"}
-										</span>
-									</li>
-									<li className="flex justify-between">
-										<span className="text-muted-foreground">Your balance</span>
-										<span className="tabular">{formatUsdc(balance)}</span>
-									</li>
-								</ul>
-								{tooMuch && (
-									<Alert variant="destructive">
-										<AlertTitle>Not enough USDC</AlertTitle>
-										<AlertDescription>Fund a smaller amount now and top up later.</AlertDescription>
-									</Alert>
-								)}
-								<Button
-									size="lg"
-									className="w-full"
-									disabled={invalid || publish.isPending || pending}
-									onClick={() => publish.mutate()}
-								>
-									{publish.isPending ? <Loader2 className="animate-spin" /> : null}
-									Fund and publish · {formatUsdc(depositBase)}
-								</Button>
-								<p className="text-center text-xs text-muted-foreground">
-									Funds go into this role's vault, which only the payment rules can release. You can withdraw
-									what's left at any time by closing the role.
-								</p>
-								{publish.isError && <p className="text-sm text-destructive">{errorMessage(publish.error)}</p>}
-							</CardContent>
-						</Card>
-					</div>
-				) : (
-					<div className="grid place-items-center rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-						<div className="max-w-xs space-y-2">
-							<Bot className="mx-auto size-6 text-primary" />
-							<p>
-								The agent's draft appears here: must-haves, nice-to-haves, deal-breakers and a suggested
-								bounty.
-							</p>
-						</div>
-					</div>
-				)}
-			</div>
-		</div>
-	);
-}
-
-function UsdcInput({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
-	return (
-		<div className="relative">
-			<Input
-				id={id}
-				type="number"
-				min={0}
-				step="1"
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				className="pr-14 tabular"
-			/>
-			<span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-				USDC
-			</span>
-		</div>
-	);
-}
-
-const THINKING_STEPS = [
-	"Reading the job description",
-	"Extracting must-haves and deal-breakers",
-	"Pricing the bounty",
-];
-
-function AgentThinking() {
-	const steps = THINKING_STEPS;
-	const [step, setStep] = useState(0);
-	useEffect(() => {
-		const t = setInterval(() => setStep((s) => Math.min(s + 1, THINKING_STEPS.length - 1)), 2500);
-		return () => clearInterval(t);
-	}, []);
-	return (
-		<Card className="justify-center">
-			<CardContent className="space-y-4 py-10">
-				<div className="mx-auto grid size-12 place-items-center rounded-full bg-accent">
-					<Bot className="size-5 animate-pulse text-primary" />
 				</div>
-				<ul className="mx-auto max-w-xs space-y-2 text-sm">
-					{steps.map((s, i) => (
-						<li key={s} className={i <= step ? "text-foreground" : "text-muted-foreground/60"}>
-							{i < step ? "✓" : i === step ? "…" : "·"} {s}
-						</li>
-					))}
-				</ul>
-				<p className="text-center text-xs text-muted-foreground">Usually takes about 10 seconds.</p>
-			</CardContent>
-		</Card>
+			)}
+		</div>
 	);
 }

@@ -13,3 +13,12 @@ test-ledger
 !.env.example
 .data
 deployments/*.keys.json
+
+# Licensed font files (Basier): not redistributable, keep out of git
+app/public/fonts/
+
+# local tooling and working captures
+.agents/
+.claude/
+skills-lock.json
+app/screenshots/

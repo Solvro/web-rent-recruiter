@@ -7,6 +7,10 @@ export type WalletContextValue = {
 	ready: boolean;
 	/** Base58 address of the active identity, null when logged out. */
 	address: string | null;
+	/** Logged in (Privy session or demo persona), even if the account key is still being created. */
+	authenticated: boolean;
+	/** Logged in, account key being created: show "Setting up your account…", never a Log in button. */
+	settingUp: boolean;
 	/** Email or persona label for the header. */
 	label: string | null;
 	login: () => void;

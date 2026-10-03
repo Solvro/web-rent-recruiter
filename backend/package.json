@@ -13,26 +13,39 @@
 		"seed": "tsx --env-file-if-exists=.env src/scripts/seed.ts"
 	},
 	"dependencies": {
+		"@ai-sdk/anthropic": "^4.0.71",
+		"@ai-sdk/openai": "^4.0.83",
 		"@anthropic-ai/sdk": "^0.131.0",
 		"@electric-sql/pglite": "^0.5.8",
 		"@fastify/cors": "^11.3.0",
+		"@openrouter/ai-sdk-provider": "^3.1.0",
 		"@scout/shared": "workspace:*",
 		"@solana-program/system": "^0.15.0",
 		"@solana-program/token": "^0.17.0",
 		"@solana/kit": "^8.4.0",
+		"@trpc/server": "^11.19.0",
+		"ai": "^7.0.127",
 		"drizzle-orm": "1.0.0-rc.4",
 		"fastify": "^5.12.5",
 		"fastify-type-provider-zod": "^7.0.0",
 		"openai": "^7.27.0",
 		"pg": "^8.23.1",
+		"superjson": "^2.2.6",
 		"zod": "^4.6.5"
 	},
 	"devDependencies": {
+		"@trpc/client": "^11.19.0",
 		"@types/node": "^26.6.4",
 		"@types/pg": "^8.23.1",
 		"drizzle-kit": "1.0.0-rc.4",
 		"tsx": "^4.23.15",
 		"typescript": "^6.0.3",
 		"vitest": "^5.0.3"
+	},
+	"exports": {
+		"./router": {
+			"types": "./src/trpc/router.ts",
+			"default": "./src/trpc/router.ts"
+		}
 	}
 }

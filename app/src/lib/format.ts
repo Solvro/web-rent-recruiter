@@ -1,11 +1,19 @@
 import { BPS_DENOMINATOR, fromBaseUnits } from "@scout/shared";
 
-const usdcFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+/** "$18", "$13.50": money is shown as plain dollars everywhere. */
+export function formatMoney(base: bigint | number | string) {
+	const value = fromBaseUnits(base);
+	return value.toLocaleString("en-US", {
+		style: "currency",
+		currency: "USD",
+		minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+		maximumFractionDigits: 2,
+	});
+}
 
-/** "18 USDC" from base units. */
-export function formatUsdc(base: bigint | number | string, { unit = true } = {}) {
-	const value = usdcFormat.format(fromBaseUnits(base));
-	return unit ? `${value} USDC` : value;
+/** Agent text from the backend quotes amounts as "20 USDC"; show them as "$20". */
+export function plainMoney(text: string) {
+	return text.replace(/(\d[\d,]*(?:\.\d+)?)\s*USDC\b/g, "$$$1").replace(/\bUSDC\b/g, "dollars");
 }
 
 export function netOfFee(bounty: bigint | string, feeBps: number) {
@@ -33,14 +41,13 @@ export function formatDuration(seconds: number) {
 	const d = Math.floor(s / 86400);
 	const h = Math.floor((s % 86400) / 3600);
 	const m = Math.floor((s % 3600) / 60);
-	const sec = s % 60;
 	if (d > 0) return `${d}d ${h}h`;
 	if (h > 0) return `${h}h ${m}m`;
-	if (m > 0) return `${m}m ${sec.toString().padStart(2, "0")}s`;
-	return `${sec}s`;
+	return `${m}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 export function reviewWindowLabel(seconds: number) {
+	if (seconds === 60) return "1 minute";
 	if (seconds < 120) return `${seconds} seconds`;
 	if (seconds < 7200) return `${Math.round(seconds / 60)} minutes`;
 	if (seconds < 172800) return `${Math.round(seconds / 3600)} hours`;
@@ -63,4 +70,34 @@ export function hostOf(url: string) {
 	} catch {
 		return url;
 	}
+}
+
+/** "Ola Wiśniewska" → "ola-wisniewska", for /r/<slug> profile links. */
+export function slugify(name: string) {
+	return name
+		.normalize("NFD")
+		.replace(/[̀-ͯ]/g, "")
+		.replace(/ł/g, "l")
+		.replace(/Ł/g, "L")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "");
+}
+
+export const firstName = (name: string) => name.split(" ")[0] ?? name;
+
+/** "3 Oct, 14:05" */
+export function dateLabel(date: Date | string) {
+	return new Date(date).toLocaleString("en-GB", {
+		day: "numeric",
+		month: "short",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+}
+
+/** The candidate a call gig is about, from its title ("30-min screening call with Karolina Mazurek"). */
+export function personInTitle(title: string) {
+	const m = title.match(/\b(?:with|for)\s+([\p{Lu}][\p{L}'-]+(?:\s+[\p{Lu}][\p{L}'-]+)+)\s*(?:[:(·].*)?$/u);
+	return m?.[1] ?? title;
 }

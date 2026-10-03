@@ -9,9 +9,11 @@
 import {
   combineCodec,
   containsBytes,
+  fixDecoderSize,
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBytesDecoder,
   getBytesEncoder,
   getConstantDecoder,
   getConstantEncoder,
@@ -39,9 +41,13 @@ export function getSubmissionRejectedEventDiscriminatorBytes(): ReadonlyUint8Arr
 
 export type SubmissionRejectedEvent = {
   roleVault: Address;
+  task: Address;
   submission: Address;
   scout: Address;
   reasonCode: number;
+  /** sha256 of the human-readable reason sent to the scout: a verifiable record of why. */
+  reasonHash: ReadonlyUint8Array;
+  rejectedBy: Address;
 };
 
 export type SubmissionRejectedEventArgs = SubmissionRejectedEvent;
@@ -51,9 +57,12 @@ export function getSubmissionRejectedEventEncoder(): FixedSizeEncoder<Submission
   return getHiddenPrefixEncoder(
     getStructEncoder([
       ["roleVault", getAddressEncoder()],
+      ["task", getAddressEncoder()],
       ["submission", getAddressEncoder()],
       ["scout", getAddressEncoder()],
       ["reasonCode", getU8Encoder()],
+      ["reasonHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["rejectedBy", getAddressEncoder()],
     ]),
     [getConstantEncoder(SUBMISSION_REJECTED_EVENT_DISCRIMINATOR)],
   );
@@ -64,9 +73,12 @@ export function getSubmissionRejectedEventDecoder(): FixedSizeDecoder<Submission
   return getHiddenPrefixDecoder(
     getStructDecoder([
       ["roleVault", getAddressDecoder()],
+      ["task", getAddressDecoder()],
       ["submission", getAddressDecoder()],
       ["scout", getAddressDecoder()],
       ["reasonCode", getU8Decoder()],
+      ["reasonHash", fixDecoderSize(getBytesDecoder(), 32)],
+      ["rejectedBy", getAddressDecoder()],
     ]),
     [getConstantDecoder(SUBMISSION_REJECTED_EVENT_DISCRIMINATOR)],
   );

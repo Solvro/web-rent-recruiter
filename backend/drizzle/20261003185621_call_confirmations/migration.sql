@@ -1,0 +1,1 @@
+ALTER TABLE "candidate_confirmations" ADD COLUMN "kind" text DEFAULT 'interest' NOT NULL;

@@ -2,11 +2,28 @@
 	"cluster": "localnet",
 	"rpcUrl": "http://127.0.0.1:8899",
 	"programId": "CmdM2WPuZ6ZrwDXP7DtzfBfR4LMocHs9tqNpGB7JCTo2",
-	"usdcMint": "AEsKxbpGfKoJtQP9s8TJBbaq77ekRS4jW4649Gkzv91J",
+	"usdcMint": "14StZDgrw9ntmeiVn2uFC7rsWR3vA5u5vcHynFLNBJti",
 	"usdcDecimals": 6,
-	"config": "GWMroNwxZ8CwitvSau8ioJx3c7uVm5LJVGYkj6u7YTKW",
-	"treasury": "8VJdBDpp55sENHDpQjJaGdWXBFQwnZ28KZ6cf5SQBv1f",
-	"treasuryTokenAccount": "8XQeP8ZykPSvhENBjyWJpNYg15v31CsYkY96MEo4sPuS",
+	"config": "CoJLM9BvicaPtUT6QPCN5qu2JASYWSpgsJV5Jf7cZ9rY",
+	"treasury": "E42pLs7vGq8q5SvpaKLUaeyZLmZJXqH9zFSuNGxgw1JH",
+	"treasuryTokenAccount": "9i1sPxvPWAg1oRjiKTq6R4pZkZ9EnF7EZtx6XTCCxomv",
 	"feeBps": 1000,
-	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+	"operator": {
+		"address": "7278oid4wX7V7bNvtsKngBGksuUPzHngqrKh7erqtUoh",
+		"authority": "DaCdXnaJmS5JHcijS6BGaGbMdMC8rXKhozXzNhFWBArj",
+		"tokenAccount": "FcLVA8SEY7XwKpzDWHvx9SMHZ4mkN1QHUb9X96Q6p9sS",
+		"name": "Kraków Recruiting Academy",
+		"feeBps": 1000
+	},
+	"agent": "A3WfA3F7m7tgUNxVQowwBhZFXmUAj1K5329WWv4v3y9r",
+	"relayer": "GsaEBURHsvf8FYRPjHNaT2UpDZ7VppTnB2oroH88bfbm",
+	"upgradeAuthority": "8VJdBDpp55sENHDpQjJaGdWXBFQwnZ28KZ6cf5SQBv1f",
+	"configParams": {
+		"feeBps": 1000,
+		"minBounty": "500000",
+		"minReputableBounty": "1000000",
+		"minWindowSeconds": 1,
+		"maxWindowSeconds": 7776000
+	}
 }

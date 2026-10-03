@@ -5,8 +5,10 @@
  */
 import type { AgentReview, Criteria, Me, RejectReason } from "@scout/shared";
 import { DEFAULT_FEE_BPS, toBaseUnits } from "@scout/shared";
+import { splitBounty } from "../payout";
 import { PERSONAS } from "../personas";
-import { draftRole, reviewCandidate } from "./agent";
+import { reviewCandidate } from "./agent";
+import demo from "./demo-data.json";
 
 export type MockProfile = {
 	wallet: string;
@@ -17,6 +19,10 @@ export type MockProfile = {
 	registered: boolean;
 	balance: bigint;
 	earned: bigint;
+	/** Organisation that vouched for this recruiter; takes feeBps of each payout. */
+	operator: { name: string; feeBps: number } | null;
+	advanced: number;
+	flagged: number;
 };
 
 export type MockRole = {
@@ -34,6 +40,10 @@ export type MockRole = {
 	feeBps: number;
 	maxCandidates: number;
 	reviewWindowSeconds: number;
+	taskType: "SOURCING" | "SCREENING_CALL" | "REFERENCE_CHECK";
+	holdbackBps: number;
+	holdbackWindowSeconds: number;
+	heldBack: bigint;
 	deposited: bigint;
 	paid: bigint;
 	balance: bigint;
@@ -56,9 +66,22 @@ export type MockSubmission = {
 	reviewDeadline: string;
 	settlementTx: string | null;
 	review: AgentReview | null;
+	screeningNotes?: string;
+	outcome: "NONE" | "ADVANCED" | "FABRICATED";
+	laterStatus: "NONE" | "HELD" | "RELEASED" | "REFUNDED";
+	laterReleasesAt: string | null;
+	/** Actual split, fixed at accept time. */
+	split: { now: bigint; later: bigint; operatorFee: bigint; platformFee: bigint } | null;
 };
 
-type Listener = (e: { type: string; roleId?: string; submissionId?: string; signature?: string }) => void;
+type Listener = (e: {
+	type: string;
+	roleId?: string;
+	submissionId?: string;
+	signature?: string;
+	scout?: string;
+	payout?: string;
+}) => void;
 const listeners = new Set<Listener>();
 export const mockEvents = {
 	subscribe(l: Listener) {
@@ -99,6 +122,9 @@ export async function candidateHash(salt: string, profileUrl: string) {
 const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
 const inFuture = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
 
+/** Fixed id so the gig store can attribute simulated work to her. */
+export const ANDREEA = "5Qx1oZq3Z8C3ZkVh9tYb6sLwPpN2mX4rT7uKcD1eFgHa";
+
 export const db = {
 	profiles: new Map<string, MockProfile>(),
 	roles: new Map<string, MockRole>(),
@@ -110,75 +136,84 @@ export const db = {
 
 export const newId = (prefix: string) => `${prefix}_${(db.nextId++).toString(36)}${fakeBase58(6)}`;
 
-const NORTHWIND_JD = `Senior Backend Engineer (Payments)
-Northwind Robotics builds fleet software for warehouse robots used by 40+ logistics sites in Europe. We're hiring a Senior Backend Engineer to own the billing and payouts platform.
+type DemoRole = (typeof demo.roles)[number];
+type DemoCandidate = { name: string; profileUrl: string; notes: string };
 
-What you'll do
-- Design and run Node.js and TypeScript services that bill customers per robot-hour
-- Own our PostgreSQL ledger and the integrations with Stripe and bank transfers
-- Work with product on usage-based pricing experiments
+/** Job description for the live "create role" step: the demo role from docs/research/demo-use-cases.json. */
+export const DEMO_JOB_DESCRIPTION = demo.roles.find((r) => r.demo)?.jobDescription ?? "";
 
-What we're looking for
-- 5+ years building backend systems in TypeScript / Node.js
-- Strong PostgreSQL and data modelling
-- Payments, billing or fintech experience
-- Event-driven or distributed systems at scale
-- Nice to have: AWS, Kubernetes, mentoring engineers
+/** Same company labels as backend/src/scripts/seed.ts. */
+const SHORT_COMPANY: Record<string, string> = {
+	"forward-deployed-engineer": "Pre-seed robotics startup · Zürich",
+	"account-executive-dach": "Growth-stage B2B SaaS · Kraków",
+	"java-backend-insurance": "Enterprise insurtech vendor · Poland",
+};
 
-Hybrid in Warsaw (2 days a week), English required, Polish is a plus.
-Salary 28 000 - 36 000 PLN per month on B2B.`;
+/** Scores measured with the real agent for the scripted candidates, so the mock tells the same story. */
+const MEASURED = new Map(
+	demo.demoSubmissions
+		.filter((s) => s.measuredScore?.jev)
+		.map((s) => {
+			const [score, rec] = (s.measuredScore?.jev ?? "").split(" ");
+			return [normalizeProfileUrl(s.candidate.profileUrl), { score: Number(score), rec }] as const;
+		}),
+);
 
-const DESIGNER_JD = `Founding Product Designer
-Northwind Robotics is looking for its first product designer to own the operator console used on warehouse floors. Remote within the EU.
-- 4+ years of product design for B2B SaaS, strong Figma and prototyping
-- Ran user research and usability interviews with non-technical users
-- Built or scaled a design system
-- Early-stage startup experience
-English required. 18 000 - 24 000 PLN per month.`;
-
-const KESTREL_JD = `Staff Data Engineer
-Kestrel Analytics turns retail transaction data into demand forecasts for 300 grocery chains.
-- Spark, dbt and Airflow pipelines processing 2B rows a day
-- Python and SQL, cloud warehouse on GCP
-- Machine learning in production is a plus
-- Mentoring and technical leadership of a team of 5
-Remote, EU time zones, English. 150k - 190k EUR per year.`;
-
-const DRIFTLINE_JD = `Solana Smart Contract Engineer
-Driftline is building on-chain payroll for remote teams. Remote.
-- Rust and Anchor programs on Solana in production
-- TypeScript clients and testing culture
-- Payments or fintech domain knowledge
-- Security mindset
-English. 120k - 160k USD per year.`;
+export function reviewFor(criteria: Criteria, c: DemoCandidate): AgentReview {
+	const review = reviewCandidate(criteria, { name: c.name, profileUrl: c.profileUrl, notes: c.notes });
+	const measured = MEASURED.get(normalizeProfileUrl(c.profileUrl));
+	if (!measured) return review;
+	const recommendation = measured.rec as AgentReview["recommendation"];
+	const summary =
+		recommendation === "ADVANCE"
+			? `${c.name} matches every must-have: production Rust, Anchor programs on mainnet, DeFi and fuzzing.`
+			: recommendation === "MAYBE"
+				? `${c.name} writes strong production Rust, but hasn't shipped a Solana program yet.`
+				: `${c.name} builds dApp frontends, has no Rust, and only wants fully remote work.`;
+	// Keep the per-criterion lines consistent with the measured verdict.
+	const must = new Set(criteria.mustHave.map((x) => x.id));
+	const deal = new Set(criteria.dealBreakers.map((x) => x.id));
+	const verdicts = review.verdicts.map((v) => {
+		if (recommendation === "ADVANCE" && must.has(v.criterionId))
+			return { ...v, verdict: "MET" as const, reasoning: "Clear evidence in the recruiter's note." };
+		if (recommendation === "ADVANCE" && deal.has(v.criterionId)) return { ...v, verdict: "NOT_MET" as const };
+		if (recommendation === "PASS" && deal.has(v.criterionId))
+			return { ...v, verdict: "MET" as const, reasoning: "The note says this applies." };
+		return v;
+	});
+	return { ...review, verdicts, score: measured.score, recommendation, summary };
+}
 
 function seedRole(input: {
-	jd: string;
+	role: DemoRole;
 	companyWallet: string;
 	companyName: string;
 	deposited: number;
 	paid: number;
 	reviewWindowSeconds: number;
 	createdAgo: number;
-	bounty?: number;
 }) {
-	const draft = draftRole(input.jd);
+	const r = input.role;
 	const id = newId("role");
 	const role: MockRole = {
 		id,
 		onchainRoleId: String(db.nextRoleId++),
 		roleVault: fakeAddress(),
-		title: draft.title,
-		summary: draft.summary,
-		jobDescription: input.jd,
-		criteria: draft.criteria,
+		title: r.title,
+		summary: `${r.locationLabel}. ${r.salaryLabel}.`,
+		jobDescription: r.jobDescription,
+		criteria: r.criteria as Criteria,
 		companyWallet: input.companyWallet,
 		companyName: input.companyName,
 		status: "OPEN",
-		bounty: input.bounty ? toBaseUnits(input.bounty) : BigInt(draft.suggestedBounty),
+		bounty: toBaseUnits(r.bountyUsd),
 		feeBps: DEFAULT_FEE_BPS,
-		maxCandidates: draft.suggestedMaxCandidates,
+		maxCandidates: r.maxCandidates,
 		reviewWindowSeconds: input.reviewWindowSeconds,
+		taskType: "SOURCING",
+		holdbackBps: HOLDBACK_BPS,
+		holdbackWindowSeconds: HOLDBACK_WINDOW_SECONDS,
+		heldBack: 0n,
 		deposited: toBaseUnits(input.deposited),
 		paid: toBaseUnits(input.paid),
 		balance: toBaseUnits(input.deposited - input.paid),
@@ -189,43 +224,11 @@ function seedRole(input: {
 	return role;
 }
 
-async function seedSubmission(
-	role: MockRole,
-	scoutWallet: string,
-	c: { name: string; url: string; notes: string },
-	status: MockSubmission["status"],
-	submittedAgo: number,
-	extra: Partial<MockSubmission> = {},
-) {
-	const id = newId("sub");
-	const sub: MockSubmission = {
-		id,
-		roleId: role.id,
-		candidateName: c.name,
-		profileUrl: c.url,
-		notes: c.notes,
-		candidateHash: await candidateHash(role.salt, c.url),
-		onchainAddress: fakeAddress(),
-		scoutWallet,
-		status,
-		rejectReason: null,
-		submittedAt: ago(submittedAgo),
-		reviewDeadline: new Date(
-			Date.now() - submittedAgo * 1000 + role.reviewWindowSeconds * 1000,
-		).toISOString(),
-		settlementTx: status === "PENDING" ? null : fakeSignature(),
-		review: reviewCandidate(role.criteria, { name: c.name, profileUrl: c.url, notes: c.notes }),
-		...extra,
-	};
-	db.submissions.set(id, sub);
-	return sub;
-}
-
 function profile(wallet: string, p: Omit<MockProfile, "wallet">) {
 	db.profiles.set(wallet, { wallet, ...p });
 }
 
-const STORAGE_KEY = "scout.mock-db.v1";
+const STORAGE_KEY = "scout.mock-db.v5";
 
 /** Survives page reloads and Vite HMR; reset from the account menu. */
 export function persist() {
@@ -269,6 +272,7 @@ function restore() {
 export function resetMockData() {
 	try {
 		sessionStorage.removeItem(STORAGE_KEY);
+		sessionStorage.removeItem("scout.mock-gigs.v3");
 	} catch {
 		// ignore
 	}
@@ -282,149 +286,73 @@ export function ensureSeeded() {
 
 async function seed() {
 	const company = PERSONAS.company.mockAddress;
-	const marta = PERSONAS.scout.mockAddress;
-	const jonas = PERSONAS.scout2.mockAddress;
-	const kestrel = fakeAddress();
-	const driftline = fakeAddress();
-	const piotr = fakeAddress();
-
-	profile(company, {
-		kind: "company",
-		displayName: PERSONAS.company.displayName,
+	const ola = PERSONAS.scout.mockAddress;
+	const lucia = PERSONAS.scout2.mockAddress;
+	const andreea = ANDREEA;
+	const robotics = fakeAddress();
+	const saas = fakeAddress();
+	const insurtech = fakeAddress();
+	const person = (name: string, kind: MockProfile["kind"], extra: Partial<MockProfile> = {}) => ({
+		kind,
+		displayName: name,
 		avatarUrl: null,
-		companyName: PERSONAS.company.companyName ?? null,
-		registered: false,
-		balance: toBaseUnits(1000),
-		earned: 0n,
-	});
-	profile(marta, {
-		kind: "scout",
-		displayName: PERSONAS.scout.displayName,
-		avatarUrl: null,
-		companyName: null,
-		registered: true,
-		balance: toBaseUnits(45),
-		earned: toBaseUnits(45),
-	});
-	profile(jonas, {
-		kind: "scout",
-		displayName: PERSONAS.scout2.displayName,
-		avatarUrl: null,
-		companyName: null,
-		registered: false,
+		companyName: kind === "company" ? name : null,
+		registered: kind === "scout",
 		balance: 0n,
 		earned: 0n,
+		operator: null,
+		advanced: 0,
+		flagged: 0,
+		...extra,
 	});
-	profile(piotr, {
-		kind: "scout",
-		displayName: "Piotr Adamski",
-		avatarUrl: null,
-		companyName: null,
-		registered: true,
-		balance: toBaseUnits(18),
-		earned: toBaseUnits(18),
-	});
-	for (const [wallet, name] of [
-		[kestrel, "Kestrel Analytics"],
-		[driftline, "Driftline"],
-	] as const) {
-		profile(wallet, {
-			kind: "company",
-			displayName: name,
-			avatarUrl: null,
-			companyName: name,
-			registered: false,
-			balance: toBaseUnits(500),
-			earned: 0n,
-		});
+
+	profile(
+		company,
+		person(PERSONAS.company.displayName, "company", {
+			companyName: PERSONAS.company.companyName ?? null,
+			balance: toBaseUnits(1000),
+		}),
+	);
+	profile(
+		ola,
+		person(PERSONAS.scout.displayName, "scout", {
+			operator: { name: "Kraków Recruiting Academy", feeBps: 1000 },
+		}),
+	);
+	profile(lucia, person(PERSONAS.scout2.displayName, "scout", { registered: false }));
+	profile(andreea, person(demo.recruiters[2]?.displayName ?? "Andreea Popescu", "scout"));
+	for (const [wallet, key] of [
+		[robotics, "forward-deployed-engineer"],
+		[saas, "account-executive-dach"],
+		[insurtech, "java-backend-insurance"],
+	] as const)
+		profile(wallet, person(SHORT_COMPANY[key], "company", { balance: toBaseUnits(500) }));
+
+	const roles = demo.roles.filter((r) => !r.demo);
+	// The demo company starts with no roles: it creates the main one live.
+	const owners: Record<string, string> = {
+		"forward-deployed-engineer": robotics,
+		"account-executive-dach": saas,
+		"java-backend-insurance": insurtech,
+	};
+	const seeded = new Map<string, MockRole>();
+	for (const [i, r] of roles.entries()) {
+		seeded.set(
+			r.key,
+			seedRole({
+				role: r,
+				companyWallet: owners[r.key] ?? saas,
+				companyName: SHORT_COMPANY[r.key] ?? r.company,
+				deposited: r.bountyUsd * r.maxCandidates,
+				// Paid amounts come from the seeded submissions below, through the same payout path.
+				paid: 0,
+				reviewWindowSeconds: 72 * 3600,
+				createdAgo: (i + 2) * 86400,
+			}),
+		);
 	}
 
-	const backend = seedRole({
-		jd: NORTHWIND_JD,
-		companyWallet: company,
-		companyName: "Northwind Robotics",
-		deposited: 200,
-		paid: 40,
-		reviewWindowSeconds: 72 * 3600,
-		createdAgo: 6 * 86400,
-	});
-	seedRole({
-		jd: DESIGNER_JD,
-		companyWallet: company,
-		companyName: "Northwind Robotics",
-		deposited: 150,
-		paid: 0,
-		reviewWindowSeconds: 72 * 3600,
-		createdAgo: 2 * 86400,
-	});
-	const data = seedRole({
-		jd: KESTREL_JD,
-		companyWallet: kestrel,
-		companyName: "Kestrel Analytics",
-		bounty: 30,
-		deposited: 240,
-		paid: 30,
-		reviewWindowSeconds: 48 * 3600,
-		createdAgo: 4 * 86400,
-	});
-	seedRole({
-		jd: DRIFTLINE_JD,
-		companyWallet: driftline,
-		companyName: "Driftline",
-		deposited: 250,
-		paid: 0,
-		reviewWindowSeconds: 48 * 3600,
-		createdAgo: 86400,
-	});
-
-	await seedSubmission(
-		backend,
-		marta,
-		{
-			name: "Tomasz Wójcik",
-			url: "https://www.linkedin.com/in/tomasz-wojcik-backend",
-			notes:
-				"7 years of TypeScript and Node.js, built the ledger service at a Warsaw payments startup (PostgreSQL, Kafka, event-driven). Open to hybrid in Warsaw, speaks Polish and English. Interested, available in 1 month.",
-		},
-		"ACCEPTED",
-		5 * 86400,
-	);
-	await seedSubmission(
-		backend,
-		piotr,
-		{
-			name: "Aleksandra Nowak",
-			url: "https://www.linkedin.com/in/aleksandra-nowak-dev",
-			notes:
-				"Senior Node.js engineer with TypeScript, PostgreSQL and AWS. Worked on billing at a SaaS company, mentoring two juniors. Based in Warsaw, open to hybrid.",
-		},
-		"ACCEPTED",
-		4 * 86400,
-	);
-	await seedSubmission(
-		backend,
-		jonas,
-		{
-			name: "Kamil Dąbrowski",
-			url: "https://github.com/kdabrowski",
-			notes:
-				"Python and Go developer, mostly data tooling. Would need to relocate from Gdańsk and is not open to hybrid.",
-		},
-		"PENDING",
-		3 * 3600,
-	);
-	await seedSubmission(
-		data,
-		marta,
-		{
-			name: "Ewa Kaczmarek",
-			url: "https://www.linkedin.com/in/ewa-kaczmarek-data",
-			notes:
-				"Leads a data platform team of 4: Spark, dbt and Airflow on GCP, Python and SQL daily. Deployed demand forecasting models. Remote from Kraków, fluent English.",
-		},
-		"ACCEPTED",
-		2 * 86400,
-	);
+	// Earnings history lives in the gig store (mock/gigs.ts), seeded on first use.
 }
 
 export function registerTx(summary: string, effect: (signature: string) => void) {
@@ -461,21 +389,85 @@ export function acceptedCount(roleId: string) {
 }
 
 /** Same payout as accept_submission / settle_expired on-chain. */
-export function payout(sub: MockSubmission, signature: string) {
+export const HOLDBACK_BPS = 3000;
+export const HOLDBACK_WINDOW_SECONDS = 120;
+
+export function splitFor(sub: MockSubmission) {
 	const role = db.roles.get(sub.roleId);
-	if (!role) return;
-	const fee = (role.bounty * BigInt(role.feeBps)) / 10_000n;
-	const net = role.bounty - fee;
-	role.balance -= role.bounty;
-	role.paid += role.bounty;
+	const scout = db.profiles.get(sub.scoutWallet);
+	if (!role) return null;
+	return splitBounty(role.bounty, role.feeBps, role.holdbackBps, scout?.operator?.feeBps ?? 0);
+}
+
+/** accept_submission / settle_expired: pays "now", keeps "later" in the vault until the outcome or the window. */
+export function payout(sub: MockSubmission, signature: string, at = Date.now()) {
+	const role = db.roles.get(sub.roleId);
+	const split = splitFor(sub);
+	if (!role || !split) return;
+	const paidNow = role.bounty - split.later;
+	role.balance -= paidNow;
+	role.paid += paidNow;
+	role.heldBack += split.later;
 	sub.status = "ACCEPTED";
 	sub.settlementTx = signature;
+	sub.split = split;
+	sub.laterStatus = split.later > 0n ? "HELD" : "NONE";
+	sub.laterReleasesAt = new Date(at + role.holdbackWindowSeconds * 1000).toISOString();
 	const scout = db.profiles.get(sub.scoutWallet);
 	if (scout) {
-		scout.balance += net;
-		scout.earned += net;
+		scout.balance += split.now;
+		scout.earned += split.now;
 	}
-	mockEvents.emit({ type: "SubmissionAccepted", roleId: role.id, submissionId: sub.id, signature });
+	mockEvents.emit({
+		type: "submission.accepted",
+		roleId: role.id,
+		submissionId: sub.id,
+		signature,
+		scout: sub.scoutWallet,
+		payout: split.now.toString(),
+	});
+}
+
+/** attest_outcome(advanced) or release_holdback: the held part goes to the recruiter. */
+export function releaseLater(sub: MockSubmission, signature: string, advanced: boolean) {
+	const role = db.roles.get(sub.roleId);
+	const later = sub.split?.later ?? 0n;
+	if (!role || sub.laterStatus !== "HELD") return;
+	role.balance -= later;
+	role.heldBack -= later;
+	role.paid += later;
+	sub.laterStatus = "RELEASED";
+	if (advanced) sub.outcome = "ADVANCED";
+	const scout = db.profiles.get(sub.scoutWallet);
+	if (scout) {
+		scout.balance += later;
+		scout.earned += later;
+		if (advanced) scout.advanced++;
+	}
+	mockEvents.emit({
+		type: advanced ? "submission.outcome" : "submission.released",
+		roleId: role.id,
+		submissionId: sub.id,
+		signature,
+		scout: sub.scoutWallet,
+		payout: later.toString(),
+	});
+}
+
+/** attest_outcome(fabricated): the held part goes back to the company and the recruiter is flagged. */
+export function refundLater(sub: MockSubmission, signature: string) {
+	const role = db.roles.get(sub.roleId);
+	const later = sub.split?.later ?? 0n;
+	if (!role || sub.laterStatus !== "HELD") return;
+	role.balance -= later;
+	role.heldBack -= later;
+	const company = db.profiles.get(role.companyWallet);
+	if (company) company.balance += later;
+	sub.laterStatus = "REFUNDED";
+	sub.outcome = "FABRICATED";
+	const scout = db.profiles.get(sub.scoutWallet);
+	if (scout) scout.flagged++;
+	mockEvents.emit({ type: "submission.outcome", roleId: role.id, submissionId: sub.id, signature });
 }
 
 export { inFuture };

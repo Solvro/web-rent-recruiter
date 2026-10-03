@@ -4,7 +4,7 @@
     "build": "anchor build && pnpm codegen",
     "codegen": "node scripts/codama.mjs",
     "dev": "pnpm --parallel --filter app --filter @scout/backend dev",
-    "localnet": "anchor localnet",
+    "localnet": "scripts/localnet.sh",
     "deploy:devnet": "anchor deploy --provider.cluster devnet",
     "dev:app": "pnpm --filter app dev",
     "dev:backend": "pnpm --filter @scout/backend dev",

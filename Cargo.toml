@@ -9,6 +9,7 @@ edition = "2021"
 rust-version = "1.89.0"
 
 [profile.release]
+opt-level = "z"
 overflow-checks = true
 lto = "fat"
 codegen-units = 1

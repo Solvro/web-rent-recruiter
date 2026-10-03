@@ -15,5 +15,7 @@
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true
 	},
-	"include": ["src/**/*.ts", "drizzle.config.ts", "vitest.config.ts"]
+	"include": ["src/**/*.ts", "drizzle.config.ts", "vitest.config.ts"],
+	// src/agent is a symlink to packages/agent/src (its own tsconfig); only the agent files the backend imports are checked here.
+	"exclude": ["src/agent/**"]
 }

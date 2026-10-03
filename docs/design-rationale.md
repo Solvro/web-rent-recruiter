@@ -1,57 +1,58 @@
 # Design rationale
 
-## Which financial relationship we redesigned
+## The financial relationship we redesigned
 
-Paying an independent recruiter for sourcing work.
+**A company paying independent recruiters for pieces of hiring work:** finding candidates, a 30-minute screening call, a language check, a reference check.
 
-Today a company that needs hard-to-reach candidates chooses between two options:
+## Who the intermediary was
 
-1. **An agency.** It costs about 20% of annual salary and is paid only on hire. The agency carries all the risk, so it prices that risk in and works only on roles it is confident it can close.
-2. **Doing everything in-house.** AI can screen profiles well, but it cannot reach the right people, earn a reply or run a first conversation. That part still needs a human with a network.
+The agency or recruiting platform. It:
 
-Independent recruiters ("scouts") would happily do that work in smaller units, but they would be working for strangers:
+- **holds the client's money**;
+- **decides who gets paid, how much and when**;
+- **pays on its own schedule.**
 
-- The scout has no guarantee of payment. Invoices wait weeks or months, clients go silent, and a candidate gets hired "around" the recruiter.
-- The company has no reason to prepay a stranger in another country.
-- Who submitted a candidate first is a classic dispute in agency recruiting, and only a platform's database can settle it.
+For screeners, that schedule is often a lottery: freelance screeners are typically paid only through a share of the success fee if the candidate is hired, months later, so most calls are never paid (our hypothesis, based on our recruiting-agency design partner). Elsewhere, invoices take 30–90 days and payments to other countries need a payments provider per region.
 
-The trusted intermediary in this relationship is the agency or marketplace. It holds the client's money, decides when a scout has earned it, settles "who was first" disputes, and takes a cut for it.
+Both sides have to trust the intermediary:
 
-## What changes once the intermediary is removed
+- The recruiter trusts it to pay for work that was used.
+- The company trusts it to pay only for work that was done.
 
-| Today (trusted intermediary) | Scout (program on Solana) |
+## What changes on-chain
+
+| Before (trusted intermediary) | After (`programs/scout`) |
 |---|---|
-| The platform holds the client's budget | The budget sits in a `RoleVault` token account owned by a program PDA. Neither we nor anyone else can move it outside the program's rules. |
-| The platform decides when a scout has earned money | `accept_submission` pays the scout `bounty − fee` and the treasury `fee` in one transaction. |
-| A silent client means an unpaid scout | Each submission has a `review_deadline`. After it, `settle_expired` is **permissionless**: anyone, including the scout, can trigger the payout. Silence counts as acceptance. |
-| A pending submission might not be paid if the budget runs out | `submit_candidate` requires the vault to cover every pending submission (`balance ≥ (pending + 1) × bounty`). A submitted candidate is always fully funded. |
-| A company can reject at the last second to dodge payment | `reject_submission` is only valid before the deadline. |
-| The company's leftover budget is stuck with the platform | `close_role` refunds the unspent balance to the company. It requires no pending submissions, so scouts can't be rugged. |
-| "Who submitted first" is the platform's word | The Submission PDA is seeded by `[roleVault, candidateHash]`. The second identical submission fails, and the chain's timestamp is proof of who was first. |
-| Reputation is locked inside each marketplace | The `ScoutProfile` PDA counts submitted, accepted, rejected and total earned. It is public and portable. |
-| Cross-border payouts need a payments provider | USDC lands in the scout's wallet seconds after acceptance, in any country. |
+| The platform holds the budget | The budget sits in a vault owned by a program PDA (`create_role`). We can't move it outside the program's rules. |
+| The platform decides when someone is paid | Payment happens in the same transaction as the acceptance (`accept_submission` → `payout::pay_out` → `math::split`). The split is exact: fee + operator + held back + payout = bounty, for every input. |
+| A silent client means an unpaid recruiter | `settle_expired` is permissionless: after the review window anyone can trigger the payout. |
+| The platform can quietly spend the client's money | The company signs the agent's caps (`agent_max_bounty`, `agent_max_commitment`, enforced in `create_task`) and can revoke or replace the agent at any time (`set_agent`). |
+| Quality is the platform's promise | Quality is enforced by money: 30% of the recruiter's share is held back until the candidate reaches the company (`attest_outcome` / `release_holdback`). Unvouched recruiters post a bond the company keeps if the work is rejected. The person who sourced a candidate can't screen them (`SelfReview`). |
+| Reputation lives in the platform's database | Per-gig-type counters live in the recruiter's on-chain `ScoutProfile`, readable by any operator. |
+| Leftover budget is stuck with the platform | `close_role` refunds everything left to the company. |
 
-What we still run is the convenience layer: the AI agent, the database of candidate details, and a relayer that pays network fees so users never need SOL. None of it can move funds. The relayer only adds its fee-payer signature to transactions the user has already signed, and it refuses any instruction outside our program.
+**Scout is a protocol, not a platform.** The program enforces money and payout rules for anyone. Judgement (accept or reject) is done by a reviewer the company chooses: our hosted agent (default), its own self-hosted agent (`scout-agent` CLI, `packages/agent`) or the company itself. The gatekeeper can be the agent or the company (v3.3, live on devnet), and the company switches with `set_agent`. Reviews and rejection reasons are hashed on-chain, and appeals are live: the recruiter appeals a rejection (`submissions.appeal`), the company decides (`decideAppeal`), and an overturn pays the recruiter directly.
 
-## Who we are building for
+Our own hosted pieces are one implementation:
 
-- **Companies:** startups and scale-ups hiring for hard-to-find technical roles. They know what they need but don't want to pay 20% of salary up front of a hire. They log in with Google and see only USDC amounts. There are no wallets, seed phrases or SOL in the interface.
-- **Scouts:** independent recruiters and sourcers, often in CEE, working for clients abroad. They want small, fast, guaranteed payments and a track record they can take with them.
+- the AI agent, which the company names as its delegate and can replace;
+- the candidate database;
+- a relayer that pays network fees so users never need SOL.
 
-Both are people outside the crypto world. That is why the chain is invisible: embedded wallets, sponsored fees, USDC only. A small "View on Solana Explorer" link after each action shows that real transactions happened.
+None of these can take custody of funds.
 
-## Why AI and humans, not AI alone
+## Who we build for
 
-The agent turns a job description into weighted criteria, suggests a bounty, and scores every submission per criterion, quoting the scout's notes as evidence. It does not decide. A person accepts or rejects, and that is deliberate: under the EU AI Act, AI systems used to evaluate candidates in recruitment are classified as high-risk and require meaningful human oversight. The score is computed by code from per-criterion verdicts, so it is explainable and consistent.
+1. **Independent recruiters and screeners outside the crypto world.** Mostly CEE freelancers who work for foreign clients and wait months to be paid, or are never paid. They log in with Google and see dollars and "Payment sent". They never see a wallet, a seed phrase or SOL.
+2. **Startups hiring their first engineers** (in the demo, Hanna, the founder of a seed-stage Solana startup). They paste a job description, fund a budget once, and get a shortlist.
 
-## Business model
+Hiding the chain is a deliberate choice. Neither user would adopt a product that asks them to manage keys or tokens. A small "Receipt → Proof of payment" link after each payment shows the real transaction to anyone who wants to check it.
 
-- A platform fee of 10% of each accepted bounty (`Config.fee_bps`). It is snapshotted into each role at creation, so we can't raise the fee on a running role.
-- The unit economics are attractive to companies because spending is incremental. You pay 20 USDC per qualified, interested candidate rather than 20% of a salary. Companies can start with 200 USDC and top up as trust grows.
+## Honest limits
 
-## Known limitations (said plainly)
+- **Our hosted agent decides within the company's caps** which deliverables meet the bar. It is the default reviewer, not a required one: the company can run its own or review itself (`set_agent`).
+- **If our hosted service goes down**, that is a loss of service, not of custody. Funds stay in the vault. Screening, language and reference work settles permissionlessly; a sourcing payout waits for its confirmation attestor or the company (the trade-off of paying only on the candidate's confirmation). The company can switch reviewer or close the role.
+- **We hold the upgrade authority on devnet** (a cold key). It is our real power. A multisig and later immutability are on the roadmap.
+- **Candidate data is off-chain;** only hashes are stored on-chain.
 
-- **Upgrade authority:** the program is upgradeable by the deployer key. Before real money, it moves to a multisig and later becomes immutable.
-- **Off-chain identity:** the API identifies users by wallet address without a signed session. Money movements still require the user's own signature, so a spoofed identity can't move funds, but it can read data. A sign-in signature is the next step.
-- **"Qualified" is a human judgement:** a malicious company can reject good candidates before the deadline. Reputation is two-sided in the roadmap: rejection rates per company become visible to scouts.
-- **Mock USDC on devnet:** we mint our own 6-decimal token labelled USDC.
+See `docs/security.md`, `docs/jury-qa.md` and `docs/legal.md`.

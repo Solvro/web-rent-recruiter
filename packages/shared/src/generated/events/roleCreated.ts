@@ -17,16 +17,18 @@ import {
   getConstantEncoder,
   getHiddenPrefixDecoder,
   getHiddenPrefixEncoder,
+  getOptionDecoder,
+  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
   getU64Decoder,
   getU64Encoder,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
+  type Option,
+  type OptionOrNullable,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
@@ -43,8 +45,7 @@ export type RoleCreatedEvent = {
   roleVault: Address;
   company: Address;
   roleId: bigint;
-  bountyPerCandidate: bigint;
-  maxCandidates: number;
+  agent: Option<Address>;
   initialDeposit: bigint;
 };
 
@@ -52,20 +53,18 @@ export type RoleCreatedEventArgs = {
   roleVault: Address;
   company: Address;
   roleId: number | bigint;
-  bountyPerCandidate: number | bigint;
-  maxCandidates: number;
+  agent: OptionOrNullable<Address>;
   initialDeposit: number | bigint;
 };
 
 /** Gets the encoder for {@link RoleCreatedEventArgs} event data. */
-export function getRoleCreatedEventEncoder(): FixedSizeEncoder<RoleCreatedEventArgs> {
+export function getRoleCreatedEventEncoder(): Encoder<RoleCreatedEventArgs> {
   return getHiddenPrefixEncoder(
     getStructEncoder([
       ["roleVault", getAddressEncoder()],
       ["company", getAddressEncoder()],
       ["roleId", getU64Encoder()],
-      ["bountyPerCandidate", getU64Encoder()],
-      ["maxCandidates", getU16Encoder()],
+      ["agent", getOptionEncoder(getAddressEncoder())],
       ["initialDeposit", getU64Encoder()],
     ]),
     [getConstantEncoder(ROLE_CREATED_EVENT_DISCRIMINATOR)],
@@ -73,14 +72,13 @@ export function getRoleCreatedEventEncoder(): FixedSizeEncoder<RoleCreatedEventA
 }
 
 /** Gets the decoder for {@link RoleCreatedEvent} event data. */
-export function getRoleCreatedEventDecoder(): FixedSizeDecoder<RoleCreatedEvent> {
+export function getRoleCreatedEventDecoder(): Decoder<RoleCreatedEvent> {
   return getHiddenPrefixDecoder(
     getStructDecoder([
       ["roleVault", getAddressDecoder()],
       ["company", getAddressDecoder()],
       ["roleId", getU64Decoder()],
-      ["bountyPerCandidate", getU64Decoder()],
-      ["maxCandidates", getU16Decoder()],
+      ["agent", getOptionDecoder(getAddressDecoder())],
       ["initialDeposit", getU64Decoder()],
     ]),
     [getConstantDecoder(ROLE_CREATED_EVENT_DISCRIMINATOR)],
@@ -88,7 +86,7 @@ export function getRoleCreatedEventDecoder(): FixedSizeDecoder<RoleCreatedEvent>
 }
 
 /** Gets the codec for {@link RoleCreatedEvent} event data. */
-export function getRoleCreatedEventCodec(): FixedSizeCodec<
+export function getRoleCreatedEventCodec(): Codec<
   RoleCreatedEventArgs,
   RoleCreatedEvent
 > {

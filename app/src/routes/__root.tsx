@@ -1,29 +1,52 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router";
+import { createRootRouteWithContext, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/bits";
+import { buttonVariants } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-	component: () => (
-		<TooltipProvider>
-			<AppShell>
-				<Outlet />
-			</AppShell>
-			<Toaster position="bottom-center" />
-		</TooltipProvider>
+	component: Root,
+	errorComponent: () => (
+		<EmptyState
+			title="Something went wrong."
+			action={
+				<button
+					type="button"
+					className={buttonVariants({ variant: "outline" })}
+					onClick={() => location.reload()}
+				>
+					Reload
+				</button>
+			}
+		/>
 	),
 	notFoundComponent: () => (
 		<EmptyState
-			title="Page not found"
+			title="Page not found."
 			action={
-				<Link to="/" className="text-sm text-primary hover:underline">
-					Back to the start
+				<Link to="/" className={buttonVariants({ variant: "outline" })}>
+					Go home
 				</Link>
 			}
-		>
-			The link may be outdated, or the role was closed.
-		</EmptyState>
+		/>
 	),
 });
+
+/** Candidate links (/c/…) are a bare page: no app header, no accounts. */
+function Root() {
+	const bare = useLocation({ select: (l) => l.pathname.startsWith("/c/") });
+	return (
+		<TooltipProvider>
+			{bare ? (
+				<Outlet />
+			) : (
+				<AppShell>
+					<Outlet />
+				</AppShell>
+			)}
+			<Toaster position="bottom-center" />
+		</TooltipProvider>
+	);
+}

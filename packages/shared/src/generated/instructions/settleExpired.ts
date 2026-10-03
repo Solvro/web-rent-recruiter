@@ -27,6 +27,7 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type WritableAccount,
   type WritableSignerAccount,
@@ -55,13 +56,17 @@ export function getSettleExpiredDiscriminatorBytes(): ReadonlyUint8Array {
 export type SettleExpiredInstruction<
   TProgram extends string = typeof SCOUT_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
+  TAccountAttestor extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountRoleVault extends string | AccountMeta<string> = string,
+  TAccountTask extends string | AccountMeta<string> = string,
   TAccountSubmission extends string | AccountMeta<string> = string,
   TAccountScoutProfile extends string | AccountMeta<string> = string,
   TAccountVaultTokenAccount extends string | AccountMeta<string> = string,
   TAccountScoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountTreasuryTokenAccount extends string | AccountMeta<string> = string,
+  TAccountOperator extends string | AccountMeta<string> = string,
+  TAccountOperatorTokenAccount extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -74,12 +79,19 @@ export type SettleExpiredInstruction<
         ? WritableSignerAccount<TAccountPayer> &
             AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
+      TAccountAttestor extends string
+        ? ReadonlySignerAccount<TAccountAttestor> &
+            AccountSignerMeta<TAccountAttestor>
+        : TAccountAttestor,
       TAccountConfig extends string
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountRoleVault extends string
         ? WritableAccount<TAccountRoleVault>
         : TAccountRoleVault,
+      TAccountTask extends string
+        ? WritableAccount<TAccountTask>
+        : TAccountTask,
       TAccountSubmission extends string
         ? WritableAccount<TAccountSubmission>
         : TAccountSubmission,
@@ -95,6 +107,12 @@ export type SettleExpiredInstruction<
       TAccountTreasuryTokenAccount extends string
         ? WritableAccount<TAccountTreasuryTokenAccount>
         : TAccountTreasuryTokenAccount,
+      TAccountOperator extends string
+        ? WritableAccount<TAccountOperator>
+        : TAccountOperator,
+      TAccountOperatorTokenAccount extends string
+        ? WritableAccount<TAccountOperatorTokenAccount>
+        : TAccountOperatorTokenAccount,
       TAccountMint extends string
         ? ReadonlyAccount<TAccountMint>
         : TAccountMint,
@@ -136,8 +154,10 @@ export function getSettleExpiredInstructionDataCodec(): FixedSizeCodec<
 
 export type SettleExpiredAsyncInput<
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAttestor extends InstructionSignerInput = InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput = InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput = InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput =
     InstructionAccountInput,
@@ -147,44 +167,64 @@ export type SettleExpiredAsyncInput<
     InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
+  /**
+   * SOURCING only: the task's confirmation attestor (default `role.agent`) or the company, so an
+   * unconfirmed candidate can't be auto-paid. Other task types settle permissionlessly.
+   */
+  attestor?: TAccountAttestor;
   config?: TAccountConfig;
   roleVault: TAccountRoleVault;
+  task: TAccountTask;
   submission: TAccountSubmission;
   scoutProfile: TAccountScoutProfile;
   vaultTokenAccount: TAccountVaultTokenAccount;
   scoutTokenAccount: TAccountScoutTokenAccount;
   treasuryTokenAccount: TAccountTreasuryTokenAccount;
+  /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+  operator?: TAccountOperator;
+  operatorTokenAccount?: TAccountOperatorTokenAccount;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
 };
 
 export async function getSettleExpiredInstructionAsync<
   TAccountPayer extends InstructionSignerInput,
+  TAccountAttestor extends InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountVaultTokenAccount extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SCOUT_PROGRAM_ADDRESS,
 >(
   input: SettleExpiredAsyncInput<
     TAccountPayer,
+    TAccountAttestor,
     TAccountConfig,
     TAccountRoleVault,
+    TAccountTask,
     TAccountSubmission,
     TAccountScoutProfile,
     TAccountVaultTokenAccount,
     TAccountScoutTokenAccount,
     TAccountTreasuryTokenAccount,
+    TAccountOperator,
+    TAccountOperatorTokenAccount,
     TAccountMint,
     TAccountTokenProgram
   >,
@@ -197,12 +237,20 @@ export async function getSettleExpiredInstructionAsync<
       InstructionAccountInputAddress<TAccountPayer>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountAttestor,
+      InstructionAccountInputAddress<TAccountAttestor>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
     >,
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSubmission,
@@ -225,6 +273,14 @@ export async function getSettleExpiredInstructionAsync<
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -243,12 +299,18 @@ export async function getSettleExpiredInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    attestor: {
+      value: input.attestor ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
     config: { value: input.config ?? null, isSigner: false, isWritable: false },
     roleVault: {
       value: input.roleVault ?? null,
       isSigner: false,
       isWritable: true,
     },
+    task: { value: input.task ?? null, isSigner: false, isWritable: true },
     submission: {
       value: input.submission ?? null,
       isSigner: false,
@@ -271,6 +333,16 @@ export async function getSettleExpiredInstructionAsync<
     },
     treasuryTokenAccount: {
       value: input.treasuryTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorTokenAccount: {
+      value: input.operatorTokenAccount ?? null,
       isSigner: false,
       isWritable: true,
     },
@@ -298,13 +370,17 @@ export async function getSettleExpiredInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta("payer", accounts.payer),
+      getAccountMeta("attestor", accounts.attestor),
       getAccountMeta("config", accounts.config),
       getAccountMeta("roleVault", accounts.roleVault),
+      getAccountMeta("task", accounts.task),
       getAccountMeta("submission", accounts.submission),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("vaultTokenAccount", accounts.vaultTokenAccount),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorTokenAccount", accounts.operatorTokenAccount),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
@@ -317,12 +393,20 @@ export async function getSettleExpiredInstructionAsync<
       InstructionAccountInputAddress<TAccountPayer>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountAttestor,
+      InstructionAccountInputAddress<TAccountAttestor>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
     >,
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSubmission,
@@ -345,6 +429,14 @@ export async function getSettleExpiredInstructionAsync<
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -357,8 +449,10 @@ export async function getSettleExpiredInstructionAsync<
 
 export type SettleExpiredInput<
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAttestor extends InstructionSignerInput = InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput = InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput = InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput =
     InstructionAccountInput,
@@ -368,44 +462,64 @@ export type SettleExpiredInput<
     InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
+  /**
+   * SOURCING only: the task's confirmation attestor (default `role.agent`) or the company, so an
+   * unconfirmed candidate can't be auto-paid. Other task types settle permissionlessly.
+   */
+  attestor?: TAccountAttestor;
   config: TAccountConfig;
   roleVault: TAccountRoleVault;
+  task: TAccountTask;
   submission: TAccountSubmission;
   scoutProfile: TAccountScoutProfile;
   vaultTokenAccount: TAccountVaultTokenAccount;
   scoutTokenAccount: TAccountScoutTokenAccount;
   treasuryTokenAccount: TAccountTreasuryTokenAccount;
+  /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+  operator?: TAccountOperator;
+  operatorTokenAccount?: TAccountOperatorTokenAccount;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
 };
 
 export function getSettleExpiredInstruction<
   TAccountPayer extends InstructionSignerInput,
+  TAccountAttestor extends InstructionSignerInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountRoleVault extends InstructionAccountInput,
+  TAccountTask extends InstructionAccountInput,
   TAccountSubmission extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountVaultTokenAccount extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorTokenAccount extends InstructionAccountInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SCOUT_PROGRAM_ADDRESS,
 >(
   input: SettleExpiredInput<
     TAccountPayer,
+    TAccountAttestor,
     TAccountConfig,
     TAccountRoleVault,
+    TAccountTask,
     TAccountSubmission,
     TAccountScoutProfile,
     TAccountVaultTokenAccount,
     TAccountScoutTokenAccount,
     TAccountTreasuryTokenAccount,
+    TAccountOperator,
+    TAccountOperatorTokenAccount,
     TAccountMint,
     TAccountTokenProgram
   >,
@@ -417,12 +531,20 @@ export function getSettleExpiredInstruction<
     InstructionAccountInputAddress<TAccountPayer>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountAttestor,
+    InstructionAccountInputAddress<TAccountAttestor>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountConfig,
     InstructionAccountInputAddress<TAccountConfig>
   >,
   ResolvedInstructionAccountMeta<
     TAccountRoleVault,
     InstructionAccountInputAddress<TAccountRoleVault>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountTask,
+    InstructionAccountInputAddress<TAccountTask>
   >,
   ResolvedInstructionAccountMeta<
     TAccountSubmission,
@@ -445,6 +567,14 @@ export function getSettleExpiredInstruction<
     InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountOperator,
+    InstructionAccountInputAddress<TAccountOperator>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountOperatorTokenAccount,
+    InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountMint,
     InstructionAccountInputAddress<TAccountMint>
   >,
@@ -462,12 +592,18 @@ export function getSettleExpiredInstruction<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    attestor: {
+      value: input.attestor ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
     config: { value: input.config ?? null, isSigner: false, isWritable: false },
     roleVault: {
       value: input.roleVault ?? null,
       isSigner: false,
       isWritable: true,
     },
+    task: { value: input.task ?? null, isSigner: false, isWritable: true },
     submission: {
       value: input.submission ?? null,
       isSigner: false,
@@ -493,6 +629,16 @@ export function getSettleExpiredInstruction<
       isSigner: false,
       isWritable: true,
     },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorTokenAccount: {
+      value: input.operatorTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     tokenProgram: {
       value: input.tokenProgram ?? null,
@@ -514,13 +660,17 @@ export function getSettleExpiredInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("payer", accounts.payer),
+      getAccountMeta("attestor", accounts.attestor),
       getAccountMeta("config", accounts.config),
       getAccountMeta("roleVault", accounts.roleVault),
+      getAccountMeta("task", accounts.task),
       getAccountMeta("submission", accounts.submission),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("vaultTokenAccount", accounts.vaultTokenAccount),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorTokenAccount", accounts.operatorTokenAccount),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
@@ -533,12 +683,20 @@ export function getSettleExpiredInstruction<
       InstructionAccountInputAddress<TAccountPayer>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountAttestor,
+      InstructionAccountInputAddress<TAccountAttestor>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountConfig,
       InstructionAccountInputAddress<TAccountConfig>
     >,
     ResolvedInstructionAccountMeta<
       TAccountRoleVault,
       InstructionAccountInputAddress<TAccountRoleVault>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTask,
+      InstructionAccountInputAddress<TAccountTask>
     >,
     ResolvedInstructionAccountMeta<
       TAccountSubmission,
@@ -561,6 +719,14 @@ export function getSettleExpiredInstruction<
       InstructionAccountInputAddress<TAccountTreasuryTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorTokenAccount,
+      InstructionAccountInputAddress<TAccountOperatorTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -578,15 +744,24 @@ export type ParsedSettleExpiredInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     payer: TAccountMetas[0];
-    config: TAccountMetas[1];
-    roleVault: TAccountMetas[2];
-    submission: TAccountMetas[3];
-    scoutProfile: TAccountMetas[4];
-    vaultTokenAccount: TAccountMetas[5];
-    scoutTokenAccount: TAccountMetas[6];
-    treasuryTokenAccount: TAccountMetas[7];
-    mint: TAccountMetas[8];
-    tokenProgram: TAccountMetas[9];
+    /**
+     * SOURCING only: the task's confirmation attestor (default `role.agent`) or the company, so an
+     * unconfirmed candidate can't be auto-paid. Other task types settle permissionlessly.
+     */
+    attestor?: TAccountMetas[1] | undefined;
+    config: TAccountMetas[2];
+    roleVault: TAccountMetas[3];
+    task: TAccountMetas[4];
+    submission: TAccountMetas[5];
+    scoutProfile: TAccountMetas[6];
+    vaultTokenAccount: TAccountMetas[7];
+    scoutTokenAccount: TAccountMetas[8];
+    treasuryTokenAccount: TAccountMetas[9];
+    /** The scout's vouching operator and its fee account; omit both if the scout has none. */
+    operator?: TAccountMetas[10] | undefined;
+    operatorTokenAccount?: TAccountMetas[11] | undefined;
+    mint: TAccountMetas[12];
+    tokenProgram: TAccountMetas[13];
   };
   data: SettleExpiredInstructionData;
 };
@@ -599,12 +774,12 @@ export function parseSettleExpiredInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleExpiredInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
+  if (instruction.accounts.length < 14) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 10,
+        expectedAccountMetas: 14,
       },
     );
   }
@@ -614,17 +789,27 @@ export function parseSettleExpiredInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === SCOUT_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       payer: getNextAccount(),
+      attestor: getNextOptionalAccount(),
       config: getNextAccount(),
       roleVault: getNextAccount(),
+      task: getNextAccount(),
       submission: getNextAccount(),
       scoutProfile: getNextAccount(),
       vaultTokenAccount: getNextAccount(),
       scoutTokenAccount: getNextAccount(),
       treasuryTokenAccount: getNextAccount(),
+      operator: getNextOptionalAccount(),
+      operatorTokenAccount: getNextOptionalAccount(),
       mint: getNextAccount(),
       tokenProgram: getNextAccount(),
     },

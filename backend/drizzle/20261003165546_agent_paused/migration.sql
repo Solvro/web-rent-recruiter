@@ -1,0 +1,1 @@
+ALTER TABLE "roles" ADD COLUMN "agentPaused" boolean DEFAULT false NOT NULL;

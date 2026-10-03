@@ -5,6 +5,9 @@
 		"includes": [
 			"app/src/**",
 			"backend/src/**",
+			"packages/agent/src/**",
+			"packages/agent/scripts/**",
+			"!backend/src/agent",
 			"packages/shared/src/**",
 			"scripts/**",
 			"!**/routeTree.gen.ts",

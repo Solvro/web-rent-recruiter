@@ -1,8 +1,11 @@
+import { signBytes } from "@solana/kit";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { setApiWallet } from "../api";
 import { API_MOCK, DEMO_SECRETS } from "../env";
 import { PERSONAS, type PersonaId } from "../personas";
+import { setSessionSigner } from "../session";
+import { setCurrentWallet } from "../trpc";
 import { WalletContext, type WalletContextValue } from "./context";
+import { useResetOnAccountChange } from "./reset";
 import { keyPairFromSecret, signWithKeyPair } from "./sign";
 
 const STORAGE_KEY = "scout.persona";
@@ -60,8 +63,15 @@ export function DemoWalletProvider({ children }: { children: ReactNode }) {
 	const address = persona ? (API_MOCK ? persona.mockAddress : (keys[persona.id]?.address ?? null)) : null;
 	const missingKeyFor = !API_MOCK && ready && persona && !keys[persona.id] ? persona.id : null;
 
-	// Set synchronously so queries issued during this render already carry the header.
-	setApiWallet(address);
+	// Set synchronously so queries issued during this render already sign in as this account.
+	setCurrentWallet(address);
+	const keyPair = persona ? keys[persona.id]?.keyPair : undefined;
+	setSessionSigner(
+		address && keyPair
+			? { wallet: address, signMessage: async (m) => new Uint8Array(await signBytes(keyPair.privateKey, m)) }
+			: null,
+	);
+	useResetOnAccountChange(address);
 
 	const selectPersona = useCallback((id: PersonaId) => {
 		setPersonaId(id);
@@ -77,6 +87,8 @@ export function DemoWalletProvider({ children }: { children: ReactNode }) {
 			mode: "demo",
 			ready,
 			address,
+			authenticated: !!persona,
+			settingUp: false,
 			label: persona?.displayName ?? null,
 			login: () => selectPersona("company"),
 			logout: () => {
@@ -90,7 +102,7 @@ export function DemoWalletProvider({ children }: { children: ReactNode }) {
 			signTransaction: async (tx) => {
 				if (API_MOCK) return tx;
 				const key = persona ? keys[persona.id] : undefined;
-				if (!key) throw new Error("No demo keypair configured for this persona");
+				if (!key) throw new Error("This demo account isn't set up");
 				return signWithKeyPair(tx, key.keyPair);
 			},
 			persona,

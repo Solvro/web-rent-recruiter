@@ -1,0 +1,25 @@
+{
+	"recommendation": "ADVANCE",
+	"answers": [
+		{
+			"questionId": "ref-relationship",
+			"answer": "Marek Nowicki, CTO and co-founder of Kelp Labs. Karolina reported to him directly for 3 years, since she joined as the first protocol engineer."
+		},
+		{
+			"questionId": "ref-strength",
+			"answer": "The lending pool program: she wrote it from the design doc, built the Trident fuzz suite before launch and it went through two audits with no critical findings. It's run on mainnet since 2024 without a loss of funds."
+		},
+		{
+			"questionId": "ref-verify",
+			"answer": "Confirmed she shipped the liquidation program and led the Token-2022 migration of the pool vaults; he says it was done behind a feature flag over two weeks with no downtime."
+		},
+		{
+			"questionId": "ref-growth",
+			"answer": "Early on she held reviews to a very high bar and became a bottleneck before the audit; she started pairing with the junior engineer and splitting reviews, and it got much better."
+		},
+		{
+			"questionId": "ref-rehire",
+			"answer": "Yes, without hesitation. He'd hire her again for any protocol role; he only regrets that Kelp's pivot to perps doesn't fit what she wants."
+		}
+	]
+}

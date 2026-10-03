@@ -1,0 +1,735 @@
+import type { Deliverable, Me, RecordingView } from "@scout/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Check, Copy, ExternalLink, Loader2, Lock, Mic, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { PageSkeleton, RequireAccount } from "@/components/account";
+import { Appeal } from "@/components/appeal";
+import { Chip, Countdown, Disclosure, EmptyState, ErrorState } from "@/components/bits";
+import { BookingTimes, NoShow, ReportFake } from "@/components/call-tools";
+import { CopyButton } from "@/components/copy";
+import { FollowUps } from "@/components/follow-ups";
+import { Avatar } from "@/components/person";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { appCodeOf, errorData, errorMessage, isDuplicate } from "@/lib/errors";
+import { firstName, formatMoney } from "@/lib/format";
+import { eligibilityLine, requirementChips } from "@/lib/gig-access";
+import { CLAIM_HOURS, GIG_TYPES, kindOf } from "@/lib/gig-types";
+import { earnFor, gigApi, splitFor, useGig, useMyWork, useRecording } from "@/lib/gigs/api";
+import { callApi } from "@/lib/gigs/calls";
+import type { GigView } from "@/lib/gigs/schemas";
+import { useTRPCClient } from "@/lib/trpc";
+import { useTransact } from "@/lib/use-transact";
+import { cn } from "@/lib/utils";
+
+export const Route = createFileRoute("/scout/gigs/$gigId")({
+	component: () => {
+		const { gigId } = Route.useParams();
+		return <RequireAccount kind="scout">{(me) => <GigPage gigId={gigId} me={me} />}</RequireAccount>;
+	},
+});
+
+function GigPage({ gigId, me }: { gigId: string; me: Me }) {
+	const gig = useGig(gigId);
+	const [sent, setSent] = useState<string | null>(null);
+	if (gig.isError) return <ErrorState />;
+	if (gig.isPending) return <PageSkeleton />;
+	const g = gig.data;
+	const earn = earnFor(g, me.operator?.feeBps ?? 0);
+	const split = splitFor(g, me.operator?.feeBps ?? 0);
+
+	if (sent) return <Checking deliverableId={sent} gig={g} onAgain={() => setSent(null)} />;
+	if (g.status !== "OPEN") return <Back title="This gig is closed." />;
+	if (g.exclusive && g.claimant && !g.claimedByMe) return <Back title="Another recruiter took this gig." />;
+
+	return (
+		<div className="mx-auto max-w-xl space-y-10">
+			<header className="space-y-3">
+				<Chip tone="accent">
+					{(() => {
+						const Icon = GIG_TYPES[kindOf(g)].icon;
+						return <Icon className="size-3.5" />;
+					})()}
+					{GIG_TYPES[kindOf(g)].name}
+				</Chip>
+				<h1 className="type-display">
+					Earn {formatMoney(earn)} <span className="text-muted-foreground">{GIG_TYPES[kindOf(g)].unit}</span>
+				</h1>
+				{split.later > 0n && (
+					<p className="text-muted-foreground">
+						<span className="text-success tabular">{formatMoney(split.now)}</span>{" "}
+						{g.type === "SOURCING"
+							? "when the candidate confirms interest"
+							: "when the agent accepts your notes"}
+						, <span className="tabular">{formatMoney(split.later)}</span> when{" "}
+						{g.candidate?.name ? firstName(g.candidate.name) : "the candidate"} comes to the interview
+					</p>
+				)}
+				<p className="text-muted-foreground">{g.title}</p>
+				{g.candidate && <CandidateLine gig={g} />}
+			</header>
+			{g.exclusive && !g.claimedByMe ? (
+				<Claim gig={g} />
+			) : g.type === "SOURCING" ? (
+				<>
+					<WaitingLinks gigId={g.id} />
+					<SourcingForm gig={g} onSent={setSent} operator={me.operator?.name ?? null} />
+				</>
+			) : (
+				<ScriptForm gig={g} onSent={setSent} />
+			)}
+		</div>
+	);
+}
+
+function CandidateLine({ gig }: { gig: GigView }) {
+	const c = gig.candidate;
+	if (!c) return null;
+	// Before the gig is yours the API sends an anonymous summary, no name, photo or link.
+	if (c.redacted || !c.name)
+		return (
+			<div className="flex items-center gap-3 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
+				<span className="grid size-10 place-items-center rounded-full bg-muted" aria-hidden>
+					<UserRound className="size-5 text-muted-foreground" />
+				</span>
+				<p className="text-muted-foreground">
+					{[c.summary.headline, c.summary.city].filter(Boolean).join(" · ")}
+				</p>
+			</div>
+		);
+	return (
+		<div className="flex items-center gap-3 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
+			<Avatar name={c.name} src={c.card?.avatarUrl} />
+			<div className="min-w-0 flex-1">
+				<p className="truncate">{c.name}</p>
+				<p className="truncate type-label text-muted-foreground">{c.summary.headline}</p>
+			</div>
+			{c.profileUrl && (
+				<a
+					href={c.profileUrl}
+					target="_blank"
+					rel="noreferrer"
+					className="inline-flex items-center gap-1 type-label text-primary hover:underline"
+				>
+					Profile <ExternalLink className="size-3" />
+				</a>
+			)}
+		</div>
+	);
+}
+
+function Back({ title }: { title: string }) {
+	return (
+		<EmptyState
+			title={title}
+			action={
+				<Link to="/scout" className={buttonVariants({ variant: "outline" })}>
+					Back to gigs
+				</Link>
+			}
+		/>
+	);
+}
+
+/** Exclusive gigs: one recruiter takes it, then delivers. Shows the agent's questions up front. */
+function Claim({ gig }: { gig: GigView }) {
+	const { transact, pending } = useTransact();
+	const qc = useQueryClient();
+	const claim = useMutation({
+		mutationFn: async () => {
+			const { unsignedTx } = await gigApi.claim(gig.id);
+			const ok = await transact(unsignedTx, { pending: "Taking the gig…", success: "It's yours." });
+			if (ok) await qc.invalidateQueries({ queryKey: ["gigs"] });
+		},
+	});
+	const info = GIG_TYPES[kindOf(gig)];
+	const locked = !!gig.eligibility && !gig.eligibility.allowed;
+	return (
+		<div className="space-y-8">
+			<p>{gig.brief}</p>
+			<dl className="space-y-1 type-label">
+				<div className="flex gap-2">
+					<dt className="text-muted-foreground">You send:</dt>
+					<dd>{info.deliver}</dd>
+				</div>
+				<div className="flex gap-2">
+					<dt className="text-muted-foreground">Time:</dt>
+					<dd>{info.time}</dd>
+				</div>
+				<div className="flex gap-2">
+					<dt className="text-muted-foreground">It's yours for:</dt>
+					<dd>{CLAIM_HOURS} hours after you take it</dd>
+				</div>
+				{gig.requirements.summary && (
+					<div className="flex gap-2">
+						<dt className="text-muted-foreground">Who can take it:</dt>
+						<dd>{requirementChips(gig.requirements).join(" · ") || "Anyone"}</dd>
+					</div>
+				)}
+			</dl>
+			{gig.exclusive && gig.type === "SCREENING_CALL" && <BookingTimes gig={gig} />}
+			{locked && gig.eligibility && (
+				<p className="flex items-center gap-2 rounded-3xl bg-muted p-4 text-muted-foreground">
+					<Lock className="size-4 shrink-0" /> {eligibilityLine(gig.eligibility)}
+				</p>
+			)}
+			{gig.script && (
+				<ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
+					{gig.script.map((q) => (
+						<li key={q.id}>{q.question}</li>
+					))}
+				</ol>
+			)}
+			<Button
+				size="lg"
+				className="h-12 w-full"
+				onClick={() => claim.mutate()}
+				disabled={claim.isPending || pending || locked}
+			>
+				{(claim.isPending || pending) && <Loader2 className="animate-spin" />}
+				Take gig
+			</Button>
+			{claim.isError && <p className="text-destructive">{errorMessage(claim.error)}</p>}
+		</div>
+	);
+}
+
+function useDeliver(gig: GigView, onSent: (id: string) => void) {
+	const { transact, pending } = useTransact();
+	const mutation = useMutation({
+		mutationFn: async (deliverable: Deliverable) => {
+			const res = await gigApi.deliver(gig.id, deliverable);
+			const ok = await transact(res.unsignedTx, { pending: "Sending…", success: "Sent to the agent." });
+			if (ok) onSent(res.deliverableId);
+		},
+		onError: (e) => console.error("[deliver]", gig.id, errorData(e) ?? e),
+	});
+	return { ...mutation, busy: mutation.isPending || pending };
+}
+
+const NOISE = new Set(["demo", "dev", "developer", "engineer", "backend", "frontend", "fullstack", "live"]);
+/** "linkedin.com/in/karolina-mazurek-backend-demo" → "Karolina Mazurek". */
+function nameFromProfile(url: string) {
+	const slug = url.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1] ?? url.match(/github\.com\/([^/?#]+)/i)?.[1];
+	if (!slug) return "";
+	const parts = decodeURIComponent(slug)
+		.split(/[-_.]/)
+		.filter((p) => /^[\p{L}]+$/u.test(p) && !NOISE.has(p.toLowerCase()))
+		.slice(0, 2);
+	return parts.length === 2 ? parts.map((p) => p[0].toUpperCase() + p.slice(1).toLowerCase()).join(" ") : "";
+}
+
+function SourcingForm({
+	gig,
+	onSent,
+	operator,
+}: {
+	gig: GigView;
+	onSent: (id: string) => void;
+	/** The recruiter's operator: vouched recruiters put down no deposit. */
+	operator: string | null;
+}) {
+	const client = useTRPCClient();
+	const [profileUrl, setProfileUrl] = useState("");
+	const [name, setName] = useState("");
+	const [nameTouched, setNameTouched] = useState(false);
+	const [notes, setNotes] = useState("");
+	const [duplicate, setDuplicate] = useState(false);
+	const deliver = useDeliver(gig, onSent);
+
+	// Duplicate check right after the link is pasted.
+	useEffect(() => {
+		if (!/^https?:\/\/\S+\.\S+/.test(profileUrl)) return;
+		let cancelled = false;
+		const t = setTimeout(() => {
+			client.submissions.checkDuplicate
+				.query({ roleId: gig.roleId, profileUrl })
+				.then((res) => {
+					if (!cancelled) setDuplicate(res.duplicate);
+				})
+				.catch(() => {});
+		}, 400);
+		return () => {
+			cancelled = true;
+			clearTimeout(t);
+		};
+	}, [profileUrl, gig.roleId, client]);
+
+	return (
+		<form
+			className="space-y-6"
+			onSubmit={(e) => {
+				e.preventDefault();
+				deliver.mutate({ type: "SOURCING", name, profileUrl, notes });
+			}}
+		>
+			<Input
+				id="url"
+				type="url"
+				required
+				autoFocus
+				value={profileUrl}
+				onChange={(e) => {
+					setProfileUrl(e.target.value);
+					setDuplicate(false);
+					if (!nameTouched) setName(nameFromProfile(e.target.value));
+				}}
+				placeholder="Paste their LinkedIn"
+				aria-label="Profile link"
+				className="h-12"
+			/>
+			{profileUrl && (
+				<div className="animate-in space-y-6 fade-in-0">
+					<Input
+						id="name"
+						required
+						value={name}
+						onChange={(e) => {
+							setName(e.target.value);
+							setNameTouched(true);
+						}}
+						placeholder="Their name"
+						aria-label="Candidate name"
+						className="h-12"
+					/>
+					<Textarea
+						id="notes"
+						required
+						value={notes}
+						onChange={(e) => setNotes(e.target.value)}
+						placeholder="Two lines: why they fit, and that they're open to a move"
+						aria-label="Note"
+						className="min-h-28 rounded-3xl p-4"
+					/>
+				</div>
+			)}
+			<ul className="space-y-1 type-label text-muted-foreground">
+				<li>You get a link to send them. You're paid once they confirm they are open to a call.</li>
+				{gig.eligibility?.needsBond ? (
+					<li>{formatMoney(BigInt(gig.bounty) / 10n)} deposit, returned when the agent accepts.</li>
+				) : (
+					operator && <li>No deposit: you are vouched by {operator}.</li>
+				)}
+			</ul>
+			{duplicate && <p className="text-destructive">Another recruiter already submitted this person.</p>}
+			{deliver.isError && !isDuplicate(deliver.error) && (
+				<p className="text-destructive">{errorMessage(deliver.error)}</p>
+			)}
+			{deliver.isError && isDuplicate(deliver.error) && !duplicate && (
+				<p className="text-destructive">Another recruiter already submitted this person.</p>
+			)}
+			<Button
+				type="submit"
+				size="lg"
+				className="h-12 w-full"
+				disabled={!profileUrl || !name || !notes.trim() || duplicate || deliver.busy}
+			>
+				{deliver.busy && <Loader2 className="animate-spin" />}
+				Send to the agent
+			</Button>
+		</form>
+	);
+}
+
+const LEVELS = ["B1", "B2", "C1", "C2"] as const;
+
+const RECOMMENDATIONS = [
+	{ value: "ADVANCE", label: "Move forward" },
+	{ value: "MAYBE", label: "Not sure" },
+	{ value: "PASS", label: "Not a fit" },
+] as const;
+
+/** Screening and reference gigs: the agent's questions, one answer each, and the recruiter's own call. */
+function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => void }) {
+	const script = gig.script ?? [];
+	const [answers, setAnswers] = useState<Record<string, string>>({});
+	const [recommendation, setRecommendation] = useState<"ADVANCE" | "MAYBE" | "PASS" | null>(null);
+	const [refereeName, setRefereeName] = useState("");
+	const [refereeRelation, setRefereeRelation] = useState("");
+	const deliver = useDeliver(gig, onSent);
+	const reference = gig.type === "REFERENCE_CHECK";
+	const language = gig.variant === "language";
+	const [level, setLevel] = useState<(typeof LEVELS)[number] | null>(null);
+	const [recording, setRecording] = useState<RecordingView | null>(null);
+	const missing = new Set(recording?.prefill?.missing ?? []);
+	// Fill the form once, when the notetaker's transcript is ready; the recruiter edits from there.
+	const onDone = (view: RecordingView) => {
+		setRecording(view);
+		if (!view.prefill) return;
+		setAnswers((current) => {
+			const next = { ...current };
+			for (const a of view.prefill?.answers ?? [])
+				if (!next[a.questionId]?.trim()) next[a.questionId] = a.answer;
+			return next;
+		});
+		setRecommendation((r) => r ?? view.prefill?.recommendation ?? null);
+	};
+	const complete =
+		script.every((q) => answers[q.id]?.trim()) &&
+		!!recommendation &&
+		(!language || !!level) &&
+		(!reference || (refereeName && refereeRelation));
+
+	return (
+		<form
+			className="space-y-8"
+			onSubmit={(e) => {
+				e.preventDefault();
+				if (!recommendation) return;
+				const list = script.map((q) => ({ questionId: q.id, answer: answers[q.id]?.trim() ?? "" }));
+				deliver.mutate(
+					reference
+						? { type: "REFERENCE_CHECK", refereeName, refereeRelation, answers: list, recommendation }
+						: // A recorded call is attached as evidence by the server, never sent from here.
+							{
+								type: "SCREENING_CALL",
+								answers: list,
+								recommendation,
+								...(language && level ? { assessedLevel: level } : {}),
+							},
+				);
+			}}
+		>
+			{!reference && <BookingTimes gig={gig} />}
+			<Notetaker gigId={gig.id} onDone={onDone} />
+			{recording?.status === "done" && (
+				<p className="type-label text-success">Filled in from the call. Check and edit before you send.</p>
+			)}
+			{reference && (
+				<div className="grid gap-3 sm:grid-cols-2">
+					<Input
+						required
+						value={refereeName}
+						onChange={(e) => setRefereeName(e.target.value)}
+						placeholder="Who did you talk to?"
+						aria-label="Reference name"
+						className="h-12"
+					/>
+					<Input
+						required
+						value={refereeRelation}
+						onChange={(e) => setRefereeRelation(e.target.value)}
+						placeholder="How they know the candidate"
+						aria-label="How they know the candidate"
+						className="h-12"
+					/>
+				</div>
+			)}
+			<ol className="space-y-6">
+				{script.map((q, i) => (
+					<li key={q.id} className="space-y-2">
+						<label htmlFor={`a-${q.id}`} className="block">
+							<span className="tabular text-muted-foreground">{i + 1}. </span>
+							{q.question}
+							<span className="mt-1 block type-label text-muted-foreground">{q.whatGoodLooksLike}</span>
+						</label>
+						{missing.has(q.id) && (
+							<span className="type-label text-warning-foreground">Not covered in the call</span>
+						)}
+						<Textarea
+							id={`a-${q.id}`}
+							value={answers[q.id] ?? ""}
+							onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+							className="min-h-20 rounded-3xl p-4"
+						/>
+					</li>
+				))}
+			</ol>
+			<fieldset className="space-y-2">
+				<legend className="type-label text-muted-foreground">Your call</legend>
+				<div className="flex flex-wrap gap-2">
+					{RECOMMENDATIONS.map((r) => (
+						<button
+							key={r.value}
+							type="button"
+							aria-pressed={recommendation === r.value}
+							onClick={() => setRecommendation(r.value)}
+							className={cn(
+								"rounded-full px-3.5 py-1.5 type-label ring-1 ring-inset transition-colors",
+								recommendation === r.value
+									? "bg-accent text-accent-foreground ring-primary/30"
+									: "text-muted-foreground ring-border hover:bg-muted",
+							)}
+						>
+							{r.label}
+						</button>
+					))}
+				</div>
+			</fieldset>
+			{language && (
+				<fieldset className="space-y-3">
+					<legend className="type-label text-muted-foreground">Level you heard</legend>
+					<div className="flex flex-wrap gap-2">
+						{LEVELS.map((l) => (
+							<button
+								key={l}
+								type="button"
+								aria-pressed={level === l}
+								onClick={() => setLevel(l)}
+								className={cn(
+									"rounded-full px-3.5 py-1.5 type-label ring-1 ring-inset transition-colors",
+									level === l
+										? "bg-accent text-accent-foreground ring-primary/30"
+										: "text-muted-foreground ring-border hover:bg-muted",
+								)}
+							>
+								{l}
+							</button>
+						))}
+					</div>
+				</fieldset>
+			)}
+			{!reference && (
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<NoShow gig={gig} />
+					<ReportFake onReport={(reason) => callApi.report(gig.id, reason)} />
+				</div>
+			)}
+			{!reference && recording?.status !== "done" && (
+				<p className="type-label text-muted-foreground">
+					Not recorded, so these answers are self-reported. The agent will ask the candidate to confirm.
+				</p>
+			)}
+			{deliver.isError && <p className="text-destructive">{errorMessage(deliver.error)}</p>}
+			<Button type="submit" size="lg" className="h-12 w-full" disabled={!complete || deliver.busy}>
+				{deliver.busy && <Loader2 className="animate-spin" />}
+				Send to the agent
+			</Button>
+		</form>
+	);
+}
+
+const ACTIVE = new Set(["joining", "waiting_room", "in_call", "recording", "processing"]);
+
+/** "Record this call": paste the meeting link, a notetaker joins and records; answers come back pre-filled. */
+function Notetaker({ gigId, onDone }: { gigId: string; onDone: (view: RecordingView) => void }) {
+	const [url, setUrl] = useState("");
+	const [started, setStarted] = useState(false);
+	const recording = useRecording(gigId, true);
+	const view = recording.data;
+	const delivered = useRef(false);
+	useEffect(() => {
+		if (view?.status === "done" && !delivered.current) {
+			delivered.current = true;
+			onDone(view);
+		}
+	}, [view, onDone]);
+	const invite = useMutation({
+		mutationFn: () => gigApi.inviteNotetaker(gigId, url.trim()),
+		onSuccess: () => {
+			setStarted(true);
+			void recording.refetch();
+		},
+	});
+	const stop = useMutation({
+		mutationFn: () => gigApi.stopNotetaker(gigId),
+		onSuccess: () => void recording.refetch(),
+	});
+
+	if (view?.status === "failed")
+		return (
+			<p className="rounded-3xl bg-muted p-4 text-muted-foreground">
+				The notetaker couldn't record this call. You can still fill in the answers yourself.
+			</p>
+		);
+	if (view && ACTIVE.has(view.status))
+		return (
+			<div className="flex items-center gap-3 rounded-3xl bg-accent p-4 text-accent-foreground">
+				{view.status === "recording" ? (
+					<span className="size-2.5 animate-pulse rounded-full bg-destructive" aria-hidden />
+				) : (
+					<Loader2 className="size-4 animate-spin" />
+				)}
+				<span className="flex-1">{view.statusText}</span>
+				{view.status !== "processing" && (
+					<button
+						type="button"
+						onClick={() => stop.mutate()}
+						className="type-label underline-offset-4 hover:underline"
+						disabled={stop.isPending}
+					>
+						Stop
+					</button>
+				)}
+			</div>
+		);
+	if (view?.status === "done")
+		return view.lines ? (
+			<Disclosure label="Transcript">
+				<ol className="max-h-80 space-y-2 overflow-y-auto rounded-3xl bg-muted p-4">
+					{view.lines.map((l) => (
+						<li key={`${l.startSec}-${l.speaker}`}>
+							<span className="type-label text-muted-foreground">{l.speaker} </span>
+							{l.text}
+						</li>
+					))}
+				</ol>
+			</Disclosure>
+		) : null;
+
+	return (
+		<div className="space-y-2 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
+			<p className="flex items-center gap-2">
+				<Mic className="size-4 text-primary" /> Record this call
+			</p>
+			<div className="flex flex-col gap-2 sm:flex-row">
+				<Input
+					value={url}
+					onChange={(e) => setUrl(e.target.value)}
+					placeholder="Paste the Google Meet, Zoom or Teams link"
+					aria-label="Meeting link"
+					className="h-11"
+				/>
+				<Button type="button" onClick={() => invite.mutate()} disabled={!url.trim() || invite.isPending}>
+					{invite.isPending && <Loader2 className="animate-spin" />}
+					Invite notetaker
+				</Button>
+			</div>
+			{invite.isError ? (
+				<p className="type-label text-destructive">{notetakerError(invite.error)}</p>
+			) : (
+				!started && (
+					<p className="type-label text-muted-foreground">
+						The notetaker records the call and fills in the answers for you. Optional.
+					</p>
+				)
+			)}
+		</div>
+	);
+}
+
+function notetakerError(e: unknown) {
+	const code = appCodeOf(e);
+	if (code === "UNSUPPORTED_MEETING") return "Paste a Google Meet, Zoom or Teams link.";
+	if (code === "RECALL_NOT_CONFIGURED")
+		return "The notetaker isn't available right now. Fill in the answers yourself.";
+	if (code === "RECORDING_DONE") return "This call is already recorded.";
+	return errorMessage(e);
+}
+
+/** Profiles on this gig still waiting for the candidate's yes, so the link survives a reload. */
+function WaitingLinks({ gigId }: { gigId: string }) {
+	const work = useMyWork();
+	const waiting = (work.data ?? []).filter(
+		(d) => d.gigId === gigId && d.status === "PENDING" && d.confirmation?.status === "PENDING",
+	);
+	if (!waiting.length) return null;
+	return (
+		<ul className="space-y-2">
+			{waiting.map((d) => {
+				const name = d.deliverable.type === "SOURCING" ? d.deliverable.name : "";
+				return (
+					<li key={d.id} className="flex items-center gap-3 rounded-3xl bg-accent p-4 text-accent-foreground">
+						<Avatar name={name} size="sm" />
+						<span className="flex-1">Waiting for {firstName(name)} to confirm</span>
+						{d.confirmation?.url && <CopyButton text={d.confirmation.url} />}
+					</li>
+				);
+			})}
+		</ul>
+	);
+}
+
+function CopyLink({ url }: { url: string }) {
+	const [copied, setCopied] = useState(false);
+	return (
+		<div className="flex w-full items-center gap-2 rounded-full bg-card p-1.5 pl-5 ring-1 ring-foreground/10">
+			<span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{url}</span>
+			<Button
+				onClick={() => {
+					void navigator.clipboard?.writeText(url).then(() => {
+						setCopied(true);
+						setTimeout(() => setCopied(false), 2000);
+					});
+				}}
+			>
+				{copied ? <Check /> : <Copy />}
+				{copied ? "Copied" : "Copy link"}
+			</Button>
+		</div>
+	);
+}
+
+/** After sending: the agent reviews within seconds; the payout panel (app shell) shows when it accepts. */
+function Checking({
+	deliverableId,
+	gig,
+	onAgain,
+}: {
+	deliverableId: string;
+	gig: GigView;
+	onAgain: () => void;
+}) {
+	const work = useMyWork();
+	const mine = work.data?.find((d) => d.id === deliverableId);
+	const status = mine?.status ?? "PENDING";
+	const confirm = status === "PENDING" ? mine?.confirmation : null;
+	const who = mine?.deliverable.type === "SOURCING" ? firstName(mine.deliverable.name) : "the candidate";
+	return (
+		<div className="mx-auto flex max-w-xl flex-col items-center gap-6 py-20 text-center">
+			{confirm ? (
+				<>
+					<h1 className="type-display">Send this link to {who}</h1>
+					<p className="max-w-md text-muted-foreground">
+						The agent likes this profile. You get paid when {who} confirms they are open to a conversation.
+					</p>
+					<CopyLink url={confirm.url ?? ""} />
+					<p className="inline-flex items-center gap-2 type-label text-muted-foreground">
+						<Loader2 className="size-3.5 animate-spin" /> Waiting for {who} to confirm
+						{confirm.expiresAt && <Countdown deadline={confirm.expiresAt} prefix="" suffix=" left" />}
+					</p>
+				</>
+			) : status === "PENDING" &&
+				mine?.deliverable.type === "SCREENING_CALL" &&
+				mine.deliverable.evidence === "self-reported" ? (
+				<>
+					<Loader2 className="size-6 animate-spin text-primary" />
+					<h1 className="type-display">
+						Self-reported · waiting for{" "}
+						{gig.candidate?.name ? firstName(gig.candidate.name) : "the candidate"} to confirm
+					</h1>
+					<p className="max-w-md text-muted-foreground">
+						The call wasn't recorded, so the agent asks the candidate whether it happened. Then it checks your
+						notes.
+					</p>
+				</>
+			) : status === "PENDING" ? (
+				<>
+					<Loader2 className="size-6 animate-spin text-primary" />
+					<h1 className="type-display">The agent is checking your work</h1>
+					<p className="text-muted-foreground">Usually a few seconds.</p>
+				</>
+			) : status === "ACCEPTED" ? (
+				<>
+					<h1 className="type-display">Accepted</h1>
+					<p className="text-muted-foreground">
+						{mine?.payout && BigInt(mine.payout.now) > 0n
+							? `${formatMoney(mine.payout.now)} is on its way to you.`
+							: "Payment is on its way to you."}
+					</p>
+				</>
+			) : (
+				<>
+					<h1 className="type-display">Not accepted</h1>
+					<p className="max-w-md text-muted-foreground">
+						{mine?.review?.reasons[0] || "The agent couldn't use this one."}
+					</p>
+					{mine && <Appeal d={mine} align="start" />}
+				</>
+			)}
+			{mine && <FollowUps d={mine} />}
+			<div className="flex gap-3">
+				{status !== "PENDING" && (gig.type === "SOURCING" || status === "REJECTED") && (
+					<Button variant="outline" onClick={onAgain}>
+						{gig.type === "SOURCING" ? "Send another" : "Fix and resend"}
+					</Button>
+				)}
+				<Link to="/scout" className={buttonVariants()}>
+					Back to gigs
+				</Link>
+			</div>
+		</div>
+	);
+}

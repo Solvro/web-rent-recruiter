@@ -1,0 +1,16 @@
+{
+	"recommendation": "ADVANCE",
+	"answers": [
+		{ "questionId": "q-rust-production", "answer": "Yes she has a lot of Rust experience." },
+		{ "questionId": "q-solana-programs", "answer": "Good" },
+		{ "questionId": "q-defi-protocols", "answer": "" },
+		{ "questionId": "q-program-security", "answer": "She knows security well, strong candidate." },
+		{ "questionId": "q-fluent-english", "answer": "fine" },
+		{ "questionId": "q-only-remote", "answer": "no" },
+		{
+			"questionId": "q-motivation",
+			"answer": "She is very motivated and a great team player, good fit for the team."
+		},
+		{ "questionId": "q-logistics", "answer": "" }
+	]
+}

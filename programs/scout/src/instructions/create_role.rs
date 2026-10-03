@@ -8,7 +8,7 @@ use crate::{
     constants::*,
     error::ScoutError,
     events::RoleCreated,
-    state::{Config, RoleStatus, RoleVault},
+    state::{Config, RoleVault, Status},
 };
 
 #[derive(Accounts)]
@@ -53,33 +53,49 @@ pub struct CreateRole<'info> {
 pub fn handle_create_role(
     ctx: Context<CreateRole>,
     role_id: u64,
-    bounty_per_candidate: u64,
-    max_candidates: u16,
-    review_window_seconds: i64,
-    initial_deposit: u64,
     agent: Option<Pubkey>,
+    review_window_seconds: i64,
+    claim_timeout_seconds: i64,
+    holdback_window_seconds: i64,
+    initial_deposit: u64,
+    agent_max_bounty: u64,
+    agent_max_commitment: u64,
 ) -> Result<()> {
+    let accounts = ctx.accounts;
+    let config = &accounts.config;
     require!(
-        bounty_per_candidate > 0 && max_candidates > 0 && review_window_seconds > 0,
-        ScoutError::InvalidRoleParams
+        config.window_ok(review_window_seconds)
+            && config.window_ok(claim_timeout_seconds)
+            && config.window_ok(holdback_window_seconds),
+        ScoutError::WindowOutOfRange
     );
 
-    let accounts = ctx.accounts;
     **accounts.role_vault = RoleVault {
         company: accounts.company.key(),
         role_id,
         mint: accounts.mint.key(),
         vault_token_account: accounts.vault_token_account.key(),
-        bounty_per_candidate,
-        max_candidates,
+        agent,
+        fee_bps: config.fee_bps,
+        min_bounty: config.min_bounty,
+        min_reputable_bounty: config.min_reputable_bounty,
+        agent_max_bounty,
+        agent_max_commitment,
+        agent_committed: 0,
+        review_window_seconds,
+        claim_timeout_seconds,
+        holdback_window_seconds,
+        task_count: 0,
+        open_task_count: 0,
         accepted_count: 0,
         pending_count: 0,
+        pending_value: 0,
+        open_capacity: 0,
+        held_back_total: 0,
+        bonds_held: 0,
         total_deposited: initial_deposit,
         total_paid: 0,
-        review_window_seconds,
-        fee_bps: accounts.config.fee_bps,
-        agent,
-        status: RoleStatus::Open,
+        status: Status::Open,
         bump: ctx.bumps.role_vault,
     };
 
@@ -101,8 +117,7 @@ pub fn handle_create_role(
         role_vault: accounts.role_vault.key(),
         company: accounts.company.key(),
         role_id,
-        bounty_per_candidate,
-        max_candidates,
+        agent,
         initial_deposit,
     });
     Ok(())

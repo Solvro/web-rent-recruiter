@@ -2,10 +2,14 @@
 export const PROJECT_NAME = "Scout";
 
 export const CLUSTER = "devnet" as const;
-export const EXPLORER_BASE = "https://explorer.solana.com";
+// Solscan reads through its own backend. Solana Explorer queries the public devnet RPC
+// from the viewer's browser, which is rate-limited on shared networks (e.g. hackathon Wi-Fi).
+export const EXPLORER_BASE = "https://solscan.io";
 export const explorerTxUrl = (signature: string) => `${EXPLORER_BASE}/tx/${signature}?cluster=${CLUSTER}`;
+export const solscanTxUrl = (signature: string) =>
+	`https://solscan.io/tx/${signature}${CLUSTER === "devnet" ? "?cluster=devnet" : ""}`;
 export const explorerAddressUrl = (address: string) =>
-	`${EXPLORER_BASE}/address/${address}?cluster=${CLUSTER}`;
+	`${EXPLORER_BASE}/account/${address}?cluster=${CLUSTER}`;
 
 /** Mock USDC we mint on devnet. Labelled "USDC" in the UI. */
 export const USDC_DECIMALS = 6;
@@ -17,7 +21,7 @@ export const DEFAULT_FEE_BPS = 1000; // 10%
 export const BPS_DENOMINATOR = 10_000;
 
 /** Demo uses a short window so the auto-accept path is visible live. */
-export const DEMO_REVIEW_WINDOW_SECONDS = 60;
+export const DEMO_REVIEW_WINDOW_SECONDS = 180;
 export const DEFAULT_REVIEW_WINDOW_SECONDS = 72 * 60 * 60;
 
 /**
@@ -25,14 +29,17 @@ export const DEFAULT_REVIEW_WINDOW_SECONDS = 72 * 60 * 60;
  * - Config:     ["config"]
  * - RoleVault:  ["role", company, roleId (u64 LE)]
  * - ScoutProfile: ["scout", scout]
- * - Submission: ["submission", roleVault, candidateHash (32 bytes)]
+ * - Task:       ["task", roleVault, taskId (u32 LE)]
+ * - Submission: ["submission", task, deliverableHash (32 bytes)]
  * The vault token account is the associated token account of the RoleVault PDA.
  */
 export const SEEDS = {
-	config: "config",
+	/** v3.2: the Config PDA moved to a new seed. */
+	config: "config_v2",
 	role: "role",
 	scout: "scout",
 	submission: "submission",
+	task: "task",
 } as const;
 
 /** On-chain reject reason codes (u8). */

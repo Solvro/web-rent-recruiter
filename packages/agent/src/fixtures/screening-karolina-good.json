@@ -1,0 +1,37 @@
+{
+	"recommendation": "ADVANCE",
+	"answers": [
+		{
+			"questionId": "q-rust-production",
+			"answer": "6 years of Rust in production: 3 years on a payments backend (tokio, actix) before Kelp Labs, then 3 years of on-chain Rust. She owns code reviews for the program repo and set up their clippy/deny rules."
+		},
+		{
+			"questionId": "q-solana-programs",
+			"answer": "Shipped the lending pool and liquidation programs to mainnet in 2024 (Anchor 0.29, then migrated to 0.31), maintains the swap program. Did the upgrade to Token-2022 for the pool vaults last spring, with a feature-flagged migration over 2 weeks."
+		},
+		{
+			"questionId": "q-defi-protocols",
+			"answer": "Kelp Labs is a DEX plus lending protocol, ~$40M TVL at peak. She designed the liquidation thresholds with the risk lead and wrote the interest-rate model in fixed-point math. Handled the oracle staleness incident in March: added a max-age check on Pyth prices."
+		},
+		{
+			"questionId": "q-program-security",
+			"answer": "Wrote the Trident fuzz suite for the lending program (found 2 real bugs: a rounding issue in share minting and a missing signer check). Worked through audits with OtterSec and Neodyme, fixed all findings herself and wrote the response doc."
+		},
+		{
+			"questionId": "q-fluent-english",
+			"answer": "The whole call was in English, fluent and precise. She writes Kelp's audit responses and presents at their community calls in English."
+		},
+		{
+			"questionId": "q-only-remote",
+			"answer": "No, she prefers hybrid. Lives in Warsaw (Mokotów), already goes to Kelp's office twice a week."
+		},
+		{
+			"questionId": "q-motivation",
+			"answer": "Kelp is pivoting to perps and she wants to stay in lending; the credit marketplace is exactly that. Likes the small team and working directly with Hanna."
+		},
+		{
+			"questionId": "q-logistics",
+			"answer": "1 month notice on B2B. Expects 32-36k PLN/month plus tokens. In one other process (early stage)."
+		}
+	]
+}

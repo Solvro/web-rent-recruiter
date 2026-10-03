@@ -1,0 +1,105 @@
+[
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Hi Karolina, thanks for making time. This is the 30-minute screening for the Senior Rust Engineer role at a seed-stage Solana DeFi startup in Warsaw.",
+		"startSec": 3
+	},
+	{ "speaker": "Karolina Mazurek", "text": "Hi Ola, nice to meet.", "startSec": 14 },
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Let's start with Rust. How long have you been writing Rust in production, and where?",
+		"startSec": 18
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "Six years of production Rust. Three years on a payments backend with tokio and actix, then three years of on-chain Rust at Kelp Labs.",
+		"startSec": 25
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "I own code reviews for the program repo and I set up our clippy and deny rules.",
+		"startSec": 41
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Which Solana programs have you shipped to mainnet?",
+		"startSec": 52
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "The lending pool and the liquidation programs, both on mainnet since 2024. We started on Anchor 0.29 and I migrated us to 0.31. I also maintain the swap program.",
+		"startSec": 57
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "Last spring I moved the pool vaults to Token-2022, with a feature-flagged migration over two weeks.",
+		"startSec": 78
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Tell me about the DeFi side. What did you design yourself?",
+		"startSec": 91
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "Kelp is a DEX plus a lending protocol, about forty million dollars TVL at peak. I designed the liquidation thresholds with our risk lead and wrote the interest-rate model in fixed-point math.",
+		"startSec": 96
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "In March I handled the oracle staleness incident and added a max-age check on Pyth prices.",
+		"startSec": 117
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "How do you approach program security? Fuzzing, tests, audits?",
+		"startSec": 129
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "I wrote the Trident fuzz suite for the lending program. It found two real bugs, a rounding issue in share minting and a missing signer check. We went through audits with OtterSec and Neodyme, and I fixed all the findings and wrote the response doc.",
+		"startSec": 135
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "The team works in English. How comfortable are you with that?",
+		"startSec": 164
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "Very comfortable. I write Kelp's audit responses in English and I present at our community calls.",
+		"startSec": 169
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "The role is two days a week in the Warsaw office. Are you only looking for fully remote work?",
+		"startSec": 181
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "No, I prefer hybrid. I live in Mokotów and I already go to the Kelp office twice a week.",
+		"startSec": 188
+	},
+	{ "speaker": "Ola Wiśniewska", "text": "Why are you looking to move now?", "startSec": 199 },
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "Kelp is pivoting to perps and I want to stay in lending. A credit marketplace is exactly that, and I like working in a small team directly with the founder.",
+		"startSec": 203
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Last one: notice period, compensation, and are you in other processes?",
+		"startSec": 222
+	},
+	{
+		"speaker": "Karolina Mazurek",
+		"text": "One month notice on B2B. I'm expecting thirty-two to thirty-six thousand PLN a month plus tokens. I'm in one other process, early stage.",
+		"startSec": 228
+	},
+	{
+		"speaker": "Ola Wiśniewska",
+		"text": "Great, Karolina, that's everything from me. I'll pass this to the team and you'll hear back within a few days.",
+		"startSec": 247
+	},
+	{ "speaker": "Karolina Mazurek", "text": "Thanks, talk soon.", "startSec": 256 }
+]

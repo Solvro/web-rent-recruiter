@@ -7,7 +7,8 @@
  */
 import { REJECT_REASONS, type RejectReason } from "@scout/shared";
 import { type Address, address, type Signature } from "@solana/kit";
-import { and, eq, inArray, isNotNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { rejectGhostDeliverable } from "../agent-runner/ghosts.ts";
 import { db, schema } from "../db/index.ts";
 import { publish } from "../events.ts";
 import { schedulePipelineSummary } from "../services/pipeline.ts";
@@ -16,6 +17,7 @@ import {
 	enumName,
 	fetchProgramAccount,
 	findAta,
+	invalidateCached,
 	loadDeployment,
 	type RoleVaultAccount,
 	rpc,
@@ -23,6 +25,7 @@ import {
 	tokenBalance,
 } from "../solana/chain.ts";
 import { decodeEvent, loadIdl } from "../solana/idl.ts";
+import { refreshGig } from "./gigs.ts";
 
 type Ev = { name: string; data: Record<string, unknown> };
 
@@ -39,7 +42,7 @@ export function parseEventsFromLogs(logs: readonly string[]): Ev[] {
 	return out;
 }
 
-const reasonFromCode = (code: number): RejectReason =>
+export const reasonFromCode = (code: number): RejectReason =>
 	(Object.entries(REJECT_REASONS).find(([, v]) => v === code)?.[0] as RejectReason) ?? "OTHER";
 
 export async function processLogs(signature: string, logs: readonly string[]) {
@@ -80,7 +83,12 @@ async function applyEvent(ev: Ev, signature: string) {
 		case "RoleCreated": {
 			const [role] = await db
 				.update(schema.roles)
-				.set({ status: "OPEN", deposited: BigInt(d.initialDeposit as bigint) })
+				// remaining too: the agent plans from it as soon as the role is OPEN.
+				.set({
+					status: "OPEN",
+					deposited: BigInt(d.initialDeposit as bigint),
+					remaining: BigInt(d.initialDeposit as bigint),
+				})
 				.where(eq(schema.roles.roleVault, d.roleVault as string))
 				.returning({ id: schema.roles.id });
 			if (role) publish({ type: "role.updated", roleId: role.id, signature });
@@ -95,6 +103,7 @@ async function applyEvent(ev: Ev, signature: string) {
 			if (role) publish({ type: "role.updated", roleId: role.id, signature });
 			return;
 		}
+		case "DeliverableSubmitted":
 		case "CandidateSubmitted": {
 			const [sub] = await db
 				.update(schema.submissions)
@@ -112,6 +121,14 @@ async function applyEvent(ev: Ev, signature: string) {
 			if (sub) {
 				publish({ type: "submission.created", roleId: sub.roleId, submissionId: sub.id, signature });
 				reviewInBackground(sub.id);
+			} else if (ev.name === "DeliverableSubmitted") {
+				// Not built by us (no DB row): the agent rejects it.
+				void rejectGhostDeliverable({
+					submission: d.submission as string,
+					task: d.task as string,
+					roleVault: d.roleVault as string,
+					scout: d.scout as string,
+				}).catch((err) => console.warn(`[ghost] ${d.submission}: ${(err as Error).message}`));
 			}
 			return;
 		}
@@ -123,6 +140,15 @@ async function applyEvent(ev: Ev, signature: string) {
 					settlementTx: signature,
 					autoSettled: Boolean(d.autoSettled),
 					confirmed: true,
+					payoutNow: BigInt(d.payout as bigint),
+					payoutLater: BigInt(d.heldBack as bigint),
+					operatorFee: BigInt(d.operatorFee as bigint),
+					platformFee: BigInt(d.fee as bigint),
+					holdbackDeadline: new Date(Number(d.holdbackDeadline) * 1000),
+					// Only from NONE: a later attest/release may already have been applied (apply-tx is faster).
+					laterStatus: sql`case when ${schema.submissions.laterStatus} = 'NONE' then ${
+						BigInt(d.heldBack as bigint) > 0n ? "HELD" : "NONE"
+					} else ${schema.submissions.laterStatus} end`,
 				})
 				.where(eq(schema.submissions.onchainAddress, d.submission as string))
 				.returning({ id: schema.submissions.id, roleId: schema.submissions.roleId });
@@ -138,6 +164,96 @@ async function applyEvent(ev: Ev, signature: string) {
 			}
 			return;
 		}
+		case "OutcomeAttested": {
+			const outcome = enumName(d.outcome as string) === "Fabricated" ? "FABRICATED" : "ADVANCED";
+			const released = BigInt(d.released as bigint);
+			const refunded = BigInt(d.refunded as bigint);
+			const set: Partial<typeof schema.submissions.$inferInsert> = { outcome };
+			if (released > 0n) Object.assign(set, { laterStatus: "RELEASED", laterTx: signature });
+			if (refunded > 0n) Object.assign(set, { laterStatus: "REFUNDED", laterTx: signature });
+			const [sub] = await db
+				.update(schema.submissions)
+				.set(set)
+				.where(eq(schema.submissions.onchainAddress, d.submission as string))
+				.returning({ id: schema.submissions.id, roleId: schema.submissions.roleId });
+			invalidateCached(d.scout as string);
+			if (sub) {
+				publish({
+					type: "submission.outcome",
+					roleId: sub.roleId,
+					submissionId: sub.id,
+					signature,
+					scout: d.scout as string,
+					outcome,
+					payout: released.toString(),
+				});
+			}
+			return;
+		}
+		case "HoldbackReleased": {
+			const [sub] = await db
+				.update(schema.submissions)
+				.set({ laterStatus: "RELEASED", laterTx: signature })
+				.where(eq(schema.submissions.onchainAddress, d.submission as string))
+				.returning({ id: schema.submissions.id, roleId: schema.submissions.roleId });
+			if (sub) {
+				publish({
+					type: "submission.released",
+					roleId: sub.roleId,
+					submissionId: sub.id,
+					signature,
+					scout: d.scout as string,
+					payout: String(d.amount),
+				});
+			}
+			return;
+		}
+		case "TaskCreated":
+		case "TaskClaimed":
+		case "ClaimReleased":
+		case "TaskClosed":
+			await refreshGig(d.task as string, signature);
+			return;
+		case "BondForfeited": {
+			const amountForfeited = BigInt(d.amount as bigint);
+			// Once per submission (events can be replayed): only the first write counts toward the role.
+			const [sub] = await db
+				.update(schema.submissions)
+				.set({ bondForfeited: amountForfeited })
+				.where(
+					and(
+						eq(schema.submissions.onchainAddress, d.submission as string),
+						isNull(schema.submissions.bondForfeited),
+					),
+				)
+				.returning({
+					id: schema.submissions.id,
+					roleId: schema.submissions.roleId,
+					gigId: schema.submissions.gigId,
+				});
+			if (sub)
+				await db
+					.update(schema.roles)
+					.set({ bondsForfeited: sql`${schema.roles.bondsForfeited} + ${amountForfeited}` })
+					.where(eq(schema.roles.id, sub.roleId));
+			if (sub) {
+				publish({
+					type: "gig.updated",
+					roleId: sub.roleId,
+					submissionId: sub.id,
+					gigId: sub.gigId ?? undefined,
+					signature,
+					message: "bond.forfeited",
+				});
+			}
+			return;
+		}
+		case "ScoutRegistered":
+			invalidateCached(d.scout as string);
+			return;
+		case "OperatorRegistered":
+			invalidateCached(d.operator as string, d.authority as string);
+			return;
 		case "SubmissionRejected": {
 			const [sub] = await db
 				.update(schema.submissions)
@@ -186,6 +302,10 @@ export async function refreshRole(roleVault: Address) {
 		acceptedCount: Number(acc.acceptedCount),
 		pendingCount: Number(acc.pendingCount),
 		feeBps: Number(acc.feeBps),
+		holdbackWindowSeconds: Number(acc.holdbackWindowSeconds),
+		heldBack: BigInt(acc.heldBackTotal),
+		committed: BigInt(acc.pendingValue ?? 0n) + BigInt(acc.openCapacity ?? 0n),
+		agentPubkey: acc.agent ?? null,
 	};
 	const [prev] = await db.select().from(schema.roles).where(eq(schema.roles.roleVault, roleVault));
 	if (!prev) return;
@@ -204,6 +324,7 @@ export async function pollOnce() {
 		.from(schema.roles)
 		.where(and(inArray(schema.roles.status, ["DRAFT", "OPEN"]), isNotNull(schema.roles.roleVault)));
 	for (const r of roles) if (r.roleVault) await refreshRole(address(r.roleVault));
+	await pollHoldbacks();
 
 	// Submissions whose status on-chain may have moved without us seeing the event.
 	const stale = await db
@@ -220,6 +341,10 @@ export async function pollOnce() {
 		if (!s.onchainAddress) continue;
 		const acc = await fetchProgramAccount<SubmissionAccount>("Submission", address(s.onchainAddress));
 		if (!acc) continue;
+		if (enumName(acc.status) === "Accepted") {
+			// The accept event was missed: take the holdback state from the account (amounts stay projected).
+			await syncHoldback(s.id, acc);
+		}
 		const status = enumName(acc.status).toUpperCase() as "PENDING" | "ACCEPTED" | "REJECTED";
 		const wasUnconfirmed = !s.confirmed;
 		await db
@@ -234,5 +359,41 @@ export async function pollOnce() {
 		if (wasUnconfirmed) reviewInBackground(s.id);
 		if (status !== "PENDING" || wasUnconfirmed)
 			publish({ type: "role.updated", roleId: s.roleId, submissionId: s.id });
+	}
+}
+
+async function syncHoldback(submissionId: string, acc: SubmissionAccount) {
+	const outcome = enumName(acc.outcome);
+	await db
+		.update(schema.submissions)
+		.set({
+			holdbackDeadline: acc.holdbackDeadline ? new Date(Number(acc.holdbackDeadline) * 1000) : null,
+			outcome: outcome === "Advanced" ? "ADVANCED" : outcome === "Fabricated" ? "FABRICATED" : "NONE",
+			...(BigInt(acc.holdbackAmount) > 0n && outcome === "None" ? { laterStatus: "HELD" as const } : {}),
+		})
+		.where(eq(schema.submissions.id, submissionId));
+}
+
+/** Accepted submissions whose held-back part may have been released or attested without us seeing the event. */
+export async function pollHoldbacks() {
+	const held = await db
+		.select()
+		.from(schema.submissions)
+		.where(and(eq(schema.submissions.laterStatus, "HELD"), isNotNull(schema.submissions.onchainAddress)));
+	for (const s of held) {
+		if (!s.onchainAddress) continue;
+		const acc = await fetchProgramAccount<SubmissionAccount>("Submission", address(s.onchainAddress));
+		if (!acc) continue;
+		const outcome = enumName(acc.outcome);
+		if (outcome === "None" && BigInt(acc.holdbackAmount) > 0n) continue; // still held
+		const laterStatus = outcome === "Fabricated" ? "REFUNDED" : "RELEASED";
+		await db
+			.update(schema.submissions)
+			.set({
+				laterStatus,
+				outcome: outcome === "Advanced" ? "ADVANCED" : outcome === "Fabricated" ? "FABRICATED" : "NONE",
+			})
+			.where(eq(schema.submissions.id, s.id));
+		publish({ type: "role.updated", roleId: s.roleId, submissionId: s.id });
 	}
 }

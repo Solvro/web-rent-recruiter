@@ -5,13 +5,27 @@ import {
 	DecisionRequest,
 	DraftRoleRequest,
 	explorerTxUrl,
+	OutcomeRequest,
 	type RoleSummary,
+	type SubmissionPayout,
 	type SubmissionView,
 	TopUpRequest,
+	toBaseUnits,
 	UpsertMeRequest,
 } from "@scout/shared";
-import type { Transport, TransportResponse } from "../api";
-import { draftRole, reviewCandidate } from "./agent";
+export type TransportResponse = { status: number; data: unknown };
+export type Transport = (req: {
+	method: "GET" | "POST" | "PUT";
+	path: string;
+	body?: unknown;
+	wallet: string | null;
+}) => Promise<TransportResponse>;
+
+import { slugify } from "../format";
+import { draftRole } from "./agent";
+import demo from "./demo-data.json";
+import { ensureGigs, recruiterProfile, recruiterStanding, startAgent } from "./gigs";
+import { avatarFor, candidateInfo } from "./people";
 import {
 	acceptedCount,
 	candidateHash,
@@ -20,6 +34,8 @@ import {
 	fakeAddress,
 	fakeBase58,
 	fakeSignature,
+	HOLDBACK_BPS,
+	HOLDBACK_WINDOW_SECONDS,
 	inFuture,
 	type MockRole,
 	type MockSubmission,
@@ -28,8 +44,12 @@ import {
 	payout,
 	pendingCount,
 	persist,
+	refundLater,
 	registerTx,
+	releaseLater,
+	reviewFor,
 	runTx,
+	splitFor,
 } from "./store";
 
 const ok = (data: unknown, status = 200): TransportResponse => ({ status, data });
@@ -42,7 +62,7 @@ const s = (n: bigint) => n.toString();
 
 function roleSummary(r: MockRole): RoleSummary {
 	const pending = pendingCount(r.id);
-	const reserved = r.bounty * BigInt(pending);
+	const reserved = r.bounty * BigInt(pending) + r.heldBack;
 	return {
 		id: r.id,
 		onchainRoleId: r.onchainRoleId,
@@ -51,20 +71,38 @@ function roleSummary(r: MockRole): RoleSummary {
 		summary: r.summary,
 		companyName: r.companyName,
 		status: r.status,
-		taskType: "SOURCING",
+		taskType: r.taskType,
 		bounty: s(r.bounty),
 		feeBps: r.feeBps,
 		maxCandidates: r.maxCandidates,
 		acceptedCount: acceptedCount(r.id),
 		pendingCount: pending,
 		reviewWindowSeconds: r.reviewWindowSeconds,
+		holdbackBps: r.holdbackBps,
+		holdbackWindowSeconds: r.holdbackWindowSeconds,
 		budget: {
 			deposited: s(r.deposited),
 			paid: s(r.paid),
 			remaining: s(r.balance),
 			available: s(r.balance > reserved ? r.balance - reserved : 0n),
+			heldBack: s(r.heldBack),
 		},
 		createdAt: r.createdAt,
+	};
+}
+
+function payoutView(sub: MockSubmission): SubmissionPayout | null {
+	if (sub.status === "REJECTED") return null;
+	const split = sub.split ?? splitFor(sub);
+	if (!split) return null;
+	return {
+		now: s(split.now),
+		later: s(split.later),
+		operatorFee: s(split.operatorFee),
+		platformFee: s(split.platformFee),
+		laterReleasesAt: sub.laterReleasesAt,
+		outcome: sub.outcome,
+		laterStatus: sub.status === "PENDING" ? (split.later > 0n ? "HELD" : "NONE") : sub.laterStatus,
 	};
 }
 
@@ -75,6 +113,7 @@ function submissionView(sub: MockSubmission, withReview = true): SubmissionView 
 		roleId: sub.roleId,
 		roleTitle: db.roles.get(sub.roleId)?.title ?? "Closed role",
 		candidateName: sub.candidateName,
+		candidate: candidateInfo(sub.candidateName),
 		profileUrl: sub.profileUrl,
 		notes: sub.notes,
 		candidateHash: sub.candidateHash,
@@ -82,7 +121,7 @@ function submissionView(sub: MockSubmission, withReview = true): SubmissionView 
 		scout: {
 			wallet: sub.scoutWallet,
 			displayName: scout?.displayName ?? "Scout",
-			avatarUrl: scout?.avatarUrl ?? null,
+			avatarUrl: scout?.avatarUrl ?? avatarFor(scout?.displayName ?? ""),
 		},
 		status: sub.status,
 		rejectReason: sub.rejectReason,
@@ -90,13 +129,14 @@ function submissionView(sub: MockSubmission, withReview = true): SubmissionView 
 		reviewDeadline: sub.reviewDeadline,
 		settlementTx: sub.settlementTx,
 		review: withReview ? sub.review : null,
+		payout: payoutView(sub),
 	};
 }
 
 function pipelineSummary(r: MockRole) {
 	const subs = [...db.submissions.values()].filter((x) => x.roleId === r.id);
 	if (subs.length === 0)
-		return "No candidates yet. Scouts usually submit within the first day; if nothing arrives in 48 hours, consider raising the bounty or loosening a must-have.";
+		return "No candidates yet. Scouts usually submit within the first day; if nothing arrives in 48 hours, consider raising the price or loosening a must-have.";
 	const accepted = subs.filter((x) => x.status === "ACCEPTED").length;
 	const pending = subs.filter((x) => x.status === "PENDING").length;
 	const slots = Number(r.balance / r.bounty) - pending;
@@ -122,7 +162,12 @@ function me(wallet: string) {
 		avatarUrl: p.avatarUrl,
 		companyName: p.companyName,
 		scoutRegistered: p.registered,
+		operator: p.operator,
+		slug: slugify(p.displayName),
 		usdcBalance: s(p.balance),
+		...(recruiterStanding(p.wallet)
+			? { skills: recruiterStanding(p.wallet)?.skills, reputation: recruiterStanding(p.wallet)?.score }
+			: {}),
 	};
 }
 
@@ -158,6 +203,9 @@ const routes: Route[] = [
 				registered: existing?.registered ?? false,
 				balance: existing?.balance ?? (req.kind === "company" ? 1000_000_000n : 0n),
 				earned: existing?.earned ?? 0n,
+				operator: existing?.operator ?? null,
+				advanced: existing?.advanced ?? 0,
+				flagged: existing?.flagged ?? 0,
 			});
 			return ok(me(wallet));
 		},
@@ -168,6 +216,16 @@ const routes: Route[] = [
 		async ({ body }) => {
 			const { jobDescription } = DraftRoleRequest.parse(body);
 			await sleep(2600);
+			const scripted = demo.roles.find((r) => r.jobDescription.trim() === jobDescription.trim());
+			if (scripted)
+				return ok({
+					title: scripted.title,
+					summary: `${scripted.locationLabel}. ${scripted.salaryLabel}.`,
+					criteria: scripted.criteria,
+					suggestedBounty: toBaseUnits(scripted.bountyUsd).toString(),
+					suggestedMaxCandidates: scripted.maxCandidates,
+					rationale: `Senior real-time TypeScript engineers in Warsaw are reachable through a recruiter's network, but rarely apply on their own. For comparison, an agency usually charges 15–25% of a year's salary for one hire. Ten candidates usually lead to one or two hires.`,
+				});
 			return ok(draftRole(jobDescription));
 		},
 	],
@@ -180,7 +238,7 @@ const routes: Route[] = [
 			const req = CreateRoleRequest.parse(body);
 			const deposit = BigInt(req.deposit);
 			if (deposit > company.balance)
-				return fail(400, "INSUFFICIENT_FUNDS", "Not enough USDC in your account");
+				return fail(400, "INSUFFICIENT_FUNDS", "Not enough balance for this amount");
 			const id = newId("role");
 			const role: MockRole = {
 				id,
@@ -193,10 +251,14 @@ const routes: Route[] = [
 				companyWallet: wallet,
 				companyName: company.companyName ?? company.displayName,
 				status: "DRAFT",
-				bounty: BigInt(req.bounty),
+				bounty: BigInt(req.bounty ?? toBaseUnits(5)),
 				feeBps: 1000,
-				maxCandidates: req.maxCandidates,
+				maxCandidates: req.maxCandidates ?? 20,
 				reviewWindowSeconds: req.reviewWindowSeconds,
+				taskType: req.taskType,
+				holdbackBps: req.holdbackBps ?? HOLDBACK_BPS,
+				holdbackWindowSeconds: req.holdbackWindowSeconds ?? HOLDBACK_WINDOW_SECONDS,
+				heldBack: 0n,
 				deposited: 0n,
 				paid: 0n,
 				balance: 0n,
@@ -204,16 +266,15 @@ const routes: Route[] = [
 				createdAt: new Date().toISOString(),
 			};
 			db.roles.set(id, role);
-			const unsignedTx = registerTx(
-				`Deposit ${Number(deposit) / 1e6} USDC into the budget for ${req.title}`,
-				() => {
-					company.balance -= deposit;
-					role.deposited = deposit;
-					role.balance = deposit;
-					role.status = "OPEN";
-					mockEvents.emit({ type: "RoleCreated", roleId: id });
-				},
-			);
+			const unsignedTx = registerTx(`Publish ${req.title} with a $${Number(deposit) / 1e6} budget`, () => {
+				company.balance -= deposit;
+				role.deposited = deposit;
+				role.balance = deposit;
+				role.status = "OPEN";
+				mockEvents.emit({ type: "RoleCreated", roleId: id });
+				// Funded: the agent takes over (mock/gigs.ts).
+				void ensureGigs().then(() => startAgent(id));
+			});
 			return ok({ roleId: id, unsignedTx });
 		},
 	],
@@ -255,9 +316,10 @@ const routes: Route[] = [
 			const company = wallet ? db.profiles.get(wallet) : null;
 			if (!r || !company) return fail(404, "NOT_FOUND", "Role not found");
 			const amount = BigInt(TopUpRequest.parse(body).amount);
-			if (amount > company.balance) return fail(400, "INSUFFICIENT_FUNDS", "Not enough USDC in your account");
+			if (amount > company.balance)
+				return fail(400, "INSUFFICIENT_FUNDS", "Not enough balance for this amount");
 			return ok({
-				unsignedTx: registerTx(`Add ${Number(amount) / 1e6} USDC to ${r.title}`, () => {
+				unsignedTx: registerTx(`Add $${Number(amount) / 1e6} to ${r.title}`, () => {
 					company.balance -= amount;
 					r.deposited += amount;
 					r.balance += amount;
@@ -280,7 +342,7 @@ const routes: Route[] = [
 					"Accept or reject the pending candidates before closing this role.",
 				);
 			return ok({
-				unsignedTx: registerTx(`Close ${r.title} and return ${Number(r.balance) / 1e6} USDC`, () => {
+				unsignedTx: registerTx(`Close ${r.title} and return $${Number(r.balance) / 1e6}`, () => {
 					company.balance += r.balance;
 					r.balance = 0n;
 					r.status = "CLOSED";
@@ -319,6 +381,8 @@ const routes: Route[] = [
 			if (!r) return fail(404, "NOT_FOUND", "Task not found");
 			if (!wallet || !scout || scout.kind !== "scout") return fail(401, "UNAUTHORIZED", "Log in as a scout");
 			const req = CreateSubmissionRequest.parse(body);
+			if (r.taskType === "SCREENING_CALL" && !req.screeningNotes)
+				return fail(400, "SCREENING_CALL", "Add your call notes.");
 			const hash = await candidateHash(r.salt, req.profileUrl);
 			const existing = [...db.submissions.values()].find(
 				(x) => x.roleId === r.id && x.candidateHash === hash,
@@ -349,6 +413,11 @@ const routes: Route[] = [
 					reviewDeadline: inFuture(r.reviewWindowSeconds),
 					settlementTx: null,
 					review: null,
+					screeningNotes: req.screeningNotes,
+					outcome: "NONE",
+					laterStatus: "NONE",
+					laterReleasesAt: null,
+					split: null,
 				};
 				db.submissions.set(id, sub);
 				// the real backend bundles register_scout into the first submission
@@ -356,6 +425,18 @@ const routes: Route[] = [
 				mockEvents.emit({ type: "CandidateSubmitted", roleId: r.id, submissionId: id });
 			});
 			return ok({ submissionId: id, candidateHash: hash, unsignedTx });
+		},
+	],
+	[
+		"POST",
+		"/roles/:id/submissions/check",
+		async ({ params, body }) => {
+			const r = db.roles.get(params.id);
+			const url = (body as { profileUrl?: string })?.profileUrl;
+			if (!r || !url) return ok({ duplicate: false });
+			const hash = await candidateHash(r.salt, url);
+			const first = [...db.submissions.values()].find((x) => x.roleId === r.id && x.candidateHash === hash);
+			return ok(first ? { duplicate: true, firstSubmittedAt: first.submittedAt } : { duplicate: false });
 		},
 	],
 	[
@@ -378,7 +459,7 @@ const routes: Route[] = [
 			if (!sub || !role) return fail(404, "NOT_FOUND", "Submission not found");
 			if (!sub.review) {
 				await sleep(2400);
-				sub.review = reviewCandidate(role.criteria, {
+				sub.review = reviewFor(role.criteria, {
 					name: sub.candidateName,
 					profileUrl: sub.profileUrl,
 					notes: sub.notes,
@@ -395,7 +476,7 @@ const routes: Route[] = [
 			if (!sub) return fail(404, "NOT_FOUND", "Submission not found");
 			if (sub.status !== "PENDING") return fail(409, "NOT_PENDING", "This submission was already settled");
 			if (new Date(sub.reviewDeadline).getTime() <= Date.now())
-				return fail(409, "REVIEW_WINDOW_EXPIRED", "The review window ended. Settle to pay the scout.");
+				return fail(409, "REVIEW_WINDOW_EXPIRED", "Time to respond has passed.");
 			const req = DecisionRequest.parse(body);
 			if (req.decision === "accept")
 				return ok({
@@ -433,6 +514,45 @@ const routes: Route[] = [
 	],
 	[
 		"POST",
+		"/submissions/:id/outcome",
+		({ params, body }) => {
+			const sub = db.submissions.get(params.id);
+			if (!sub) return fail(404, "NOT_FOUND", "Submission not found");
+			if (sub.status !== "ACCEPTED") return fail(409, "NOT_ACCEPTED", "Accept the candidate first.");
+			if (sub.laterStatus === "NONE") return fail(409, "NOTHING_HELD_BACK", "Nothing is held back.");
+			if (sub.laterStatus !== "HELD" || sub.outcome !== "NONE")
+				return fail(409, "OUTCOME_ALREADY_SET", "This was already confirmed.");
+			const { outcome } = OutcomeRequest.parse(body);
+			if (
+				outcome === "fabricated" &&
+				sub.laterReleasesAt &&
+				new Date(sub.laterReleasesAt).getTime() <= Date.now()
+			)
+				return fail(409, "HOLDBACK_WINDOW_EXPIRED", "Too late to report a problem.");
+			return ok({
+				unsignedTx: registerTx(`Confirm outcome for ${sub.candidateName}`, (sig) =>
+					outcome === "advanced" ? releaseLater(sub, sig, true) : refundLater(sub, sig),
+				),
+			});
+		},
+	],
+	[
+		"POST",
+		"/submissions/:id/release",
+		async ({ params }) => {
+			const sub = db.submissions.get(params.id);
+			if (!sub) return fail(404, "NOT_FOUND", "Submission not found");
+			if (sub.laterStatus !== "HELD") return fail(409, "NOTHING_HELD_BACK", "Nothing is held back.");
+			if (!sub.laterReleasesAt || new Date(sub.laterReleasesAt).getTime() > Date.now())
+				return fail(409, "HOLDBACK_WINDOW_OPEN", "Not yet.");
+			await sleep(700);
+			const signature = fakeSignature();
+			releaseLater(sub, signature, false);
+			return ok({ signature, explorerUrl: explorerTxUrl(signature) });
+		},
+	],
+	[
+		"POST",
 		"/scouts/register",
 		({ wallet }) => {
 			const p = wallet ? db.profiles.get(wallet) : null;
@@ -448,7 +568,10 @@ const routes: Route[] = [
 		"GET",
 		"/scouts/:pubkey",
 		({ params }) => {
-			const p = db.profiles.get(params.pubkey);
+			// Accepts a wallet or a /r/<name-slug> slug.
+			const p =
+				db.profiles.get(params.pubkey) ??
+				[...db.profiles.values()].find((x) => x.kind === "scout" && slugify(x.displayName) === params.pubkey);
 			if (p?.kind !== "scout") return fail(404, "NOT_FOUND", "Scout not found");
 			const subs = [...db.submissions.values()]
 				.filter((x) => x.scoutWallet === p.wallet)
@@ -456,14 +579,22 @@ const routes: Route[] = [
 			return ok({
 				wallet: p.wallet,
 				displayName: p.displayName,
-				avatarUrl: p.avatarUrl,
+				slug: slugify(p.displayName),
+				avatarUrl: p.avatarUrl ?? avatarFor(p.displayName),
 				reputation: {
 					submitted: subs.length,
-					accepted: subs.filter((x) => x.status === "ACCEPTED").length,
-					rejected: subs.filter((x) => x.status === "REJECTED").length,
+					accepted: recruiterProfile(p.wallet).stats.ALL?.accepted ?? 0,
+					rejected:
+						(recruiterProfile(p.wallet).stats.ALL?.decided ?? 0) -
+						(recruiterProfile(p.wallet).stats.ALL?.accepted ?? 0),
 					totalEarned: s(p.earned),
+					advanced: p.advanced,
+					flagged: p.flagged,
 				},
 				profileAddress: p.registered ? fakeAddress() : null,
+				operator: p.operator,
+				skills: recruiterStanding(p.wallet)?.skills,
+				score: recruiterStanding(p.wallet)?.score,
 				recent: subs.slice(0, 8).map((x) => ({
 					id: x.id,
 					status: x.status,
@@ -480,7 +611,7 @@ const routes: Route[] = [
 			const { signedTx } = body as { signedTx: string };
 			await sleep(700);
 			const signature = runTx(signedTx);
-			if (!signature) return fail(400, "UNKNOWN_TX", "Transaction expired. Please try again.");
+			if (!signature) return fail(400, "UNKNOWN_TX", "This request expired. Please try again.");
 			return ok({ signature, explorerUrl: explorerTxUrl(signature) });
 		},
 	],
@@ -500,6 +631,8 @@ function match(pattern: string, path: string) {
 
 export const mockTransport: Transport = async ({ method, path, body, wallet }) => {
 	await ensureSeeded();
+	// Profiles and Me read the gig store (reputation, skills): load it first.
+	await ensureGigs();
 	await sleep(150);
 	for (const [m, pattern, handler] of routes) {
 		if (m !== method) continue;

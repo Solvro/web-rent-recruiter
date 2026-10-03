@@ -1,0 +1,76 @@
+{
+	"title": "Senior Rust Engineer (Solana programs)",
+	"company": "Seed-stage Solana DeFi startup · Warsaw",
+	"founder": "Hanna Lewicka",
+	"locationLabel": "Warsaw · hybrid, 2 days in office",
+	"salaryLabel": "30,000–38,000 PLN / month (B2B)",
+	"budgetUsd": 750,
+	"bountyUsd": 20,
+	"maxCandidates": 12,
+	"payoutToRecruiterUsd": 18,
+	"criteria": {
+		"mustHave": [
+			{
+				"id": "rust-production",
+				"label": "4+ years of production Rust",
+				"weight": 5
+			},
+			{
+				"id": "solana-programs",
+				"label": "Shipped Solana programs to mainnet (Anchor or native)",
+				"weight": 5
+			},
+			{
+				"id": "defi-protocols",
+				"label": "DeFi protocol experience (DEX, lending or AMM)",
+				"weight": 4
+			},
+			{
+				"id": "program-security",
+				"label": "Program security: property tests, fuzzing, audits",
+				"weight": 3
+			},
+			{
+				"id": "fluent-english",
+				"label": "Fluent English (C1)",
+				"weight": 3
+			}
+		],
+		"niceToHave": [
+			{
+				"id": "typescript-sdk",
+				"label": "TypeScript SDKs or clients for programs",
+				"weight": 2
+			},
+			{
+				"id": "solana-open-source",
+				"label": "Open-source Solana contributions",
+				"weight": 2
+			},
+			{
+				"id": "early-stage",
+				"label": "Early-stage startup experience",
+				"weight": 1
+			}
+		],
+		"seniority": "SENIOR",
+		"location": {
+			"mode": "HYBRID",
+			"places": ["Warsaw"]
+		},
+		"salaryRange": {
+			"min": 30000,
+			"max": 38000,
+			"currency": "PLN",
+			"period": "MONTH"
+		},
+		"languages": ["English (C1)"],
+		"dealBreakers": [
+			{
+				"id": "only-remote",
+				"label": "Only open to fully remote work",
+				"weight": 4
+			}
+		]
+	}
+}

@@ -9,7 +9,11 @@
 import type { ReadonlyUint8Array } from "@solana/kit";
 
 export const CONFIG_SEED: ReadonlyUint8Array = new Uint8Array([
-  99, 111, 110, 102, 105, 103,
+  99, 111, 110, 102, 105, 103, 95, 118, 50,
+]);
+
+export const OPERATOR_SEED: ReadonlyUint8Array = new Uint8Array([
+  111, 112, 101, 114, 97, 116, 111, 114,
 ]);
 
 export const ROLE_SEED: ReadonlyUint8Array = new Uint8Array([
@@ -22,4 +26,8 @@ export const SCOUT_SEED: ReadonlyUint8Array = new Uint8Array([
 
 export const SUBMISSION_SEED: ReadonlyUint8Array = new Uint8Array([
   115, 117, 98, 109, 105, 115, 115, 105, 111, 110,
+]);
+
+export const TASK_SEED: ReadonlyUint8Array = new Uint8Array([
+  116, 97, 115, 107,
 ]);

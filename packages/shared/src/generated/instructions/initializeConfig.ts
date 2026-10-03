@@ -17,8 +17,6 @@ import {
   getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -48,6 +46,12 @@ import {
 } from "@solana/program-client-core";
 import { findConfigPda } from "../pdas";
 import { SCOUT_PROGRAM_ADDRESS } from "../programs";
+import {
+  getConfigParamsDecoder,
+  getConfigParamsEncoder,
+  type ConfigParams,
+  type ConfigParamsArgs,
+} from "../types";
 
 export const INITIALIZE_CONFIG_DISCRIMINATOR: ReadonlyUint8Array =
   new Uint8Array([208, 127, 21, 1, 194, 190, 196, 70]);
@@ -62,6 +66,7 @@ export type InitializeConfigInstruction<
   TProgram extends string = typeof SCOUT_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountAdmin extends string | AccountMeta<string> = string,
+  TAccountProgramData extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountTreasuryWallet extends string | AccountMeta<string> = string,
   TAccountTreasuryTokenAccount extends string | AccountMeta<string> = string,
@@ -85,6 +90,9 @@ export type InitializeConfigInstruction<
         ? ReadonlySignerAccount<TAccountAdmin> &
             AccountSignerMeta<TAccountAdmin>
         : TAccountAdmin,
+      TAccountProgramData extends string
+        ? ReadonlyAccount<TAccountProgramData>
+        : TAccountProgramData,
       TAccountConfig extends string
         ? WritableAccount<TAccountConfig>
         : TAccountConfig,
@@ -112,21 +120,21 @@ export type InitializeConfigInstruction<
 
 export type InitializeConfigInstructionData = {
   discriminator: ReadonlyUint8Array;
-  feeBps: number;
   treasury: Address;
+  params: ConfigParams;
 };
 
 export type InitializeConfigInstructionDataArgs = {
-  feeBps: number;
   treasury: Address;
+  params: ConfigParamsArgs;
 };
 
 export function getInitializeConfigInstructionDataEncoder(): FixedSizeEncoder<InitializeConfigInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["feeBps", getU16Encoder()],
       ["treasury", getAddressEncoder()],
+      ["params", getConfigParamsEncoder()],
     ]),
     (value) => ({ ...value, discriminator: INITIALIZE_CONFIG_DISCRIMINATOR }),
   );
@@ -135,8 +143,8 @@ export function getInitializeConfigInstructionDataEncoder(): FixedSizeEncoder<In
 export function getInitializeConfigInstructionDataDecoder(): FixedSizeDecoder<InitializeConfigInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["feeBps", getU16Decoder()],
     ["treasury", getAddressDecoder()],
+    ["params", getConfigParamsDecoder()],
   ]);
 }
 
@@ -153,6 +161,7 @@ export function getInitializeConfigInstructionDataCodec(): FixedSizeCodec<
 export type InitializeConfigAsyncInput<
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountTreasuryWallet extends InstructionAccountInput =
     InstructionAccountInput,
@@ -167,7 +176,9 @@ export type InitializeConfigAsyncInput<
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
+  /** Must be the program's upgrade authority, so nobody can front-run the one-time init after deploy. */
   admin: TAccountAdmin;
+  programData?: TAccountProgramData;
   config?: TAccountConfig;
   treasuryWallet: TAccountTreasuryWallet;
   treasuryTokenAccount?: TAccountTreasuryTokenAccount;
@@ -175,13 +186,14 @@ export type InitializeConfigAsyncInput<
   tokenProgram?: TAccountTokenProgram;
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
   systemProgram?: TAccountSystemProgram;
-  feeBps: InitializeConfigInstructionDataArgs["feeBps"];
   treasury: InitializeConfigInstructionDataArgs["treasury"];
+  params: InitializeConfigInstructionDataArgs["params"];
 };
 
 export async function getInitializeConfigInstructionAsync<
   TAccountPayer extends InstructionSignerInput,
   TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountTreasuryWallet extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
@@ -194,6 +206,7 @@ export async function getInitializeConfigInstructionAsync<
   input: InitializeConfigAsyncInput<
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountConfig,
     TAccountTreasuryWallet,
     TAccountTreasuryTokenAccount,
@@ -213,6 +226,10 @@ export async function getInitializeConfigInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
       InstructionAccountInputAddress<TAccountAdmin>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
     >,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -254,6 +271,11 @@ export async function getInitializeConfigInstructionAsync<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     config: { value: input.config ?? null, isSigner: false, isWritable: true },
     treasuryWallet: {
       value: input.treasuryWallet ?? null,
@@ -295,6 +317,21 @@ export async function getInitializeConfigInstructionAsync<
   const args = { ...input };
 
   // Resolve default values.
+  if (!accounts.programData.value) {
+    accounts.programData.value = await getProgramDerivedAddress({
+      programAddress:
+        "BPFLoaderUpgradeab1e11111111111111111111111" as Address<"BPFLoaderUpgradeab1e11111111111111111111111">,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([
+            174, 223, 53, 32, 61, 185, 67, 234, 219, 122, 116, 5, 82, 233, 77,
+            160, 143, 80, 243, 213, 171, 159, 192, 179, 48, 92, 179, 94, 132,
+            184, 228, 157,
+          ]),
+        ),
+      ],
+    });
+  }
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda({ programAddress });
   }
@@ -341,6 +378,7 @@ export async function getInitializeConfigInstructionAsync<
     accounts: [
       getAccountMeta("payer", accounts.payer),
       getAccountMeta("admin", accounts.admin),
+      getAccountMeta("programData", accounts.programData),
       getAccountMeta("config", accounts.config),
       getAccountMeta("treasuryWallet", accounts.treasuryWallet),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
@@ -362,6 +400,10 @@ export async function getInitializeConfigInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
       InstructionAccountInputAddress<TAccountAdmin>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
     >,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -397,6 +439,7 @@ export async function getInitializeConfigInstructionAsync<
 export type InitializeConfigInput<
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
   TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountTreasuryWallet extends InstructionAccountInput =
     InstructionAccountInput,
@@ -411,7 +454,9 @@ export type InitializeConfigInput<
     InstructionAccountInput,
 > = {
   payer: TAccountPayer;
+  /** Must be the program's upgrade authority, so nobody can front-run the one-time init after deploy. */
   admin: TAccountAdmin;
+  programData: TAccountProgramData;
   config: TAccountConfig;
   treasuryWallet: TAccountTreasuryWallet;
   treasuryTokenAccount: TAccountTreasuryTokenAccount;
@@ -419,13 +464,14 @@ export type InitializeConfigInput<
   tokenProgram?: TAccountTokenProgram;
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
   systemProgram?: TAccountSystemProgram;
-  feeBps: InitializeConfigInstructionDataArgs["feeBps"];
   treasury: InitializeConfigInstructionDataArgs["treasury"];
+  params: InitializeConfigInstructionDataArgs["params"];
 };
 
 export function getInitializeConfigInstruction<
   TAccountPayer extends InstructionSignerInput,
   TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
   TAccountConfig extends InstructionAccountInput,
   TAccountTreasuryWallet extends InstructionAccountInput,
   TAccountTreasuryTokenAccount extends InstructionAccountInput,
@@ -438,6 +484,7 @@ export function getInitializeConfigInstruction<
   input: InitializeConfigInput<
     TAccountPayer,
     TAccountAdmin,
+    TAccountProgramData,
     TAccountConfig,
     TAccountTreasuryWallet,
     TAccountTreasuryTokenAccount,
@@ -456,6 +503,10 @@ export function getInitializeConfigInstruction<
   ResolvedInstructionAccountMeta<
     TAccountAdmin,
     InstructionAccountInputAddress<TAccountAdmin>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProgramData,
+    InstructionAccountInputAddress<TAccountProgramData>
   >,
   ResolvedInstructionAccountMeta<
     TAccountConfig,
@@ -496,6 +547,11 @@ export function getInitializeConfigInstruction<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     config: { value: input.config ?? null, isSigner: false, isWritable: true },
     treasuryWallet: {
       value: input.treasuryWallet ?? null,
@@ -554,6 +610,7 @@ export function getInitializeConfigInstruction<
     accounts: [
       getAccountMeta("payer", accounts.payer),
       getAccountMeta("admin", accounts.admin),
+      getAccountMeta("programData", accounts.programData),
       getAccountMeta("config", accounts.config),
       getAccountMeta("treasuryWallet", accounts.treasuryWallet),
       getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
@@ -575,6 +632,10 @@ export function getInitializeConfigInstruction<
     ResolvedInstructionAccountMeta<
       TAccountAdmin,
       InstructionAccountInputAddress<TAccountAdmin>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProgramData,
+      InstructionAccountInputAddress<TAccountProgramData>
     >,
     ResolvedInstructionAccountMeta<
       TAccountConfig,
@@ -614,14 +675,16 @@ export type ParsedInitializeConfigInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     payer: TAccountMetas[0];
+    /** Must be the program's upgrade authority, so nobody can front-run the one-time init after deploy. */
     admin: TAccountMetas[1];
-    config: TAccountMetas[2];
-    treasuryWallet: TAccountMetas[3];
-    treasuryTokenAccount: TAccountMetas[4];
-    usdcMint: TAccountMetas[5];
-    tokenProgram: TAccountMetas[6];
-    associatedTokenProgram: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    programData: TAccountMetas[2];
+    config: TAccountMetas[3];
+    treasuryWallet: TAccountMetas[4];
+    treasuryTokenAccount: TAccountMetas[5];
+    usdcMint: TAccountMetas[6];
+    tokenProgram: TAccountMetas[7];
+    associatedTokenProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[9];
   };
   data: InitializeConfigInstructionData;
 };
@@ -634,12 +697,12 @@ export function parseInitializeConfigInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeConfigInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 10) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 10,
       },
     );
   }
@@ -654,6 +717,7 @@ export function parseInitializeConfigInstruction<
     accounts: {
       payer: getNextAccount(),
       admin: getNextAccount(),
+      programData: getNextAccount(),
       config: getNextAccount(),
       treasuryWallet: getNextAccount(),
       treasuryTokenAccount: getNextAccount(),

@@ -6,7 +6,7 @@ export const Pubkey = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 /** Token amount in base units (6 decimals), as a decimal string so it survives JSON. */
 export const BaseUnits = z.string().regex(/^\d+$/);
 
-export const TaskType = z.enum(["SOURCING", "SCREENING_CALL"]);
+export const TaskType = z.enum(["SOURCING", "SCREENING_CALL", "REFERENCE_CHECK"]);
 export const Seniority = z.enum(["JUNIOR", "MID", "SENIOR", "STAFF", "PRINCIPAL", "EXECUTIVE"]);
 export const WorkMode = z.enum(["ONSITE", "HYBRID", "REMOTE"]);
 

@@ -63,6 +63,8 @@ export type RegisterScoutInstruction<
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountScoutProfile extends string | AccountMeta<string> = string,
   TAccountScoutTokenAccount extends string | AccountMeta<string> = string,
+  TAccountOperator extends string | AccountMeta<string> = string,
+  TAccountOperatorAuthority extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -92,6 +94,13 @@ export type RegisterScoutInstruction<
       TAccountScoutTokenAccount extends string
         ? WritableAccount<TAccountScoutTokenAccount>
         : TAccountScoutTokenAccount,
+      TAccountOperator extends string
+        ? WritableAccount<TAccountOperator>
+        : TAccountOperator,
+      TAccountOperatorAuthority extends string
+        ? ReadonlySignerAccount<TAccountOperatorAuthority> &
+            AccountSignerMeta<TAccountOperatorAuthority>
+        : TAccountOperatorAuthority,
       TAccountMint extends string
         ? ReadonlyAccount<TAccountMint>
         : TAccountMint,
@@ -145,6 +154,9 @@ export type RegisterScoutAsyncInput<
     InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorAuthority extends InstructionSignerInput =
+    InstructionSignerInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
@@ -159,6 +171,9 @@ export type RegisterScoutAsyncInput<
   scoutProfile?: TAccountScoutProfile;
   /** Created up front so payouts never have to create accounts. */
   scoutTokenAccount?: TAccountScoutTokenAccount;
+  /** Optional: the operator vouching for this scout. Requires `operator_authority` to co-sign. */
+  operator?: TAccountOperator;
+  operatorAuthority?: TAccountOperatorAuthority;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
@@ -171,6 +186,8 @@ export async function getRegisterScoutInstructionAsync<
   TAccountConfig extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorAuthority extends InstructionSignerInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountAssociatedTokenProgram extends InstructionAccountInput,
@@ -183,6 +200,8 @@ export async function getRegisterScoutInstructionAsync<
     TAccountConfig,
     TAccountScoutProfile,
     TAccountScoutTokenAccount,
+    TAccountOperator,
+    TAccountOperatorAuthority,
     TAccountMint,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
@@ -211,6 +230,14 @@ export async function getRegisterScoutInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountScoutTokenAccount,
       InstructionAccountInputAddress<TAccountScoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorAuthority,
+      InstructionAccountInputAddress<TAccountOperatorAuthority>
     >,
     ResolvedInstructionAccountMeta<
       TAccountMint,
@@ -250,6 +277,16 @@ export async function getRegisterScoutInstructionAsync<
       value: input.scoutTokenAccount ?? null,
       isSigner: false,
       isWritable: true,
+    },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorAuthority: {
+      value: input.operatorAuthority ?? null,
+      isSigner: true,
+      isWritable: false,
     },
     mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     tokenProgram: {
@@ -331,6 +368,8 @@ export async function getRegisterScoutInstructionAsync<
       getAccountMeta("config", accounts.config),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorAuthority", accounts.operatorAuthority),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
@@ -361,6 +400,14 @@ export async function getRegisterScoutInstructionAsync<
       InstructionAccountInputAddress<TAccountScoutTokenAccount>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorAuthority,
+      InstructionAccountInputAddress<TAccountOperatorAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMint,
       InstructionAccountInputAddress<TAccountMint>
     >,
@@ -387,6 +434,9 @@ export type RegisterScoutInput<
     InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOperatorAuthority extends InstructionSignerInput =
+    InstructionSignerInput,
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
@@ -401,6 +451,9 @@ export type RegisterScoutInput<
   scoutProfile: TAccountScoutProfile;
   /** Created up front so payouts never have to create accounts. */
   scoutTokenAccount: TAccountScoutTokenAccount;
+  /** Optional: the operator vouching for this scout. Requires `operator_authority` to co-sign. */
+  operator?: TAccountOperator;
+  operatorAuthority?: TAccountOperatorAuthority;
   mint: TAccountMint;
   tokenProgram?: TAccountTokenProgram;
   associatedTokenProgram?: TAccountAssociatedTokenProgram;
@@ -413,6 +466,8 @@ export function getRegisterScoutInstruction<
   TAccountConfig extends InstructionAccountInput,
   TAccountScoutProfile extends InstructionAccountInput,
   TAccountScoutTokenAccount extends InstructionAccountInput,
+  TAccountOperator extends InstructionAccountInput,
+  TAccountOperatorAuthority extends InstructionSignerInput,
   TAccountMint extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountAssociatedTokenProgram extends InstructionAccountInput,
@@ -425,6 +480,8 @@ export function getRegisterScoutInstruction<
     TAccountConfig,
     TAccountScoutProfile,
     TAccountScoutTokenAccount,
+    TAccountOperator,
+    TAccountOperatorAuthority,
     TAccountMint,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
@@ -452,6 +509,14 @@ export function getRegisterScoutInstruction<
   ResolvedInstructionAccountMeta<
     TAccountScoutTokenAccount,
     InstructionAccountInputAddress<TAccountScoutTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountOperator,
+    InstructionAccountInputAddress<TAccountOperator>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountOperatorAuthority,
+    InstructionAccountInputAddress<TAccountOperatorAuthority>
   >,
   ResolvedInstructionAccountMeta<
     TAccountMint,
@@ -490,6 +555,16 @@ export function getRegisterScoutInstruction<
       value: input.scoutTokenAccount ?? null,
       isSigner: false,
       isWritable: true,
+    },
+    operator: {
+      value: input.operator ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    operatorAuthority: {
+      value: input.operatorAuthority ?? null,
+      isSigner: true,
+      isWritable: false,
     },
     mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     tokenProgram: {
@@ -534,6 +609,8 @@ export function getRegisterScoutInstruction<
       getAccountMeta("config", accounts.config),
       getAccountMeta("scoutProfile", accounts.scoutProfile),
       getAccountMeta("scoutTokenAccount", accounts.scoutTokenAccount),
+      getAccountMeta("operator", accounts.operator),
+      getAccountMeta("operatorAuthority", accounts.operatorAuthority),
       getAccountMeta("mint", accounts.mint),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
@@ -562,6 +639,14 @@ export function getRegisterScoutInstruction<
     ResolvedInstructionAccountMeta<
       TAccountScoutTokenAccount,
       InstructionAccountInputAddress<TAccountScoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperator,
+      InstructionAccountInputAddress<TAccountOperator>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountOperatorAuthority,
+      InstructionAccountInputAddress<TAccountOperatorAuthority>
     >,
     ResolvedInstructionAccountMeta<
       TAccountMint,
@@ -594,10 +679,13 @@ export type ParsedRegisterScoutInstruction<
     scoutProfile: TAccountMetas[3];
     /** Created up front so payouts never have to create accounts. */
     scoutTokenAccount: TAccountMetas[4];
-    mint: TAccountMetas[5];
-    tokenProgram: TAccountMetas[6];
-    associatedTokenProgram: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    /** Optional: the operator vouching for this scout. Requires `operator_authority` to co-sign. */
+    operator?: TAccountMetas[5] | undefined;
+    operatorAuthority?: TAccountMetas[6] | undefined;
+    mint: TAccountMetas[7];
+    tokenProgram: TAccountMetas[8];
+    associatedTokenProgram: TAccountMetas[9];
+    systemProgram: TAccountMetas[10];
   };
   data: RegisterScoutInstructionData;
 };
@@ -610,12 +698,12 @@ export function parseRegisterScoutInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedRegisterScoutInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -625,6 +713,12 @@ export function parseRegisterScoutInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === SCOUT_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
@@ -633,6 +727,8 @@ export function parseRegisterScoutInstruction<
       config: getNextAccount(),
       scoutProfile: getNextAccount(),
       scoutTokenAccount: getNextAccount(),
+      operator: getNextOptionalAccount(),
+      operatorAuthority: getNextOptionalAccount(),
       mint: getNextAccount(),
       tokenProgram: getNextAccount(),
       associatedTokenProgram: getNextAccount(),

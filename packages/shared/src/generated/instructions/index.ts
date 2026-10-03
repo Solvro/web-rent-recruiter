@@ -7,11 +7,20 @@
  */
 
 export * from "./acceptSubmission";
+export * from "./attestOutcome";
+export * from "./claimTask";
 export * from "./closeRole";
+export * from "./closeTask";
 export * from "./createRole";
+export * from "./createTask";
 export * from "./initializeConfig";
+export * from "./registerOperator";
 export * from "./registerScout";
 export * from "./rejectSubmission";
+export * from "./releaseClaim";
+export * from "./releaseHoldback";
+export * from "./setAgent";
 export * from "./settleExpired";
-export * from "./submitCandidate";
+export * from "./submitDeliverable";
 export * from "./topUp";
+export * from "./updateConfig";

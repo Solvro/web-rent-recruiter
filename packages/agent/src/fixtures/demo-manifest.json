@@ -1,0 +1,40 @@
+{
+	"$comment": "Canonical demo fixtures (Stream C). Everything else (seed, e2e, app mocks) should read from here. File names kept from the earlier TypeScript role for compatibility.",
+	"story": {
+		"role": "Senior Rust Engineer (Solana programs)",
+		"company": "Seed-stage Solana DeFi startup · Warsaw",
+		"founder": "Hanna Lewicka",
+		"budgetUsd": 750,
+		"plan": "SOURCING 17 × $25 (paid on candidate confirmation) · SCREENING_CALL 3 × $40 · SCREENING_CALL variant language 1 × $15 (English C1) · REFERENCE_CHECK 1 × $25 · committed $585 · reserve $165",
+		"pricing": "CEE market targets (docs/research/market-rates.md) with sourcing +25%: sourcing $12 × senior tier 1.7 × 1.25 = $25, screening $40, language $15, reference $25, tech screen $100",
+		"agentCaps": "agent_max_bounty ≥ $80 (screening $40 can be repriced up to 2×); agent_max_commitment ≥ $750"
+	},
+	"role": {
+		"jd": "demo-jd-senior-backend-ts.txt",
+		"role": "demo-role-senior-backend-ts.json"
+	},
+	"candidates": [
+		{
+			"file": "demo-candidate-1-strong-karolina.json",
+			"expect": "~95 ADVANCE → pre-accepted (paid when she confirms), screened, finalist"
+		},
+		{
+			"file": "demo-candidate-2-medium-tomasz.json",
+			"expect": "~58 MAYBE (55-59) → escalated in the company's daily digest"
+		},
+		{
+			"file": "demo-candidate-3-weak-piotr.json",
+			"expect": "~26 PASS (fully-remote deal breaker) → rejected"
+		},
+		{
+			"file": "demo-candidate-4-duplicate-karolina.json",
+			"expect": "duplicate of Karolina (same profile URL after normalization) → blocked"
+		}
+	],
+	"deliverables": {
+		"screeningGood": "screening-karolina-good.json",
+		"screeningLazy": "screening-lazy.json",
+		"reference": "reference-karolina.json",
+		"languageCheck": "language-karolina-english.json"
+	}
+}

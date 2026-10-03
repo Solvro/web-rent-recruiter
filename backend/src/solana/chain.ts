@@ -9,6 +9,7 @@ import {
 	createSolanaRpcSubscriptions,
 	getAddressEncoder,
 	getProgramDerivedAddress,
+	getU32Encoder,
 	getU64Encoder,
 	isSolanaError,
 	type KeyPairSigner,
@@ -28,15 +29,36 @@ import { decodeAccount, loadIdl } from "./idl.ts";
  * sendTransaction: a re-sent signed tx has the same signature and lands at most once.
  */
 const baseTransport = createDefaultRpcTransport({ url: env.rpcUrl });
+
+/** Client-side limiter: spaces requests so the backend alone stays well under the public RPC's per-IP limit. */
+const minIntervalMs = 1000 / Number(process.env.RPC_MAX_RPS ?? 8);
+let nextSlot = 0;
+const recentRequests: number[] = [];
+/** HTTP RPC requests the backend made in the last 60 s (shown on /health). */
+export function rpcRequestsLastMinute() {
+	const cutoff = Date.now() - 60_000;
+	while (recentRequests.length && (recentRequests[0] ?? 0) < cutoff) recentRequests.shift();
+	return recentRequests.length;
+}
+async function rateLimit() {
+	recentRequests.push(Date.now());
+	rpcRequestsLastMinute();
+	const now = Date.now();
+	const at = Math.max(now, nextSlot);
+	nextSlot = at + minIntervalMs;
+	if (at > now) await new Promise((r) => setTimeout(r, at - now));
+}
+
 const retryingTransport: typeof baseTransport = async (config) => {
 	for (let attempt = 0; ; attempt++) {
 		try {
+			await rateLimit();
 			return await baseTransport(config);
 		} catch (err) {
 			const status = isSolanaError(err, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR) ? err.context.statusCode : 0;
 			const transient = status === 429 || status >= 500;
-			if (!transient || attempt >= 5) throw err;
-			await new Promise((r) => setTimeout(r, 400 * 2 ** attempt + Math.random() * 200));
+			if (!transient || attempt >= 7) throw err;
+			await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 8000) + Math.random() * 300));
 		}
 	}
 };
@@ -85,6 +107,15 @@ export function tokenProgram(): Address {
 	return address(loadDeployment()?.tokenProgram ?? TOKEN_PROGRAM_ADDRESS);
 }
 
+let agentPromise: Promise<KeyPairSigner> | null = null;
+/** The agent's wallet: role.agent on agent-run roles (creates gigs, accepts/rejects deliverables). */
+export function agentSigner(): Promise<KeyPairSigner> {
+	agentPromise ??= createKeyPairSignerFromBytes(
+		Uint8Array.from(JSON.parse(readFileSync(env.agentKeypairPath, "utf8")) as number[]),
+	);
+	return agentPromise;
+}
+
 let relayerPromise: Promise<KeyPairSigner> | null = null;
 export function relayer(): Promise<KeyPairSigner> {
 	relayerPromise ??= createKeyPairSignerFromBytes(
@@ -98,6 +129,7 @@ export function relayer(): Promise<KeyPairSigner> {
 const enc = new TextEncoder();
 const addr = getAddressEncoder();
 const u64 = getU64Encoder();
+const u32 = getU32Encoder();
 
 const pda = async (seeds: (Uint8Array | ReturnType<typeof addr.encode>)[]) =>
 	(await getProgramDerivedAddress({ programAddress: programAddress(), seeds }))[0];
@@ -106,8 +138,11 @@ export const findConfigPda = () => pda([enc.encode(SEEDS.config)]);
 export const findRoleVaultPda = (company: Address, roleId: bigint | number) =>
 	pda([enc.encode(SEEDS.role), addr.encode(company), u64.encode(BigInt(roleId))]);
 export const findScoutProfilePda = (scout: Address) => pda([enc.encode(SEEDS.scout), addr.encode(scout)]);
-export const findSubmissionPda = (roleVault: Address, candidateHash: Uint8Array) =>
-	pda([enc.encode(SEEDS.submission), addr.encode(roleVault), candidateHash]);
+export const findTaskPda = (roleVault: Address, taskId: number) =>
+	pda([enc.encode(SEEDS.task), addr.encode(roleVault), u32.encode(taskId)]);
+/** Deliverables live under their task: ["submission", task, deliverable_hash]. */
+export const findSubmissionPda = (task: Address, deliverableHash: Uint8Array) =>
+	pda([enc.encode(SEEDS.submission), addr.encode(task), deliverableHash]);
 
 export const findAta = async (owner: Address, mint: Address) =>
 	(await findAssociatedTokenPda({ owner, mint, tokenProgram: tokenProgram() }))[0];
@@ -119,14 +154,21 @@ export { ASSOCIATED_TOKEN_PROGRAM_ADDRESS };
 export type RoleVaultAccount = {
 	company: Address;
 	roleId: bigint;
-	bountyPerCandidate: bigint;
-	maxCandidates: number;
+	agent: Address | null;
+	feeBps: number;
+	reviewWindowSeconds: bigint;
+	claimTimeoutSeconds: bigint;
+	holdbackWindowSeconds: bigint;
+	/** The next create_task must use task_id = task_count. */
+	taskCount: number;
+	openTaskCount: number;
 	acceptedCount: number;
 	pendingCount: number;
+	pendingValue: bigint;
+	openCapacity: bigint;
+	heldBackTotal: bigint;
 	totalDeposited: bigint;
 	totalPaid: bigint;
-	reviewWindowSeconds: bigint;
-	feeBps: number;
 	status: string | { __kind: string };
 	vaultTokenAccount?: Address;
 };
@@ -135,7 +177,17 @@ export type ScoutProfileAccount = {
 	submitted: number;
 	accepted: number;
 	rejected: number;
+	advanced: number;
+	flagged: number;
 	totalEarned: bigint;
+	/** Operator PDA that vouched for this scout. */
+	operator: Address | null;
+};
+export type OperatorAccount = {
+	authority: Address;
+	name: string;
+	feeBps: number;
+	tokenAccount: Address;
 };
 export type SubmissionAccount = {
 	roleVault: Address;
@@ -144,12 +196,15 @@ export type SubmissionAccount = {
 	reviewDeadline: bigint;
 	status: string | { __kind: string };
 	rejectReason: number;
+	holdbackAmount: bigint;
+	holdbackDeadline: bigint;
+	outcome: string | { __kind: string };
 };
 
 export async function fetchProgramAccount<T>(name: string, at: Address): Promise<T | null> {
 	const idl = loadIdl();
 	if (!idl) return null;
-	const res = await rpc.getAccountInfo(at, { encoding: "base64" }).send();
+	const res = await rpc.getAccountInfo(at, { encoding: "base64", commitment: "confirmed" }).send();
 	if (!res.value) return null;
 	const data = Buffer.from(res.value.data[0], "base64");
 	return decodeAccount<T>(idl, name, data);
@@ -157,7 +212,7 @@ export async function fetchProgramAccount<T>(name: string, at: Address): Promise
 
 export async function tokenBalance(tokenAccount: Address): Promise<bigint> {
 	try {
-		const res = await rpc.getTokenAccountBalance(tokenAccount).send();
+		const res = await rpc.getTokenAccountBalance(tokenAccount, { commitment: "confirmed" }).send();
 		return BigInt(res.value.amount);
 	} catch {
 		return 0n; // account doesn't exist yet
@@ -185,6 +240,23 @@ export async function usdcBalanceOf(owner: Address): Promise<bigint> {
 	return cached(`balance:${owner}`, 5_000, async () =>
 		tokenBalance(await findAta(owner, address(d.usdcMint))),
 	);
+}
+
+/** The scout's on-chain profile and, if vouched, its operator. Cached briefly; invalidated by the indexer. */
+export async function scoutChainInfo(scout: Address): Promise<{
+	profileAddress: Address;
+	profile: ScoutProfileAccount | null;
+	operator: (OperatorAccount & { address: Address }) | null;
+}> {
+	return cached(`scoutinfo:${scout}`, 10_000, async () => {
+		const profileAddress = await findScoutProfilePda(scout);
+		const profile = await fetchProgramAccount<ScoutProfileAccount>("ScoutProfile", profileAddress);
+		if (!profile?.operator) return { profileAddress, profile, operator: null };
+		const op = await cached(`operator:${profile.operator}`, 5 * 60_000, () =>
+			fetchProgramAccount<OperatorAccount>("Operator", profile.operator as Address),
+		);
+		return { profileAddress, profile, operator: op ? { ...op, address: profile.operator } : null };
+	});
 }
 
 export const enumName = (v: string | { __kind: string }) => (typeof v === "string" ? v : v.__kind);

@@ -6,7 +6,9 @@ use anchor_spl::{
 
 use crate::{
     constants::*,
-    state::{Config, ScoutProfile},
+    error::ScoutError,
+    events::ScoutRegistered,
+    state::{Config, Operator, ScoutProfile},
 };
 
 #[derive(Accounts)]
@@ -33,6 +35,10 @@ pub struct RegisterScout<'info> {
         associated_token::token_program = token_program
     )]
     pub scout_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    /// Optional: the operator vouching for this scout. Requires `operator_authority` to co-sign.
+    #[account(mut, seeds = [OPERATOR_SEED, operator.authority.as_ref()], bump = operator.bump)]
+    pub operator: Option<Box<Account<'info, Operator>>>,
+    pub operator_authority: Option<Signer<'info>>,
     #[account(address = config.usdc_mint)]
     pub mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -41,13 +47,34 @@ pub struct RegisterScout<'info> {
 }
 
 pub fn handle_register_scout(ctx: Context<RegisterScout>) -> Result<()> {
-    **ctx.accounts.scout_profile = ScoutProfile {
-        scout: ctx.accounts.scout.key(),
+    let a = ctx.accounts;
+    let operator = match (a.operator.as_deref_mut(), a.operator_authority.as_ref()) {
+        (Some(op), Some(auth)) => {
+            require_keys_eq!(op.authority, auth.key(), ScoutError::OperatorSignatureRequired);
+            op.recruiters = op.recruiters.checked_add(1).ok_or(ScoutError::Overflow)?;
+            Some(op.key())
+        }
+        (None, None) => None,
+        _ => return err!(ScoutError::OperatorSignatureRequired),
+    };
+    **a.scout_profile = ScoutProfile {
+        scout: a.scout.key(),
         submitted: 0,
         accepted: 0,
         rejected: 0,
+        sourcing_accepted: 0,
+        screening_accepted: 0,
+        reference_accepted: 0,
+        advanced: 0,
+        flagged: 0,
         total_earned: 0,
+        operator,
         bump: ctx.bumps.scout_profile,
     };
+    emit!(ScoutRegistered {
+        scout: a.scout.key(),
+        scout_profile: a.scout_profile.key(),
+        operator,
+    });
     Ok(())
 }

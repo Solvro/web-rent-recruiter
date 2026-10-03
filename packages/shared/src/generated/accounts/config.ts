@@ -19,10 +19,14 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU64Decoder,
+  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -54,6 +58,13 @@ export type Config = {
   treasuryTokenAccount: Address;
   feeBps: number;
   usdcMint: Address;
+  /** Smallest bounty a task may have (base units). */
+  minBounty: bigint;
+  /** Accepted deliverables only count towards reputation when the task's bounty is at least this. */
+  minReputableBounty: bigint;
+  /** Bounds for every role window (review, claim timeout, holdback). */
+  minWindowSeconds: bigint;
+  maxWindowSeconds: bigint;
   bump: number;
 };
 
@@ -63,6 +74,13 @@ export type ConfigArgs = {
   treasuryTokenAccount: Address;
   feeBps: number;
   usdcMint: Address;
+  /** Smallest bounty a task may have (base units). */
+  minBounty: number | bigint;
+  /** Accepted deliverables only count towards reputation when the task's bounty is at least this. */
+  minReputableBounty: number | bigint;
+  /** Bounds for every role window (review, claim timeout, holdback). */
+  minWindowSeconds: number | bigint;
+  maxWindowSeconds: number | bigint;
   bump: number;
 };
 
@@ -76,6 +94,10 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["treasuryTokenAccount", getAddressEncoder()],
       ["feeBps", getU16Encoder()],
       ["usdcMint", getAddressEncoder()],
+      ["minBounty", getU64Encoder()],
+      ["minReputableBounty", getU64Encoder()],
+      ["minWindowSeconds", getI64Encoder()],
+      ["maxWindowSeconds", getI64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
@@ -91,6 +113,10 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["treasuryTokenAccount", getAddressDecoder()],
     ["feeBps", getU16Decoder()],
     ["usdcMint", getAddressDecoder()],
+    ["minBounty", getU64Decoder()],
+    ["minReputableBounty", getU64Decoder()],
+    ["minWindowSeconds", getI64Decoder()],
+    ["maxWindowSeconds", getI64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -154,5 +180,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 139;
+  return 171;
 }

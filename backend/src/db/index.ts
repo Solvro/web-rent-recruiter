@@ -32,7 +32,10 @@ export type Db = typeof db;
 export const dbKind = conn.kind;
 export const closeDb = conn.close;
 
+/** Applies pending migrations and idempotent backfills. Never deletes data (only `pnpm seed --reset` does). */
 export async function runMigrations() {
 	if (conn.kind === "pg") await migrateNodePg(conn.db, { migrationsFolder });
 	else await migratePglite(conn.db as PgliteDatabase, { migrationsFolder });
+	const { backfillSlugs } = await import("../lib/slug.ts");
+	await backfillSlugs(db);
 }

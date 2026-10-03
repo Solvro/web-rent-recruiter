@@ -4,9 +4,26 @@
 	"programId": "CmdM2WPuZ6ZrwDXP7DtzfBfR4LMocHs9tqNpGB7JCTo2",
 	"usdcMint": "2bK9qWsavQ7KYRPgaurwkfcaVAQkDFx4UA3dd7fVi7vm",
 	"usdcDecimals": 6,
-	"config": "GWMroNwxZ8CwitvSau8ioJx3c7uVm5LJVGYkj6u7YTKW",
-	"treasury": "8VJdBDpp55sENHDpQjJaGdWXBFQwnZ28KZ6cf5SQBv1f",
-	"treasuryTokenAccount": "9aTd1MP5Y5MVL847GN8ZHEBz7bY2mwdWHCZa99jxEbcL",
+	"config": "CoJLM9BvicaPtUT6QPCN5qu2JASYWSpgsJV5Jf7cZ9rY",
+	"treasury": "E42pLs7vGq8q5SvpaKLUaeyZLmZJXqH9zFSuNGxgw1JH",
+	"treasuryTokenAccount": "F5UPtjGnvpmqQK9bxK8tEbcNSJXXA7utJTTZeMKM3dzw",
 	"feeBps": 1000,
-	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+	"operator": {
+		"address": "7278oid4wX7V7bNvtsKngBGksuUPzHngqrKh7erqtUoh",
+		"authority": "DaCdXnaJmS5JHcijS6BGaGbMdMC8rXKhozXzNhFWBArj",
+		"tokenAccount": "Bgif9iG7WWsQXue1DsDoKV7PDjnBnHVSdoYco7oSuccj",
+		"name": "Kraków Recruiting Academy",
+		"feeBps": 1000
+	},
+	"agent": "A3WfA3F7m7tgUNxVQowwBhZFXmUAj1K5329WWv4v3y9r",
+	"relayer": "GsaEBURHsvf8FYRPjHNaT2UpDZ7VppTnB2oroH88bfbm",
+	"upgradeAuthority": "EJRLKuFkSQtbtb6sVyEBDNniQUKrPkFpTGJDyLdQq8qC",
+	"configParams": {
+		"feeBps": 1000,
+		"minBounty": "500000",
+		"minReputableBounty": "1000000",
+		"minWindowSeconds": 60,
+		"maxWindowSeconds": 7776000
+	}
 }

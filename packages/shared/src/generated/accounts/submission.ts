@@ -23,6 +23,8 @@ import {
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
+  getU64Decoder,
+  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -39,8 +41,12 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
+  getOutcomeDecoder,
+  getOutcomeEncoder,
   getSubmissionStatusDecoder,
   getSubmissionStatusEncoder,
+  type Outcome,
+  type OutcomeArgs,
   type SubmissionStatus,
   type SubmissionStatusArgs,
 } from "../types";
@@ -56,25 +62,59 @@ export function getSubmissionDiscriminatorBytes(): ReadonlyUint8Array {
 export type Submission = {
   discriminator: ReadonlyUint8Array;
   roleVault: Address;
+  task: Address;
   scout: Address;
-  candidateHash: ReadonlyUint8Array;
+  /** Sourcing: sha256(role_salt + normalized profile URL). Other gigs: hash identifying the deliverable. */
+  deliverableHash: ReadonlyUint8Array;
+  /** sha256 of the off-chain notes; zeroes allowed for Sourcing. */
+  evidenceHash: ReadonlyUint8Array;
   submittedAt: bigint;
   reviewDeadline: bigint;
   status: SubmissionStatus;
   /** 0..=3, or 255 while not rejected. */
   rejectReason: number;
+  holdbackAmount: bigint;
+  /** Who paid the account's rent (the relayer); refunded when a rejected submission is closed. */
+  rentPayer: Address;
+  /** Bond the scout posted with this deliverable (0 if vouched or the task has no bond). */
+  bondAmount: bigint;
+  /** accepted_at + holdback_window_seconds; 0 while pending. */
+  holdbackDeadline: bigint;
+  outcome: Outcome;
+  /**
+   * sha256 of the reviewer's off-chain review (zeroes allowed). Rejections emit `reason_hash`
+   * in `SubmissionRejected` instead (the account is closed).
+   */
+  reviewHash: ReadonlyUint8Array;
   bump: number;
 };
 
 export type SubmissionArgs = {
   roleVault: Address;
+  task: Address;
   scout: Address;
-  candidateHash: ReadonlyUint8Array;
+  /** Sourcing: sha256(role_salt + normalized profile URL). Other gigs: hash identifying the deliverable. */
+  deliverableHash: ReadonlyUint8Array;
+  /** sha256 of the off-chain notes; zeroes allowed for Sourcing. */
+  evidenceHash: ReadonlyUint8Array;
   submittedAt: number | bigint;
   reviewDeadline: number | bigint;
   status: SubmissionStatusArgs;
   /** 0..=3, or 255 while not rejected. */
   rejectReason: number;
+  holdbackAmount: number | bigint;
+  /** Who paid the account's rent (the relayer); refunded when a rejected submission is closed. */
+  rentPayer: Address;
+  /** Bond the scout posted with this deliverable (0 if vouched or the task has no bond). */
+  bondAmount: number | bigint;
+  /** accepted_at + holdback_window_seconds; 0 while pending. */
+  holdbackDeadline: number | bigint;
+  outcome: OutcomeArgs;
+  /**
+   * sha256 of the reviewer's off-chain review (zeroes allowed). Rejections emit `reason_hash`
+   * in `SubmissionRejected` instead (the account is closed).
+   */
+  reviewHash: ReadonlyUint8Array;
   bump: number;
 };
 
@@ -84,12 +124,20 @@ export function getSubmissionEncoder(): FixedSizeEncoder<SubmissionArgs> {
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["roleVault", getAddressEncoder()],
+      ["task", getAddressEncoder()],
       ["scout", getAddressEncoder()],
-      ["candidateHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["deliverableHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["evidenceHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["submittedAt", getI64Encoder()],
       ["reviewDeadline", getI64Encoder()],
       ["status", getSubmissionStatusEncoder()],
       ["rejectReason", getU8Encoder()],
+      ["holdbackAmount", getU64Encoder()],
+      ["rentPayer", getAddressEncoder()],
+      ["bondAmount", getU64Encoder()],
+      ["holdbackDeadline", getI64Encoder()],
+      ["outcome", getOutcomeEncoder()],
+      ["reviewHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBMISSION_DISCRIMINATOR }),
@@ -101,12 +149,20 @@ export function getSubmissionDecoder(): FixedSizeDecoder<Submission> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["roleVault", getAddressDecoder()],
+    ["task", getAddressDecoder()],
     ["scout", getAddressDecoder()],
-    ["candidateHash", fixDecoderSize(getBytesDecoder(), 32)],
+    ["deliverableHash", fixDecoderSize(getBytesDecoder(), 32)],
+    ["evidenceHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["submittedAt", getI64Decoder()],
     ["reviewDeadline", getI64Decoder()],
     ["status", getSubmissionStatusDecoder()],
     ["rejectReason", getU8Decoder()],
+    ["holdbackAmount", getU64Decoder()],
+    ["rentPayer", getAddressDecoder()],
+    ["bondAmount", getU64Decoder()],
+    ["holdbackDeadline", getI64Decoder()],
+    ["outcome", getOutcomeDecoder()],
+    ["reviewHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -173,5 +229,5 @@ export async function fetchAllMaybeSubmission(
 }
 
 export function getSubmissionSize(): number {
-  return 123;
+  return 276;
 }

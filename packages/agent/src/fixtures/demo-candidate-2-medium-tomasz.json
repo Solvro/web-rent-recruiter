@@ -1,0 +1,9 @@
+{
+	"name": "Tomasz Brzeziński",
+	"profileUrl": "https://linkedin.com/in/tomasz-brzezinski-demo",
+	"avatarUrl": "/avatars/tomasz-brzezinski.webp",
+	"currentTitle": "Senior Rust Engineer",
+	"currentCompany": "Northgate Trading (HFT infrastructure)",
+	"location": "Warsaw, Poland",
+	"notes": "5 years of production Rust building low-latency order routing and market-data infrastructure at a high-frequency trading firm. Uses property-based tests (proptest) and cargo-fuzz on the order router. On Solana he has two merged PRs in an open-source Anchor lending program (a fix to interest accrual and its tests), but he hasn't shipped a program of his own to mainnet. Good English, lives in Warsaw and is fine with 2 office days."
+}

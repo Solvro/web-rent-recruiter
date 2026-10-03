@@ -16,66 +16,206 @@ import { SCOUT_PROGRAM_ADDRESS } from "../programs";
 
 /** InvalidFee: Fee must be between 0 and 10000 basis points */
 export const SCOUT_ERROR__INVALID_FEE = 0x1770; // 6000
-/** InvalidRoleParams: Bounty, max candidates and review window must be positive */
+/** InvalidRoleParams: Review window, claim timeout and holdback window must be positive */
 export const SCOUT_ERROR__INVALID_ROLE_PARAMS = 0x1771; // 6001
+/** InvalidTaskParams: Bounty and max deliverables must be positive */
+export const SCOUT_ERROR__INVALID_TASK_PARAMS = 0x1772; // 6002
+/** InvalidTaskId: Task id must equal role.task_count */
+export const SCOUT_ERROR__INVALID_TASK_ID = 0x1773; // 6003
 /** InvalidAmount: Amount must be positive */
-export const SCOUT_ERROR__INVALID_AMOUNT = 0x1772; // 6002
+export const SCOUT_ERROR__INVALID_AMOUNT = 0x1774; // 6004
 /** RoleClosed: Role is closed */
-export const SCOUT_ERROR__ROLE_CLOSED = 0x1773; // 6003
-/** RoleFull: Role has no free candidate slots */
-export const SCOUT_ERROR__ROLE_FULL = 0x1774; // 6004
-/** InsufficientBudget: Vault cannot fund another pending submission; top up the budget */
-export const SCOUT_ERROR__INSUFFICIENT_BUDGET = 0x1775; // 6005
+export const SCOUT_ERROR__ROLE_CLOSED = 0x1775; // 6005
+/** TaskClosed: Task is closed */
+export const SCOUT_ERROR__TASK_CLOSED = 0x1776; // 6006
+/** TaskFull: Task has no free deliverable slots */
+export const SCOUT_ERROR__TASK_FULL = 0x1777; // 6007
+/** OverCommitted: Open tasks would promise more than the vault holds; top up or close a task */
+export const SCOUT_ERROR__OVER_COMMITTED = 0x1778; // 6008
+/** InsufficientBudget: Vault cannot fund another pending deliverable; top up the budget */
+export const SCOUT_ERROR__INSUFFICIENT_BUDGET = 0x1779; // 6009
 /** NotPending: Submission is not pending */
-export const SCOUT_ERROR__NOT_PENDING = 0x1776; // 6006
+export const SCOUT_ERROR__NOT_PENDING = 0x177a; // 6010
 /** Unauthorized: Signer is neither the company nor its delegated agent */
-export const SCOUT_ERROR__UNAUTHORIZED = 0x1777; // 6007
+export const SCOUT_ERROR__UNAUTHORIZED = 0x177b; // 6011
 /** ReviewWindowOpen: Review window has not expired yet */
-export const SCOUT_ERROR__REVIEW_WINDOW_OPEN = 0x1778; // 6008
+export const SCOUT_ERROR__REVIEW_WINDOW_OPEN = 0x177c; // 6012
 /** ReviewWindowExpired: Review window has expired; the submission can only be settled */
-export const SCOUT_ERROR__REVIEW_WINDOW_EXPIRED = 0x1779; // 6009
+export const SCOUT_ERROR__REVIEW_WINDOW_EXPIRED = 0x177d; // 6013
 /** InvalidReason: Unknown reject reason code */
-export const SCOUT_ERROR__INVALID_REASON = 0x177a; // 6010
-/** PendingSubmissions: Role still has pending submissions */
-export const SCOUT_ERROR__PENDING_SUBMISSIONS = 0x177b; // 6011
+export const SCOUT_ERROR__INVALID_REASON = 0x177e; // 6014
+/** PendingSubmissions: There are pending deliverables */
+export const SCOUT_ERROR__PENDING_SUBMISSIONS = 0x177f; // 6015
+/** OpenTasks: Role still has open tasks */
+export const SCOUT_ERROR__OPEN_TASKS = 0x1780; // 6016
 /** InvalidTokenAccount: Token account does not belong to the expected owner or mint */
-export const SCOUT_ERROR__INVALID_TOKEN_ACCOUNT = 0x177c; // 6012
+export const SCOUT_ERROR__INVALID_TOKEN_ACCOUNT = 0x1781; // 6017
+/** MissingEvidence: Screening and reference gigs need an evidence hash of the notes */
+export const SCOUT_ERROR__MISSING_EVIDENCE = 0x1782; // 6018
+/** NotExclusive: Only exclusive gigs can be claimed */
+export const SCOUT_ERROR__NOT_EXCLUSIVE = 0x1783; // 6019
+/** AlreadyClaimed: Gig is already claimed */
+export const SCOUT_ERROR__ALREADY_CLAIMED = 0x1784; // 6020
+/** NotClaimant: Only the claimant can do this */
+export const SCOUT_ERROR__NOT_CLAIMANT = 0x1785; // 6021
+/** NotClaimed: Gig is not claimed */
+export const SCOUT_ERROR__NOT_CLAIMED = 0x1786; // 6022
+/** ClaimTimeoutOpen: Claim timeout has not passed yet */
+export const SCOUT_ERROR__CLAIM_TIMEOUT_OPEN = 0x1787; // 6023
+/** InvalidHoldback: Holdback must be 0..=5000 bps */
+export const SCOUT_ERROR__INVALID_HOLDBACK = 0x1788; // 6024
+/** NotAccepted: Submission is not accepted */
+export const SCOUT_ERROR__NOT_ACCEPTED = 0x1789; // 6025
+/** OutcomeAlreadySet: Outcome was already attested */
+export const SCOUT_ERROR__OUTCOME_ALREADY_SET = 0x178a; // 6026
+/** InvalidOutcome: Outcome must be Advanced or Fabricated */
+export const SCOUT_ERROR__INVALID_OUTCOME = 0x178b; // 6027
+/** HoldbackWindowExpired: Holdback window has expired; fabrication can no longer be claimed */
+export const SCOUT_ERROR__HOLDBACK_WINDOW_EXPIRED = 0x178c; // 6028
+/** HoldbackWindowOpen: Holdback window is still open */
+export const SCOUT_ERROR__HOLDBACK_WINDOW_OPEN = 0x178d; // 6029
+/** NothingHeldBack: Nothing is held back for this submission */
+export const SCOUT_ERROR__NOTHING_HELD_BACK = 0x178e; // 6030
+/** HoldbackOutstanding: Role still has held-back payouts */
+export const SCOUT_ERROR__HOLDBACK_OUTSTANDING = 0x178f; // 6031
+/** InvalidOperatorFee: Operator fee must be at most 2000 bps */
+export const SCOUT_ERROR__INVALID_OPERATOR_FEE = 0x1790; // 6032
+/** InvalidOperatorName: Operator name must be 1..=32 bytes */
+export const SCOUT_ERROR__INVALID_OPERATOR_NAME = 0x1791; // 6033
+/** OperatorSignatureRequired: Vouching needs both the operator account and its authority's signature */
+export const SCOUT_ERROR__OPERATOR_SIGNATURE_REQUIRED = 0x1792; // 6034
+/** OperatorMismatch: Operator accounts don't match the scout's operator */
+export const SCOUT_ERROR__OPERATOR_MISMATCH = 0x1793; // 6035
+/** SelfDealing: The company and its agent can't deliver to their own role */
+export const SCOUT_ERROR__SELF_DEALING = 0x1794; // 6036
+/** NotUpgradeAuthority: Only the program's upgrade authority can initialize the config */
+export const SCOUT_ERROR__NOT_UPGRADE_AUTHORITY = 0x1795; // 6037
+/** ReputationTooLow: Not enough accepted sourcing deliverables to claim this gig */
+export const SCOUT_ERROR__REPUTATION_TOO_LOW = 0x1796; // 6038
+/** SelfReview: The scout who sourced this candidate can't screen or reference-check them */
+export const SCOUT_ERROR__SELF_REVIEW = 0x1797; // 6039
+/** InvalidBond: Bond must be 0..=2000 bps */
+export const SCOUT_ERROR__INVALID_BOND = 0x1798; // 6040
+/** BountyTooSmall: Bounty below the configured minimum */
+export const SCOUT_ERROR__BOUNTY_TOO_SMALL = 0x1799; // 6041
+/** WindowOutOfRange: Window outside the configured bounds */
+export const SCOUT_ERROR__WINDOW_OUT_OF_RANGE = 0x179a; // 6042
+/** InvalidConfig: Config parameters out of range */
+export const SCOUT_ERROR__INVALID_CONFIG = 0x179b; // 6043
+/** AgentCapExceeded: Task exceeds the company's limits for the agent */
+export const SCOUT_ERROR__AGENT_CAP_EXCEEDED = 0x179c; // 6044
+/** NotGatekeeper: The role's gatekeeper (agent, or company if none) must co-sign */
+export const SCOUT_ERROR__NOT_GATEKEEPER = 0x179d; // 6045
+/** NotAttestor: Sourcing deliverables settle only with the confirmation attestor's or the company's signature */
+export const SCOUT_ERROR__NOT_ATTESTOR = 0x179e; // 6046
+/** InvariantViolated: Accounting invariant violated */
+export const SCOUT_ERROR__INVARIANT_VIOLATED = 0x179f; // 6047
 /** Overflow: Arithmetic overflow */
-export const SCOUT_ERROR__OVERFLOW = 0x177d; // 6013
+export const SCOUT_ERROR__OVERFLOW = 0x17a0; // 6048
 
 export type ScoutError =
+  | typeof SCOUT_ERROR__AGENT_CAP_EXCEEDED
+  | typeof SCOUT_ERROR__ALREADY_CLAIMED
+  | typeof SCOUT_ERROR__BOUNTY_TOO_SMALL
+  | typeof SCOUT_ERROR__CLAIM_TIMEOUT_OPEN
+  | typeof SCOUT_ERROR__HOLDBACK_OUTSTANDING
+  | typeof SCOUT_ERROR__HOLDBACK_WINDOW_EXPIRED
+  | typeof SCOUT_ERROR__HOLDBACK_WINDOW_OPEN
   | typeof SCOUT_ERROR__INSUFFICIENT_BUDGET
   | typeof SCOUT_ERROR__INVALID_AMOUNT
+  | typeof SCOUT_ERROR__INVALID_BOND
+  | typeof SCOUT_ERROR__INVALID_CONFIG
   | typeof SCOUT_ERROR__INVALID_FEE
+  | typeof SCOUT_ERROR__INVALID_HOLDBACK
+  | typeof SCOUT_ERROR__INVALID_OPERATOR_FEE
+  | typeof SCOUT_ERROR__INVALID_OPERATOR_NAME
+  | typeof SCOUT_ERROR__INVALID_OUTCOME
   | typeof SCOUT_ERROR__INVALID_REASON
   | typeof SCOUT_ERROR__INVALID_ROLE_PARAMS
+  | typeof SCOUT_ERROR__INVALID_TASK_ID
+  | typeof SCOUT_ERROR__INVALID_TASK_PARAMS
   | typeof SCOUT_ERROR__INVALID_TOKEN_ACCOUNT
+  | typeof SCOUT_ERROR__INVARIANT_VIOLATED
+  | typeof SCOUT_ERROR__MISSING_EVIDENCE
+  | typeof SCOUT_ERROR__NOT_ACCEPTED
+  | typeof SCOUT_ERROR__NOT_ATTESTOR
+  | typeof SCOUT_ERROR__NOT_CLAIMANT
+  | typeof SCOUT_ERROR__NOT_CLAIMED
+  | typeof SCOUT_ERROR__NOT_EXCLUSIVE
+  | typeof SCOUT_ERROR__NOT_GATEKEEPER
+  | typeof SCOUT_ERROR__NOTHING_HELD_BACK
   | typeof SCOUT_ERROR__NOT_PENDING
+  | typeof SCOUT_ERROR__NOT_UPGRADE_AUTHORITY
+  | typeof SCOUT_ERROR__OPEN_TASKS
+  | typeof SCOUT_ERROR__OPERATOR_MISMATCH
+  | typeof SCOUT_ERROR__OPERATOR_SIGNATURE_REQUIRED
+  | typeof SCOUT_ERROR__OUTCOME_ALREADY_SET
+  | typeof SCOUT_ERROR__OVER_COMMITTED
   | typeof SCOUT_ERROR__OVERFLOW
   | typeof SCOUT_ERROR__PENDING_SUBMISSIONS
+  | typeof SCOUT_ERROR__REPUTATION_TOO_LOW
   | typeof SCOUT_ERROR__REVIEW_WINDOW_EXPIRED
   | typeof SCOUT_ERROR__REVIEW_WINDOW_OPEN
   | typeof SCOUT_ERROR__ROLE_CLOSED
-  | typeof SCOUT_ERROR__ROLE_FULL
-  | typeof SCOUT_ERROR__UNAUTHORIZED;
+  | typeof SCOUT_ERROR__SELF_DEALING
+  | typeof SCOUT_ERROR__SELF_REVIEW
+  | typeof SCOUT_ERROR__TASK_CLOSED
+  | typeof SCOUT_ERROR__TASK_FULL
+  | typeof SCOUT_ERROR__UNAUTHORIZED
+  | typeof SCOUT_ERROR__WINDOW_OUT_OF_RANGE;
 
 let scoutErrorMessages: Record<ScoutError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
   scoutErrorMessages = {
-    [SCOUT_ERROR__INSUFFICIENT_BUDGET]: `Vault cannot fund another pending submission; top up the budget`,
+    [SCOUT_ERROR__AGENT_CAP_EXCEEDED]: `Task exceeds the company's limits for the agent`,
+    [SCOUT_ERROR__ALREADY_CLAIMED]: `Gig is already claimed`,
+    [SCOUT_ERROR__BOUNTY_TOO_SMALL]: `Bounty below the configured minimum`,
+    [SCOUT_ERROR__CLAIM_TIMEOUT_OPEN]: `Claim timeout has not passed yet`,
+    [SCOUT_ERROR__HOLDBACK_OUTSTANDING]: `Role still has held-back payouts`,
+    [SCOUT_ERROR__HOLDBACK_WINDOW_EXPIRED]: `Holdback window has expired; fabrication can no longer be claimed`,
+    [SCOUT_ERROR__HOLDBACK_WINDOW_OPEN]: `Holdback window is still open`,
+    [SCOUT_ERROR__INSUFFICIENT_BUDGET]: `Vault cannot fund another pending deliverable; top up the budget`,
     [SCOUT_ERROR__INVALID_AMOUNT]: `Amount must be positive`,
+    [SCOUT_ERROR__INVALID_BOND]: `Bond must be 0..=2000 bps`,
+    [SCOUT_ERROR__INVALID_CONFIG]: `Config parameters out of range`,
     [SCOUT_ERROR__INVALID_FEE]: `Fee must be between 0 and 10000 basis points`,
+    [SCOUT_ERROR__INVALID_HOLDBACK]: `Holdback must be 0..=5000 bps`,
+    [SCOUT_ERROR__INVALID_OPERATOR_FEE]: `Operator fee must be at most 2000 bps`,
+    [SCOUT_ERROR__INVALID_OPERATOR_NAME]: `Operator name must be 1..=32 bytes`,
+    [SCOUT_ERROR__INVALID_OUTCOME]: `Outcome must be Advanced or Fabricated`,
     [SCOUT_ERROR__INVALID_REASON]: `Unknown reject reason code`,
-    [SCOUT_ERROR__INVALID_ROLE_PARAMS]: `Bounty, max candidates and review window must be positive`,
+    [SCOUT_ERROR__INVALID_ROLE_PARAMS]: `Review window, claim timeout and holdback window must be positive`,
+    [SCOUT_ERROR__INVALID_TASK_ID]: `Task id must equal role.task_count`,
+    [SCOUT_ERROR__INVALID_TASK_PARAMS]: `Bounty and max deliverables must be positive`,
     [SCOUT_ERROR__INVALID_TOKEN_ACCOUNT]: `Token account does not belong to the expected owner or mint`,
+    [SCOUT_ERROR__INVARIANT_VIOLATED]: `Accounting invariant violated`,
+    [SCOUT_ERROR__MISSING_EVIDENCE]: `Screening and reference gigs need an evidence hash of the notes`,
+    [SCOUT_ERROR__NOT_ACCEPTED]: `Submission is not accepted`,
+    [SCOUT_ERROR__NOT_ATTESTOR]: `Sourcing deliverables settle only with the confirmation attestor's or the company's signature`,
+    [SCOUT_ERROR__NOT_CLAIMANT]: `Only the claimant can do this`,
+    [SCOUT_ERROR__NOT_CLAIMED]: `Gig is not claimed`,
+    [SCOUT_ERROR__NOT_EXCLUSIVE]: `Only exclusive gigs can be claimed`,
+    [SCOUT_ERROR__NOT_GATEKEEPER]: `The role's gatekeeper (agent, or company if none) must co-sign`,
+    [SCOUT_ERROR__NOTHING_HELD_BACK]: `Nothing is held back for this submission`,
     [SCOUT_ERROR__NOT_PENDING]: `Submission is not pending`,
+    [SCOUT_ERROR__NOT_UPGRADE_AUTHORITY]: `Only the program's upgrade authority can initialize the config`,
+    [SCOUT_ERROR__OPEN_TASKS]: `Role still has open tasks`,
+    [SCOUT_ERROR__OPERATOR_MISMATCH]: `Operator accounts don't match the scout's operator`,
+    [SCOUT_ERROR__OPERATOR_SIGNATURE_REQUIRED]: `Vouching needs both the operator account and its authority's signature`,
+    [SCOUT_ERROR__OUTCOME_ALREADY_SET]: `Outcome was already attested`,
+    [SCOUT_ERROR__OVER_COMMITTED]: `Open tasks would promise more than the vault holds; top up or close a task`,
     [SCOUT_ERROR__OVERFLOW]: `Arithmetic overflow`,
-    [SCOUT_ERROR__PENDING_SUBMISSIONS]: `Role still has pending submissions`,
+    [SCOUT_ERROR__PENDING_SUBMISSIONS]: `There are pending deliverables`,
+    [SCOUT_ERROR__REPUTATION_TOO_LOW]: `Not enough accepted sourcing deliverables to claim this gig`,
     [SCOUT_ERROR__REVIEW_WINDOW_EXPIRED]: `Review window has expired; the submission can only be settled`,
     [SCOUT_ERROR__REVIEW_WINDOW_OPEN]: `Review window has not expired yet`,
     [SCOUT_ERROR__ROLE_CLOSED]: `Role is closed`,
-    [SCOUT_ERROR__ROLE_FULL]: `Role has no free candidate slots`,
+    [SCOUT_ERROR__SELF_DEALING]: `The company and its agent can't deliver to their own role`,
+    [SCOUT_ERROR__SELF_REVIEW]: `The scout who sourced this candidate can't screen or reference-check them`,
+    [SCOUT_ERROR__TASK_CLOSED]: `Task is closed`,
+    [SCOUT_ERROR__TASK_FULL]: `Task has no free deliverable slots`,
     [SCOUT_ERROR__UNAUTHORIZED]: `Signer is neither the company nor its delegated agent`,
+    [SCOUT_ERROR__WINDOW_OUT_OF_RANGE]: `Window outside the configured bounds`,
   };
 }
 

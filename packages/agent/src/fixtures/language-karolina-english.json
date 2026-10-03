@@ -1,0 +1,33 @@
+{
+	"recommendation": "ADVANCE",
+	"assessedLevel": "C1",
+	"answers": [
+		{
+			"questionId": "lang-intro",
+			"answer": "Introduced herself easily: protocol engineer at Kelp Labs, 6 years in Rust, focused on lending. Natural, no hesitation."
+		},
+		{
+			"questionId": "lang-project",
+			"answer": "Told the story of the lending pool launch in past tenses with clear structure: design, fuzzing, two audits, mainnet. Used precise vocabulary (\"rounding error in share minting\")."
+		},
+		{
+			"questionId": "lang-explain",
+			"answer": "Explained what a liquidation is with an analogy to a margin call, then rephrased when I asked a follow-up. Very clear for a non-technical listener."
+		},
+		{
+			"questionId": "lang-scenario",
+			"answer": "Handled the disagreement scenario with conditionals and polite hedging (\"I'd suggest we look at the numbers first\"). One small article slip, corrected herself."
+		},
+		{
+			"questionId": "lang-question",
+			"answer": "Asked about the audit budget and how the team splits on-call; followed my answers and asked a good follow-up on the token vesting."
+		}
+	],
+	"transcript": "Recruiter: Could you introduce yourself and what you do today?\nKarolina: Sure. I'm a protocol engineer at Kelp Labs, a Solana DEX and lending protocol. I've been writing Rust for about six years, and for the last three I've mostly worked on our lending programs.\nRecruiter: Tell me about a project you're proud of.\nKarolina: The lending pool launch. I wrote the program from the design doc, and before we went to mainnet I built a fuzzing suite with Trident. It actually found two real bugs, one was a rounding error in share minting, the other a missing signer check. Then we went through two audits, and since 2024 it's been running without any loss of funds.\nRecruiter: How would you explain a liquidation to someone non-technical?\nKarolina: Think of it like a margin call. You borrow against something you own, and if its value drops too far, the protocol sells part of it to repay the loan, so lenders are protected. Does that make sense? If not, I can put it differently: the collateral is a safety deposit, and liquidation is when the deposit gets used.\nRecruiter: A colleague disagrees with your technical decision in a meeting. What do you do?\nKarolina: I'd first make sure I understand their concern, and then I'd suggest we look at the numbers first, maybe a quick benchmark or a test case. If they turn out to be right, I'm happy to change the approach; the point is a safe program, not winning the argument.\nRecruiter: What would you like to know about the role?\nKarolina: How big is the audit budget, and how does the team split on-call for the programs? And how does the token vesting work for early employees?",
+	"recording": {
+		"provider": "recall",
+		"durationSeconds": 840,
+		"speakers": ["Ola (recruiter)", "Karolina Mazurek"]
+	},
+	"$comment": "Transcript is an excerpt of the 14-minute call; durationSeconds comes from the recording."
+}

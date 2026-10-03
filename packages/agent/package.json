@@ -1,0 +1,41 @@
+{
+	"name": "@scout/agent",
+	"private": true,
+	"type": "module",
+	"description": "Scout role agent: plans gigs, reviews deliverables, pays recruiters. Hosted by the backend or self-hosted with scout-agent.",
+	"bin": {
+		"scout-agent": "./bin/scout-agent.mjs"
+	},
+	"exports": {
+		".": "./src/index.ts",
+		"./pure": "./src/gigs/pure.ts",
+		"./runner": "./src/runner/index.ts",
+		"./remote": "./src/remote/index.ts"
+	},
+	"scripts": {
+		"agent": "tsx --env-file-if-exists=.env src/cli.ts",
+		"scout-agent": "tsx --env-file-if-exists=.env src/remote/cli.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@ai-sdk/anthropic": "^4.0.71",
+		"@ai-sdk/openai": "^4.0.83",
+		"@openrouter/ai-sdk-provider": "^3.1.0",
+		"@scout/shared": "workspace:*",
+		"@solana-program/token": "^0.17.0",
+		"@solana/kit": "^8.4.0",
+		"@trpc/client": "^11.19.0",
+		"ai": "^7.0.127",
+		"superjson": "^2.2.6",
+		"tsx": "^4.23.15",
+		"zod": "^4.6.5"
+	},
+	"devDependencies": {
+		"@solana-program/system": "^0.15.0",
+		"@trpc/server": "^11.19.0",
+		"@types/node": "^26.6.4",
+		"typescript": "^6.0.3",
+		"vitest": "^5.0.3"
+	}
+}

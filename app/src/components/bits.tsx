@@ -1,14 +1,13 @@
 import type { AgentReview, SubmissionView } from "@scout/shared";
 import { PROJECT_NAME } from "@scout/shared";
-import { CheckCircle2, CircleDashed, Clock, XCircle } from "lucide-react";
+import { Check, Clock } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function Brand({ className }: { className?: string }) {
+export function Brand() {
 	return (
-		<span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", className)}>
+		<span className="inline-flex items-center gap-2 type-body text-foreground">
 			<span className="grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground">
 				<svg
 					viewBox="0 0 24 24"
@@ -27,51 +26,102 @@ export function Brand({ className }: { className?: string }) {
 	);
 }
 
-export function StatusBadge({ status }: { status: SubmissionView["status"] }) {
-	if (status === "ACCEPTED")
-		return (
-			<Badge className="gap-1 bg-success/10 text-success">
-				<CheckCircle2 className="size-3" /> Paid
-			</Badge>
-		);
-	if (status === "REJECTED")
-		return (
-			<Badge variant="secondary" className="gap-1 text-muted-foreground">
-				<XCircle className="size-3" /> Rejected
-			</Badge>
-		);
-	return (
-		<Badge variant="outline" className="gap-1">
-			<Clock className="size-3" /> In review
-		</Badge>
+const SIZES = { xs: "size-6", sm: "size-9", md: "size-10", lg: "size-16" } as const;
+const TINTS = [
+	"bg-[oklch(0.94_0.04_262)] text-[oklch(0.42_0.12_262)]",
+	"bg-[oklch(0.94_0.04_160)] text-[oklch(0.42_0.09_160)]",
+	"bg-[oklch(0.94_0.05_70)] text-[oklch(0.45_0.1_60)]",
+	"bg-[oklch(0.94_0.04_330)] text-[oklch(0.45_0.12_330)]",
+	"bg-[oklch(0.94_0.03_200)] text-[oklch(0.42_0.08_200)]",
+];
+function tint(name: string) {
+	let h = 0;
+	for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+	return TINTS[h % TINTS.length];
+}
+
+/** Every person gets a face: their photo, or initials on a soft tint derived from the name. */
+export function PersonAvatar({
+	name,
+	src,
+	size = "md",
+}: {
+	name: string;
+	src?: string | null;
+	size?: keyof typeof SIZES;
+}) {
+	const [failed, setFailed] = useState(false);
+	return src && !failed ? (
+		<img
+			src={src}
+			alt=""
+			className={cn(SIZES[size], "shrink-0 rounded-full bg-muted object-cover")}
+			onError={() => setFailed(true)}
+		/>
+	) : (
+		<span
+			className={cn(SIZES[size], "grid shrink-0 place-items-center rounded-full type-label", tint(name))}
+			aria-hidden
+		>
+			{initials(name)}
+		</span>
 	);
 }
 
-const REC_STYLE: Record<AgentReview["recommendation"], string> = {
-	ADVANCE: "bg-success/10 text-success ring-success/20",
-	MAYBE: "bg-warning/15 text-warning-foreground ring-warning/30",
-	PASS: "bg-muted text-muted-foreground ring-border",
-};
-const REC_LABEL: Record<AgentReview["recommendation"], string> = {
-	ADVANCE: "Advance",
-	MAYBE: "Maybe",
-	PASS: "Pass",
-};
-
-export function ScoreBadge({ review, size = "md" }: { review: AgentReview; size?: "md" | "lg" }) {
+export function Chip({
+	children,
+	tone = "neutral",
+}: {
+	children: ReactNode;
+	tone?: "neutral" | "good" | "warn" | "accent";
+}) {
 	return (
-		<div
+		<span
 			className={cn(
-				"inline-flex items-center gap-2 rounded-xl px-2.5 py-1 ring-1 ring-inset",
-				REC_STYLE[review.recommendation],
-				size === "lg" && "px-3 py-1.5",
+				"inline-flex items-center gap-1 rounded-full px-2.5 py-1 type-label",
+				tone === "neutral" && "bg-secondary text-muted-foreground",
+				tone === "good" && "bg-success/10 text-success",
+				tone === "warn" && "bg-warning/15 text-warning-foreground",
+				tone === "accent" && "bg-accent text-accent-foreground",
 			)}
 		>
-			<span className={cn("tabular font-semibold", size === "lg" ? "text-2xl" : "text-base")}>
-				{review.score}
-			</span>
-			<span className="text-xs font-medium uppercase tracking-wide">{REC_LABEL[review.recommendation]}</span>
-		</div>
+			{children}
+		</span>
+	);
+}
+
+export function TrustChip({ children }: { children: ReactNode }) {
+	return (
+		<Chip tone="good">
+			<Check className="size-3.5" />
+			{children}
+		</Chip>
+	);
+}
+
+export function StatusChip({ status }: { status: SubmissionView["status"] }) {
+	if (status === "ACCEPTED")
+		return (
+			<Chip tone="good">
+				<Check className="size-3.5" /> Paid
+			</Chip>
+		);
+	if (status === "REJECTED") return <Chip>Not selected</Chip>;
+	return <Chip tone="accent">In review</Chip>;
+}
+
+const MATCH: Record<AgentReview["recommendation"], { label: string; tone: "good" | "warn" | "neutral" }> = {
+	ADVANCE: { label: "Strong match", tone: "good" },
+	MAYBE: { label: "Partial match", tone: "warn" },
+	PASS: { label: "Weak match", tone: "neutral" },
+};
+
+export function ScoreChip({ review }: { review: AgentReview }) {
+	const m = MATCH[review.recommendation];
+	return (
+		<Chip tone={m.tone}>
+			<span className="tabular">{review.score}</span> · {m.label}
+		</Chip>
 	);
 }
 
@@ -88,73 +138,73 @@ export function secondsUntil(iso: string, now: number) {
 	return (new Date(iso).getTime() - now) / 1000;
 }
 
-export function Countdown({ deadline, prefix = "Auto-accepts in" }: { deadline: string; prefix?: string }) {
-	const now = useNow();
-	const left = secondsUntil(deadline, now);
-	if (left <= 0)
-		return <span className="text-xs font-medium text-warning-foreground">Review window ended</span>;
+/** Small line: how long until something happens automatically. Green when it's good news for the reader. */
+export function Countdown({
+	deadline,
+	prefix,
+	suffix,
+	tone = "warn",
+}: {
+	deadline: string;
+	prefix: string;
+	suffix?: string;
+	tone?: "warn" | "good";
+}) {
+	const left = secondsUntil(deadline, useNow());
+	if (left <= 0) return null;
 	return (
-		<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-			<Clock className="size-3" />
-			{prefix} <span className="tabular font-medium text-foreground">{formatDuration(left)}</span>
+		<span
+			className={cn(
+				"inline-flex items-center gap-1 type-label",
+				tone === "good" ? "text-success" : "text-warning-foreground",
+			)}
+		>
+			<Clock className="size-3.5" />
+			{prefix} <span className="tabular">{formatDuration(left)}</span>
+			{suffix && <span> {suffix}</span>}
 		</span>
 	);
 }
 
-export function EmptyState({
-	icon,
-	title,
-	children,
-	action,
-}: {
-	icon?: ReactNode;
-	title: string;
-	children?: ReactNode;
-	action?: ReactNode;
-}) {
+export function EmptyState({ title, action }: { title: string; action?: ReactNode }) {
 	return (
-		<div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card/50 px-6 py-14 text-center">
-			<div className="grid size-11 place-items-center rounded-full bg-accent text-accent-foreground">
-				{icon ?? <CircleDashed className="size-5" />}
-			</div>
-			<div className="space-y-1">
-				<p className="font-medium">{title}</p>
-				{children && <p className="mx-auto max-w-sm text-sm text-muted-foreground">{children}</p>}
-			</div>
+		<div className="flex flex-col items-center gap-6 py-24 text-center">
+			<p className="max-w-sm text-muted-foreground">{title}</p>
 			{action}
 		</div>
 	);
 }
 
-export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
+/** Calm failure state: never raw errors, never mistaken for "nothing here". */
+export function ErrorState() {
 	return (
-		<div className="space-y-1">
-			<p className="text-xs font-medium text-muted-foreground">{label}</p>
-			<p className="tabular text-2xl font-semibold tracking-tight">{value}</p>
-			{hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+		<div className="flex flex-col items-center gap-6 py-24 text-center">
+			<p className="max-w-sm text-muted-foreground">Something went wrong. Refresh the page to try again.</p>
+			<button
+				type="button"
+				onClick={() => location.reload()}
+				className="rounded-full px-4 py-2 type-label ring-1 ring-border hover:bg-muted"
+			>
+				Refresh
+			</button>
 		</div>
 	);
 }
 
-export function PageHeader({
-	title,
-	description,
-	actions,
-	eyebrow,
-}: {
-	title: ReactNode;
-	description?: ReactNode;
-	actions?: ReactNode;
-	eyebrow?: ReactNode;
-}) {
+/** Text-link disclosure for everything that isn't one of the screen's two main things. */
+export function Disclosure({ label, children }: { label: string; children: ReactNode }) {
+	const [open, setOpen] = useState(false);
 	return (
-		<div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-			<div className="space-y-1.5">
-				{eyebrow && <div className="text-sm text-muted-foreground">{eyebrow}</div>}
-				<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-				{description && <div className="max-w-2xl text-muted-foreground">{description}</div>}
-			</div>
-			{actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+		<div className="space-y-3">
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				aria-expanded={open}
+				className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+			>
+				{open ? "Hide" : label}
+			</button>
+			{open && <div className="animate-in fade-in-0">{children}</div>}
 		</div>
 	);
 }

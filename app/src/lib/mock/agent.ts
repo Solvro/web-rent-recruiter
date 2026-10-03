@@ -21,7 +21,6 @@ const SKILLS: Skill[] = [
 	{ id: "cloud", label: "Cloud infrastructure (AWS/GCP)", re: /\baws\b|gcp|google cloud|azure|terraform/i },
 	{ id: "k8s", label: "Kubernetes and containers", re: /kubernetes|k8s|docker/i },
 	{ id: "rust", label: "Rust", re: /\brust\b/i },
-	{ id: "solana", label: "Solana / on-chain programs", re: /solana|anchor|smart contract|web3/i },
 	{ id: "python", label: "Python", re: /python|django|fastapi/i },
 	{ id: "go", label: "Go", re: /\bgolang\b|\bgo\b(?! to)/i },
 	{ id: "figma", label: "Product design in Figma", re: /figma|prototyp/i },
@@ -82,7 +81,7 @@ export function draftRole(jobDescription: string) {
 		.split("\n")
 		.map((l) => l.trim())
 		.filter(Boolean);
-	const title = (lines[0] ?? "New role").replace(/^(job title|role|position)\s*:\s*/i, "").slice(0, 80);
+	const title = titleOf(lines);
 	const matched = SKILLS.filter((s) => s.re.test(jobDescription));
 	const fallback: Skill[] = [
 		{ id: "relevant-experience", label: "3+ years in a similar role", re: /experience/i },
@@ -128,25 +127,34 @@ export function draftRole(jobDescription: string) {
 	const base = { JUNIOR: 10, MID: 15, SENIOR: 20, STAFF: 30, PRINCIPAL: 40, EXECUTIVE: 60 }[
 		criteria.seniority
 	];
-	const rare = matched.some((s) => ["rust", "solana", "ml"].includes(s.id));
+	const rare = matched.some((s) => ["rust", "ml"].includes(s.id));
 	const bounty = base + (rare ? 5 : 0);
 	const maxCandidates = ["STAFF", "PRINCIPAL", "EXECUTIVE"].includes(criteria.seniority) ? 8 : 10;
-	const summary = `${criteria.seniority.toLowerCase()} hire, ${mode.toLowerCase()}${places.length ? ` (${places.join(", ")})` : ""}. Core stack: ${mustHave.map((c) => c.label).join(", ")}.`;
-	const rationale = `${criteria.seniority[0]}${criteria.seniority.slice(1).toLowerCase()} profiles with ${mustHave
-		.slice(0, 2)
-		.map((c) => c.label.split(" ")[0])
-		.join(
-			" and ",
-		)} are ${rare ? "scarce, so the bounty is set above the usual rate" : "reachable through a scout's network"}. ${bounty} USDC per qualified, interested candidate is about 1% of a typical agency fee for this level. Ten candidates usually yield one or two hires; start with that and top up once you see quality.`;
+	const summary = `${criteria.seniority[0]}${criteria.seniority.slice(1).toLowerCase()} · ${mode === "REMOTE" ? "remote" : mode === "HYBRID" ? "hybrid" : "on-site"}${places.length ? ` in ${places.join(", ")}` : ""}`;
+	const rationale = `The price follows the seniority and how hard these people are to reach${rare ? " (this skill set is rare)" : ""}. For comparison, an agency usually charges 15–25% of a year's salary for one hire. Start with ${maxCandidates} candidates and add budget once you like what you see.`;
 
 	return {
 		title,
-		summary: summary[0].toUpperCase() + summary.slice(1),
+		summary,
 		criteria,
 		suggestedBounty: toBaseUnits(bounty).toString(),
 		suggestedMaxCandidates: maxCandidates,
 		rationale,
 	};
+}
+
+const ROLE_WORD =
+	/engineer|developer|designer|manager|executive|scientist|analyst|recruiter|lead|director|architect|specialist|consultant|head of/i;
+
+/** The role title from a pasted job description: first line that names a role, cut before company or location. */
+function titleOf(lines: string[]) {
+	const line = lines.slice(0, 5).find((l) => ROLE_WORD.test(l)) ?? lines[0] ?? "New role";
+	const clean = line
+		.replace(/^(job title|role|position)\s*:\s*/i, "")
+		.split(/\s[–—-]\s|\s\|\s|,\s|\.\s/)[0]
+		.replace(/[.:]$/, "")
+		.trim();
+	return clean.length > 70 ? `${clean.slice(0, 67).trimEnd()}…` : clean;
 }
 
 const STOP = new Set(["with", "and", "the", "for", "in", "on", "of", "a", "an", "to", "or", "can't", "work"]);
@@ -184,12 +192,12 @@ export function reviewCandidate(
 			verdict: v,
 			reasoning:
 				v === "MET"
-					? `Notes show direct experience with ${c.label.toLowerCase()}.`
+					? `Notes show direct experience: ${c.label}.`
 					: v === "PARTIAL"
-						? `Some overlap with ${c.label.toLowerCase()}, but depth is unclear.`
+						? `Some overlap with "${c.label}", but the depth is unclear.`
 						: v === "UNKNOWN"
 							? "Not mentioned in the notes; worth asking on the first call."
-							: `No evidence of ${c.label.toLowerCase()} in the profile or notes.`,
+							: `No evidence in the notes: ${c.label}.`,
 		});
 	}
 	let dealBreakerHit = false;
