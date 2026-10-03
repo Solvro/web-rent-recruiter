@@ -100,6 +100,16 @@ const TOOL_WORDS: Record<string, string> = {
 	adjustCriteria: "Updating the criteria",
 	setGigsPaused: "Pausing gigs",
 	explainDecision: "Looking up a decision",
+	getCandidate: "Looking up the candidate",
+	getDeliverable: "Reading the delivery",
+	postExtraGig: "Posting a gig",
+	pauseGigs: "Pausing gigs",
+	resumeGigs: "Resuming gigs",
+};
+/** Never show a raw tool name ("getStatus done") in the company's thread. */
+const toolDone = (name: string) => {
+	const w = TOOL_WORDS[name];
+	return w ? `${w}: done` : "Done";
 };
 const workingOn = (roleId: string, toolName?: string) =>
 	setCurrentWork(roleId, toolName ? (TOOL_WORDS[toolName] ?? "Working") : "Thinking");
@@ -176,7 +186,7 @@ async function runJobInner(roleId: string, job: Job) {
 			publish({
 				type: "agent.tool",
 				roleId,
-				tool: { name: e.toolName, summary: out?.message ?? out?.error ?? e.toolName },
+				tool: { name: e.toolName, summary: out?.message ?? out?.error ?? toolDone(e.toolName) },
 			});
 		} else if (e.type === "tool-call") {
 			workingOn(roleId, e.toolName);
@@ -216,12 +226,17 @@ async function runChat(roleId: string, messageId: string, text: string) {
 				return;
 			case "tool-result": {
 				const out = e.output as { ok?: boolean; message?: string; error?: string } | undefined;
-				const summary = out?.message ?? out?.error ?? `${e.toolName} done`;
+				const summary = out?.message ?? out?.error ?? toolDone(e.toolName);
 				void persistTool(roleId, e.toolName, summary, messageId);
 				return;
 			}
 			case "tool-error":
-				void persistTool(roleId, e.toolName, `failed: ${e.error}`, messageId);
+				void persistTool(
+					roleId,
+					e.toolName,
+					`${TOOL_WORDS[e.toolName] ?? "That step"} didn't work this time`,
+					messageId,
+				);
 				return;
 			case "error":
 				log.warn(`[agent-runner] chat ${roleId}: ${e.message}`);

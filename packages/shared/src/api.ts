@@ -80,6 +80,11 @@ export const Me = z.object({
 	avatarUrl: z.string().nullable(),
 	companyName: z.string().nullable(),
 	timeZone: z.string().nullable().optional(),
+	/**
+	 * Scouts: everything paid to them so far (paid now + released holdbacks, show-up fees included), from their
+	 * on-chain ScoutProfile: the same number as the public profile's reputation.totalEarned.
+	 */
+	earned: BaseUnits.optional(),
 	/** Scouts: whether ScoutProfile exists on-chain. If false, POST /scouts/register first. */
 	scoutRegistered: z.boolean(),
 	usdcBalance: BaseUnits,

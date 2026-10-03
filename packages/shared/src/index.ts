@@ -1,5 +1,6 @@
 export * from "./agent-api.ts";
 export * from "./api.ts";
+export * from "./candidates.ts";
 export * from "./constants.ts";
 export * from "./domain.ts";
 // Both constants.ts (type) and domain.ts (schema + type) declare RejectReason; the domain one wins.

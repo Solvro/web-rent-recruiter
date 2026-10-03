@@ -568,6 +568,12 @@ check(
 	(await asReferee.gigs.byId.query({ id: screening.id })).redacted,
 	"everyone else still sees the redacted gig",
 );
+check(
+	claimantView.candidate?.availability === "Tue/Thu afternoons" &&
+		(await asReferee.gigs.byId.query({ id: screening.id })).candidate?.availability == null,
+	"the claimant sees when Karolina is available (from her confirmation page); others don't",
+);
+check(Boolean(claimantView.post?.mustHave.length), "the gig carries the job post");
 
 /** Concrete, evidence-backed answers per topic (what the agent pays for), like a real screening call. */
 const BANK: [RegExp, string][] = [
@@ -886,6 +892,10 @@ check(
 	!referenced.review?.reasons.some((x) => /too short|no usable answer/i.test(x)),
 	"the recorded reference passes the duration check and every answer counts",
 );
+check(
+	!referenced.review?.reasons.some((x) => (reference.script ?? []).some((q) => x.includes(q.id))),
+	"review reasons never show internal question ids",
+);
 if (referenced.review?.verdict === "ESCALATE" && referenced.status === "PENDING") {
 	await signAndSubmit(
 		[company],
@@ -901,6 +911,76 @@ const shortlist = await waitFor("shortlist ready with screening + reference", as
 	const k = items.find((i) => i.candidateId === karolina);
 	return k?.screening && k.reference ? items : null;
 });
+// ---- The company's candidates panel, one person in full, the ledger -----------------------------------
+{
+	const list = await asCompany.roles.candidates.query({ roleId });
+	const k = list.find((c) => c.candidateId === karolina);
+	check(
+		k?.stage === "SHORTLISTED" && k.confirmed,
+		`candidates panel: ${list.map((c) => `${c.name.split(" ")[0]} ${c.stage}`).join(", ")}`,
+	);
+	const detail = await asCompany.roles.candidate.query({ roleId, candidateId: karolina });
+	const screen = detail.calls.find((c) => c.kind === "screening" && c.status === "ACCEPTED");
+	const ref = detail.calls.find((c) => c.kind === "reference");
+	check(
+		Boolean(detail.review?.verdicts.length) &&
+			detail.candidateAnswers?.availability === "Tue/Thu afternoons" &&
+			detail.candidateAnswers.timeZone === "Europe/Warsaw" &&
+			Boolean(screen?.questions.every((q) => q.question && q.answer)) &&
+			Boolean(ref?.referee?.name && ref.transcript?.length) &&
+			detail.payments.length >= 3 &&
+			detail.payments.every((p) => p.signature),
+		`Karolina in full: ${detail.review?.verdicts.length} verdicts, ${screen?.questions.length} screening Q→A, reference with ${ref?.transcript?.length} transcript lines, ${detail.payments.length} payments`,
+	);
+	check(ref?.recordingUrl === null, "RECALL_MOCK: no media URL (a live Recall bot returns a fresh one)");
+	const note = await asCompany.candidates.addNote.mutate({
+		candidateId: karolina,
+		text: "Ask about the Kraków office.",
+	});
+	check(
+		(await asCompany.roles.candidate.query({ roleId, candidateId: karolina })).notes.some(
+			(n) => n.id === note.id,
+		),
+		"private company note added",
+	);
+	await asCompany.candidates.deleteNote.mutate({ noteId: note.id });
+	check(
+		!(await asCompany.roles.candidate.query({ roleId, candidateId: karolina })).notes.length,
+		"and deleted",
+	);
+	await expectAppError(
+		asScreener.roles.candidate.query({ roleId, candidateId: karolina }),
+		"FORBIDDEN",
+		"recruiters can't read the company's candidate file",
+	);
+	const ledger = await asCompany.roles.payments.query({ roleId });
+	check(
+		["sourcing", "screening", "reference", "show_up_fee"].every((k) => ledger.some((p) => p.kind === k)) &&
+			ledger.every((p) => p.signature),
+		`payments ledger: ${ledger.length} payments (${[...new Set(ledger.map((p) => p.kind))].join(", ")})`,
+	);
+	const work = await asScreener.gigs.work.query({ deliverableId: screeningId });
+	check(
+		work.kind === "screening" &&
+			work.work.gigVariant === "standard" &&
+			!work.editable &&
+			Boolean(work.call?.questions.every((q) => q.answer)) &&
+			Boolean(work.criteria?.mustHave.length),
+		"My work: the screener sees their call in full (questions, answers, review, payout)",
+	);
+	await expectAppError(
+		asReferee.gigs.work.query({ deliverableId: screeningId }),
+		"FORBIDDEN",
+		"only the recruiter who delivered it",
+	);
+	const me = await asScreener.me.get.query();
+	const profile = await anon.scouts.profile.query({ wallet: screener.address });
+	check(
+		me?.earned === profile.reputation.totalEarned,
+		`earnings and public profile agree (${usd(me?.earned ?? "0")})`,
+	);
+}
+
 const cockpit = await asCompany.roles.status.query({ roleId });
 const detail = await asCompany.roles.byId.query({ id: roleId });
 check(
@@ -945,6 +1025,10 @@ check(
 	"inviting doesn't release holdbacks",
 );
 const attended = await asCompany.roles.decide.mutate({ roleId, candidateId: karolina, decision: "attended" });
+check(
+	(attended.releases ?? []).length >= 2 && (attended.releases ?? []).every((r) => BigInt(r.amount) > 0n),
+	`release per recruiter: ${(attended.releases ?? []).map((r) => `${r.recruiter} ${usd(r.amount)}`).join(", ")}`,
+);
 if (attended.unsignedTx) await signAndSubmit([company], attended.unsignedTx);
 check(
 	(await asCompany.roles.shortlist.query({ roleId })).find((i) => i.candidateId === karolina)?.decision ===
@@ -961,6 +1045,44 @@ check(
 const piotr = sourced.find(
 	(d) => d.deliverable.type === "SOURCING" && d.deliverable.name.startsWith("Piotr"),
 );
+// The company passes on / hides candidates; a recruiter edits and withdraws a fresh delivery.
+{
+	const tomasz = sourced.find(
+		(d) => d.deliverable.type === "SOURCING" && d.deliverable.name.startsWith("Tomasz"),
+	);
+	if (tomasz) {
+		const r = await asCompany.candidates.remove.mutate({ candidateId: tomasz.id });
+		if (r.unsignedTx) await signAndSubmit([company], r.unsignedTx);
+		const list = await asCompany.roles.candidates.query({ roleId });
+		const all = await asCompany.roles.candidates.query({ roleId, includeRemoved: true });
+		check(
+			!list.some((c) => c.candidateId === tomasz.id) &&
+				all.some((c) => c.candidateId === tomasz.id && c.removed),
+			"removing a candidate passes and hides them (still listed with includeRemoved)",
+		);
+	}
+	// The agent decides within seconds: pause it (test-only, like the seeded history) so the delivery stays undecided.
+	const { db: tdb, schema: tschema } = await import("../db/index.ts");
+	const { eq: teq } = await import("drizzle-orm");
+	await tdb.update(tschema.roles).set({ agentPaused: true }).where(teq(tschema.roles.id, roleId));
+	const fresh = fixture("candidate-strong-rust.json");
+	const late = await deliver(asSourcer, sourcer, sourcing.id, {
+		...asCandidate({ ...fresh, profileUrl: `https://www.linkedin.com/in/e2e-late-${Date.now()}` }),
+	});
+	await asSourcer.gigs.edit.mutate({ deliverableId: late, note: "Edited: also led a Solana audit." });
+	const edited = await asSourcer.gigs.work.query({ deliverableId: late });
+	check(
+		edited.editable && edited.note === "Edited: also led a Solana audit.",
+		"the recruiter edited their note while it was undecided",
+	);
+	const w = await asSourcer.gigs.withdraw.mutate({ deliverableId: late });
+	await tdb.update(tschema.roles).set({ agentPaused: false }).where(teq(tschema.roles.id, roleId));
+	const after = await asSourcer.gigs.work.query({ deliverableId: late });
+	check(
+		after.work.status === "REJECTED" && after.rejectText === "Withdrawn by the recruiter." && !after.editable,
+		`withdrawn before the agent decided (bond kept: ${usd(w.bondKept)})`,
+	);
+}
 if (piotr) {
 	const rep = await asCompany.roles.reportCandidate.mutate({
 		roleId,

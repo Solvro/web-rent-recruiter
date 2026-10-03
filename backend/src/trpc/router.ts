@@ -4,6 +4,7 @@
  */
 import {
 	AckEscalationRequest,
+	AddNoteRequest,
 	AgentReview,
 	AnswerFollowUpRequest,
 	AppealDecideRequest,
@@ -15,17 +16,28 @@ import {
 	AuthVerifyResponse,
 	CandidateConfirmRequest,
 	CandidateConfirmResponse,
+	CandidateDetail,
+	CandidateListRequest,
+	CandidateRequest,
+	CandidateRow,
+	CandidateUpdateRequest,
+	CandidateUpdateResponse,
 	CandidateView,
 	CandidateViewRequest,
 	CheckDuplicateRequest,
 	CheckDuplicateResponse,
 	CompanyDeliverable,
+	CompanyNote,
 	CosignRequest,
 	CreateRoleRequest,
 	CreateRoleResponse,
 	DecisionRequest,
 	DecisionResponse,
+	DeleteNoteRequest,
+	DeliverableEditRequest,
+	DeliverableRef,
 	DeliverableView,
+	DeliverableWithdrawResponse,
 	DismissReportRequest,
 	DraftRoleRequest,
 	DraftRoleResponse,
@@ -34,6 +46,7 @@ import {
 	GigDeliverResponse,
 	GigListRequest,
 	GigView,
+	GigWorkView,
 	LiveEvent,
 	LoosenRequirementRequest,
 	ManualDecideRequest,
@@ -42,6 +55,7 @@ import {
 	NoShowResponse,
 	OutcomeRequest,
 	OutcomeResponse,
+	PaymentLedgerItem,
 	PendingCosign,
 	RaiseGigPriceRequest,
 	RaiseGigPriceResponse,
@@ -82,6 +96,18 @@ import {
 import { z } from "zod";
 import { candidateRespond, candidateView } from "../agent-runner/confirmations.ts";
 import { messageAgent, stepNow } from "../agent-runner/runner.ts";
+import {
+	addNote,
+	candidateDetail,
+	deleteNote,
+	editDeliverable,
+	gigWork,
+	listCandidates,
+	removeCandidate,
+	rolePayments,
+	updateCandidate,
+	withdrawDeliverable,
+} from "../api/candidates.ts";
 import {
 	claimGig,
 	deliver,
@@ -206,6 +232,21 @@ export const appRouter = router({
 			.input(RaiseGigPriceRequest)
 			.output(RaiseGigPriceResponse)
 			.mutation(({ ctx, input }) => raiseGigPrice(ctx.wallet, input)),
+		/** The candidates panel: every sourced person on the role, with their stage. */
+		candidates: walletProcedure
+			.input(CandidateListRequest)
+			.output(z.array(CandidateRow))
+			.query(({ ctx, input }) => listCandidates(ctx.wallet, input)),
+		/** Everything about one person: profile, review, calls (Q→A, transcript, recording), payouts, notes. */
+		candidate: walletProcedure
+			.input(CandidateRequest)
+			.output(CandidateDetail)
+			.query(({ ctx, input }) => candidateDetail(ctx.wallet, input.candidateId, input.roleId)),
+		/** The budget popover: who got what, for which gig, with the tx. */
+		payments: walletProcedure
+			.input(z.object({ roleId: z.string().uuid() }))
+			.output(z.array(PaymentLedgerItem))
+			.query(({ ctx, input }) => rolePayments(ctx.wallet, input.roleId)),
 		/** "Got it" on an agent's inbox question (waitingOn action "acknowledge"). */
 		ackEscalation: walletProcedure
 			.input(AckEscalationRequest)
@@ -272,6 +313,28 @@ export const appRouter = router({
 	tasks: router({
 		/** Open, funded roles as recruiters see them. */
 		list: publicProcedure.output(z.array(TaskView)).query(() => listTasks()),
+	}),
+
+	/** The company's own actions on a candidate (role owner only). */
+	candidates: router({
+		/** accept / pass through the existing on-chain paths; a tx when money moves. note: adds a private note. */
+		update: walletProcedure
+			.input(CandidateUpdateRequest)
+			.output(CandidateUpdateResponse)
+			.mutation(({ ctx, input }) => updateCandidate(ctx.wallet, input)),
+		addNote: walletProcedure
+			.input(AddNoteRequest)
+			.output(CompanyNote)
+			.mutation(({ ctx, input }) => addNote(ctx.wallet, input)),
+		deleteNote: walletProcedure
+			.input(DeleteNoteRequest)
+			.output(z.object({ ok: z.boolean() }))
+			.mutation(({ ctx, input }) => deleteNote(ctx.wallet, input.noteId)),
+		/** Pass and hide from the list. */
+		remove: walletProcedure
+			.input(z.object({ candidateId: z.string().uuid() }))
+			.output(CandidateUpdateResponse)
+			.mutation(({ ctx, input }) => removeCandidate(ctx.wallet, input.candidateId)),
 	}),
 
 	/** The company reviews deliverables itself (reviewer mode "self", or overriding its agent). */
@@ -355,6 +418,21 @@ export const appRouter = router({
 
 	/** Agent-posted gigs (docs/agent-gigs.md). */
 	gigs: router({
+		/** My work: the recruiter's own deliverable in full (review, call Q→A, transcript, payout). */
+		work: walletProcedure
+			.input(DeliverableRef)
+			.output(GigWorkView)
+			.query(({ ctx, input }) => gigWork(ctx.wallet, input.deliverableId)),
+		/** Change the note while pending and the agent hasn't decided. */
+		edit: walletProcedure
+			.input(DeliverableEditRequest)
+			.output(z.object({ ok: z.boolean() }))
+			.mutation(({ ctx, input }) => editDeliverable(ctx.wallet, input)),
+		/** Take it back before the agent decides (Scout's agent rejects it as "Withdrawn by the recruiter"). */
+		withdraw: walletProcedure
+			.input(DeliverableRef)
+			.output(DeliverableWithdrawResponse)
+			.mutation(({ ctx, input }) => withdrawDeliverable(ctx.wallet, input.deliverableId)),
 		/** The candidate didn't join the call: 1st time +24 h to reschedule, 2nd time the gig closes. */
 		noShow: walletProcedure
 			.input(z.object({ gigId: z.string().uuid() }))

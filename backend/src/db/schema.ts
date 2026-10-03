@@ -117,6 +117,12 @@ export const submissions = pgTable(
 		aboutCandidateId: uuid(),
 		/** The agent's review of this deliverable (DeliverableReview). */
 		agentReview: jsonb().$type<Record<string, unknown>>(),
+		/** Sourced candidates: the company passed on them outside the shortlist (candidates.update / remove). */
+		passedAt: timestamp({ withTimezone: true, mode: "date" }),
+		/** candidates.remove: hidden from the company's list. */
+		removed: boolean().notNull().default(false),
+		/** deliverables.withdraw: the recruiter took it back (rejected on-chain, not counted against them). */
+		withdrawn: boolean().notNull().default(false),
 		/** A rejected deliverable's bond that stayed with the role (BondForfeited). */
 		bondForfeited: bigint({ mode: "bigint" }),
 		/** The recruiter's appeal of a rejection (AppealView). */
@@ -426,4 +432,20 @@ export const candidateFlags = pgTable(
 		createdAt: createdAt(),
 	},
 	(t) => [index("candidate_flags_key_idx").on(t.profileKey, t.kind)],
+);
+
+/** The company's private notes on a candidate (candidates.addNote). */
+export const companyNotes = pgTable(
+	"company_notes",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		roleId: uuid()
+			.notNull()
+			.references(() => roles.id),
+		/** The sourcing deliverable id. */
+		candidateId: uuid().notNull(),
+		text: text().notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [index("company_notes_candidate_idx").on(t.candidateId)],
 );

@@ -43,6 +43,8 @@ export interface RecallBot {
 				status?: { code: string };
 				data?: { download_url?: string | null };
 			} | null;
+			video_mixed?: { data?: { download_url?: string | null } } | null;
+			audio_mixed?: { data?: { download_url?: string | null } } | null;
 		};
 	}>;
 }
@@ -107,6 +109,12 @@ export function createRecallClient(config: RecallConfig) {
 
 		leaveCall(id: string) {
 			return request<unknown>("POST", `/bot/${id}/leave_call/`);
+		},
+
+		/** A fresh, short-lived download URL of the call's media (audio-only layout), or null if not ready. */
+		async getMediaUrl(botId: string): Promise<string | null> {
+			const m = (await this.getBot(botId)).recordings?.[0]?.media_shortcuts;
+			return m?.video_mixed?.data?.download_url ?? m?.audio_mixed?.data?.download_url ?? null;
 		},
 
 		/** Downloads the bot's transcript and normalizes it to speaker turns. */

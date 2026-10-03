@@ -69,6 +69,8 @@ async function toMe(acc: typeof schema.accounts.$inferSelect) {
 			: {}),
 		scoutRegistered: Boolean(info?.profile),
 		usdcBalance: balance.toString(),
+		// On-chain ScoutProfile.total_earned: the same number the public profile shows.
+		...(acc.kind === "scout" ? { earned: (info?.profile?.totalEarned ?? 0n).toString() } : {}),
 		operator: info?.operator ? { name: info.operator.name, feeBps: Number(info.operator.feeBps) } : null,
 	};
 }

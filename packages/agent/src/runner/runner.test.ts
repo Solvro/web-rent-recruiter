@@ -185,3 +185,38 @@ describe("tool scoping and data envelope", () => {
 		expect(name.length).toBeLessThanOrEqual(400);
 	});
 });
+
+describe("company-chat lookups", () => {
+	it("getCandidate and getDeliverable show Karolina's screening notes; reasons quote questions", async () => {
+		const { getCandidate, getDeliverableDetails } = await import("./actions.ts");
+		const mem = setup();
+		await advanceRole(mem.ports);
+		const karolina = fixture<DemoCandidate>("demo-candidate-1-strong-karolina.json");
+		mem.deliver(gigId(mem, "SOURCING"), { candidate: karolina });
+		await advanceRole(mem.ports);
+		mem.deliver(gigId(mem, "SCREENING_CALL"), fixture("screening-lazy.json"));
+		await advanceRole(mem.ports);
+		mem.deliver(gigId(mem, "SCREENING_CALL"), fixture("screening-karolina-good.json"));
+		await advanceRole(mem.ports);
+
+		const lazy = await mem.ports.getReview("del-2");
+		const lazyReasons = lazy?.call?.reasons.join(" ") ?? "";
+		expect(lazyReasons).toMatch(/No usable answer to "/);
+		expect(lazyReasons).not.toMatch(/\bq-[a-z]/);
+		expect(lazyReasons).not.toMatch(/holdback/);
+
+		const c = await getCandidate(mem.ports, { name: "karolina" });
+		expect(c.ok && (c.data as { screening?: { verdict: string } }).screening?.verdict).toBe("ACCEPT");
+
+		const d = await getDeliverableDetails(mem.ports, {
+			candidateName: "Karolina Mazurek",
+			kind: "screening",
+		});
+		const data = d.ok
+			? (d.data as { deliverableId: string; answers: { question: string; answer: string }[] })
+			: null;
+		expect(data?.deliverableId).toBe("del-3"); // the latest screening, not the rejected lazy one
+		expect(data?.answers[0]?.answer).toMatch(/Kelp Labs|Rust/);
+		expect((await getCandidate(mem.ports, { name: "nobody" })).ok).toBe(false);
+	});
+});

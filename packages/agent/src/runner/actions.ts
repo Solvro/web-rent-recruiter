@@ -17,6 +17,7 @@ import type { GigType } from "../gigs/types.ts";
 import { reviewSubmissionDetailed } from "../review.ts";
 import type {
 	CandidateView,
+	Deliverable,
 	GigView,
 	PortTaskType,
 	RoleAgentPorts,
@@ -726,4 +727,156 @@ export async function replanIfDry(ports: RoleAgentPorts, now = Date.now()): Prom
 	}
 	await ports.escalate({ question: step.reason, delivery: "now" });
 	return [{ ok: true, message: step.reason }];
+}
+
+// ---- Read-only lookups for company chat ---------------------------------------------------
+
+const foldName = (s: string) =>
+	s
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/ł/g, "l")
+		.toLowerCase()
+		.trim();
+
+const callView = (r: CandidateView["screening"]) =>
+	r && {
+		verdict: r.verdict,
+		score: r.score,
+		candidateFit: r.candidateFit,
+		summary: r.summaryForCompany,
+		reasons: r.reasons,
+		...(r.language ? { language: r.language } : {}),
+	};
+
+/** A candidate's profile, every review and the decisions about them. */
+export async function getCandidate(
+	ports: RoleAgentPorts,
+	input: { name?: string; candidateId?: string },
+): Promise<ActionResult> {
+	const role = await ports.getRole();
+	const needle = input.name ? foldName(input.name) : "";
+	const c =
+		role.candidates.find((x) => x.id === input.candidateId) ??
+		(needle ? role.candidates.find((x) => foldName(x.name).includes(needle)) : undefined);
+	if (!c) {
+		const pending = (await ports.listPendingDeliverables()).find(
+			(d) => d.kind === "sourcing" && needle && foldName(d.candidate.name).includes(needle),
+		);
+		if (pending)
+			return {
+				ok: true,
+				message: `${pending.kind === "sourcing" ? pending.candidate.name : ""} is still being reviewed.`,
+				data: { deliverableId: pending.id, stage: "submitted" },
+			};
+		return fail(`No candidate matching "${input.name ?? input.candidateId}".`);
+	}
+	const decisions = await ports.getDecisionLog({ candidateName: c.name, limit: 20 });
+	return {
+		ok: true,
+		message: `${c.name}: ${c.stage}.`,
+		data: {
+			id: c.id,
+			name: c.name,
+			profileUrl: c.profileUrl,
+			stage: c.stage,
+			notes: c.notes,
+			sourcing: c.sourcing && {
+				score: c.sourcing.score,
+				recommendation: c.sourcing.recommendation,
+				summary: c.sourcing.summary,
+				verdicts: c.sourcing.verdicts,
+			},
+			screening: callView(c.screening),
+			reference: callView(c.reference),
+			languageCheck: callView(c.language),
+			decisions: decisions.map((d) => ({
+				at: d.at,
+				action: d.action,
+				reason: d.reason,
+				deliverableId: d.deliverableId,
+			})),
+		},
+	};
+}
+
+/**
+ * One delivery in full: what the recruiter submitted (call: question → answer, recommendation,
+ * transcript excerpt) and the agent's review. By id, or the latest of a kind for a candidate.
+ */
+export async function getDeliverableDetails(
+	ports: RoleAgentPorts,
+	input: { deliverableId?: string; candidateName?: string; kind?: Deliverable["kind"] },
+): Promise<ActionResult> {
+	let id = input.deliverableId;
+	if (!id) {
+		if (!input.candidateName) return fail("Give a deliverable id, or a candidate name and a kind.");
+		const needle = foldName(input.candidateName);
+		const nameOf = (d: Deliverable) => (d.kind === "sourcing" ? d.candidate.name : d.script.candidate.name);
+		const ids = [
+			...(await ports.getDecisionLog({ candidateName: input.candidateName, limit: 50 })).flatMap((r) =>
+				r.deliverableId ? [r.deliverableId] : [],
+			),
+			...(await ports.listPendingDeliverables())
+				.filter((d) => foldName(nameOf(d)).includes(needle))
+				.map((d) => d.id),
+		];
+		const found: Deliverable[] = [];
+		for (const x of [...new Set(ids)]) {
+			const d = await ports.getDeliverable(x);
+			if (d && (!input.kind || d.kind === input.kind) && foldName(nameOf(d)).includes(needle)) found.push(d);
+		}
+		found.sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : 1));
+		id = found.at(-1)?.id;
+		if (!id)
+			return fail(`No ${input.kind ?? ""} delivery found for "${input.candidateName}".`.replace("  ", " "));
+	}
+	const [d, review] = await Promise.all([ports.getDeliverable(id), ports.getReview(id)]);
+	if (!d) return fail(`No delivery ${id}.`);
+	const base = {
+		deliverableId: d.id,
+		kind: d.kind,
+		recruiter: d.recruiter.displayName,
+		submittedAt: d.submittedAt,
+	};
+	const decision = review && { action: review.decision.action, reason: review.decision.reason };
+	if (d.kind === "sourcing") {
+		return {
+			ok: true,
+			message: `Sourcing delivery for ${d.candidate.name}.`,
+			data: {
+				...base,
+				candidate: d.candidate,
+				decision,
+				review: review?.sourcing && {
+					score: review.sourcing.score,
+					recommendation: review.sourcing.recommendation,
+					summary: review.sourcing.summary,
+				},
+			},
+		};
+	}
+	const answers = new Map(d.answers.map((a) => [a.questionId, a.answer]));
+	const extracted = new Map((review?.call?.extractedAnswers ?? []).map((a) => [a.questionId, a.answer]));
+	return {
+		ok: true,
+		message: `${d.kind} notes for ${d.script.candidate.name}.`,
+		data: {
+			...base,
+			candidate: d.script.candidate.name,
+			recommendation: d.recommendation ?? null,
+			answers: d.script.questions.map((q) => ({
+				question: q.question,
+				answer: answers.get(q.id) || extracted.get(q.id) || "(no answer)",
+			})),
+			...(d.transcript ? { transcriptExcerpt: d.transcript.slice(0, 1500) } : {}),
+			decision,
+			review: review?.call && {
+				verdict: review.call.verdict,
+				score: review.call.score,
+				reasons: review.call.reasons,
+				summary: review.call.summaryForCompany,
+			},
+		},
+	};
 }

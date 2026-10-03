@@ -1,14 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useNow } from "@/components/bits";
+import { Receipt } from "@/components/receipt";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/errors";
-import { firstName } from "@/lib/format";
+import { firstName, formatMoney } from "@/lib/format";
 import { callApi, callStateOf, zoneOf } from "@/lib/gigs/calls";
 import type { GigView } from "@/lib/gigs/schemas";
+import { useTransact } from "@/lib/use-transact";
 
 const time = (zone: string, now: number) =>
 	new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: zone });
@@ -17,21 +20,77 @@ const zoneName = (zone: string) =>
 		.formatToParts(new Date())
 		.find((p) => p.type === "timeZoneName")?.value ?? zone;
 
-/** Book the call in the candidate's time: both clocks side by side, so 4 pm doesn't become 3 pm by mistake. */
+/**
+ * Book the call in the candidate's time: both clocks side by side, so 4 pm doesn't become 3 pm by mistake. Under it,
+ * what the candidate told us when they confirmed (when they're free, the salary they expect).
+ */
 export function BookingTimes({ gig }: { gig: GigView }) {
 	const now = useNow(30_000);
 	const place = gig.candidate?.card?.location ?? gig.candidate?.summary.city ?? gig.city;
-	const theirs = zoneOf(place);
+	const theirs = gig.candidateTimeZone ?? zoneOf(place);
 	const mine = Intl.DateTimeFormat().resolvedOptions().timeZone;
-	if (!theirs) return null;
 	const who = gig.candidate?.name ? firstName(gig.candidate.name) : "The candidate";
-	const same = time(theirs, now) === time(mine, now);
+	const told = [
+		gig.candidate?.availability && `free ${lower(gig.candidate.availability)}`,
+		gig.candidate?.salaryExpectation && `expects ${gig.candidate.salaryExpectation}`,
+	].filter(Boolean);
+	if (!theirs && !told.length) return null;
+	const same = theirs && time(theirs, now) === time(mine, now);
 	return (
-		<p className="type-label text-muted-foreground">
-			{who} is in {place?.split(",")[0]} · {time(theirs, now)} {zoneName(theirs)} now
-			{same ? " · same time as you" : ` · ${time(mine, now)} for you (${zoneName(mine)})`}. Send the invite in
-			their time.
-		</p>
+		<div className="space-y-1 type-label text-muted-foreground">
+			{theirs && (
+				<p>
+					{who} is in {place?.split(",")[0] ?? zoneCity(theirs)} · {time(theirs, now)} {zoneName(theirs)} now
+					{same ? " · same time as you" : ` · ${time(mine, now)} for you (${zoneName(mine)})`}. Send the
+					invite in their time.
+				</p>
+			)}
+			{told.length > 0 && (
+				<p>
+					{who} said: {told.join(" · ")}
+				</p>
+			)}
+		</div>
+	);
+}
+
+const lower = (s: string) => s[0]?.toLowerCase() + s.slice(1);
+const zoneCity = (zone: string) => zone.split("/").pop()?.replace(/_/g, " ") ?? zone;
+
+/** The role pays for the recruiter's time when the notetaker was in the call and the candidate never came. */
+export function ShowUpFee({ gig }: { gig: GigView }) {
+	const fee = gig.showUpFee;
+	const { transact, pending } = useTransact();
+	const claim = useMutation({
+		mutationFn: async () => {
+			const { unsignedTx } = await callApi.claimShowUpFee(gig.id);
+			await transact(unsignedTx, {
+				pending: "Getting your show-up fee…",
+				success: `Paid ${fee ? formatMoney(fee.amount) : ""} to you`.replace("  ", " "),
+				receipt: true,
+			});
+		},
+		onError: (e) => toast.error(errorMessage(e)),
+	});
+	if (!fee) return null;
+	if (fee.status === "PAID")
+		return (
+			<div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-success/10 p-4">
+				<span className="text-success">Show-up fee paid · {formatMoney(fee.amount)}</span>
+				<Receipt
+					signature={fee.signature}
+					details={{ title: `Paid ${formatMoney(fee.amount)} to you`, lines: ["Show-up fee", gig.roleTitle] }}
+				/>
+			</div>
+		);
+	return (
+		<div className="space-y-3 rounded-3xl bg-accent p-4 text-accent-foreground">
+			<p>You showed up and the notetaker was there. The company pays you for your time.</p>
+			<Button onClick={() => claim.mutate()} disabled={claim.isPending || pending}>
+				{(claim.isPending || pending) && <Loader2 className="animate-spin" />}
+				Claim {formatMoney(fee.amount)} show-up fee
+			</Button>
+		</div>
 	);
 }
 
@@ -42,7 +101,20 @@ export function NoShow({ gig }: { gig: GigView }) {
 	const who = gig.candidate?.name ? firstName(gig.candidate.name) : "The candidate";
 	const report = useMutation({
 		mutationFn: () => callApi.noShow(gig.id),
-		onSuccess: () => void qc.invalidateQueries({ queryKey: ["gigs"] }),
+		onSuccess: (res) => {
+			toast.success(
+				res.status === "CLOSED"
+					? "Gig closed. Nothing counts against you."
+					: "Noted. You have 24 more hours to hold the call.",
+				{
+					description: res.showUpFee
+						? `You can claim a ${formatMoney(res.showUpFee.amount)} show-up fee.`
+						: undefined,
+				},
+			);
+			void qc.invalidateQueries({ queryKey: ["gigs"] });
+		},
+		onError: (e) => toast.error(errorMessage(e)),
 	});
 	if (noShows >= 1)
 		return (

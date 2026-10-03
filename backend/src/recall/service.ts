@@ -270,6 +270,21 @@ export function mockTranscript(): TranscriptLine[] {
 	}));
 }
 
+/**
+ * The recording for a call deliverable (only the recruiter who recorded it): normalized lines and a fresh media
+ * URL from Recall (null for mock recordings or when Recall has no media yet).
+ */
+export async function recordingFor(
+	gigId: string,
+	wallet: string,
+): Promise<{ lines: TranscriptLine[]; mediaUrl: string | null } | null> {
+	await ensureTable();
+	const row = await getRow(gigId);
+	if (!row || row.wallet !== wallet || row.status !== "done") return null;
+	const mediaUrl = row.mock ? null : await client.getMediaUrl(row.botId).catch(() => null);
+	return { lines: row.lines ?? [], mediaUrl };
+}
+
 /** Recording metadata for the agent's transcript-integrity checks (duration, who spoke). */
 export async function recordingMeta(
 	gigId: string,

@@ -18,6 +18,7 @@ import { Route as ScoutSubmissionsRouteImport } from './routes/scout/submissions
 import { Route as CompanyRolesRoleIdRouteImport } from './routes/company/roles.$roleId'
 import { Route as CompanyRolesNewRouteImport } from './routes/company/roles.new'
 import { Route as ScoutGigsGigIdRouteImport } from './routes/scout/gigs.$gigId'
+import { Route as ScoutWorkDeliverableIdRouteImport } from './routes/scout/work.$deliverableId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,11 @@ const ScoutGigsGigIdRoute = ScoutGigsGigIdRouteImport.update({
   path: '/scout/gigs/$gigId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScoutWorkDeliverableIdRoute = ScoutWorkDeliverableIdRouteImport.update({
+  id: '/scout/work/$deliverableId',
+  path: '/scout/work/$deliverableId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
   '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
+  '/scout/work/$deliverableId': typeof ScoutWorkDeliverableIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
   '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
+  '/scout/work/$deliverableId': typeof ScoutWorkDeliverableIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/company/roles/$roleId': typeof CompanyRolesRoleIdRoute
   '/company/roles/new': typeof CompanyRolesNewRoute
   '/scout/gigs/$gigId': typeof ScoutGigsGigIdRoute
+  '/scout/work/$deliverableId': typeof ScoutWorkDeliverableIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/company/roles/$roleId'
     | '/company/roles/new'
     | '/scout/gigs/$gigId'
+    | '/scout/work/$deliverableId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/company/roles/$roleId'
     | '/company/roles/new'
     | '/scout/gigs/$gigId'
+    | '/scout/work/$deliverableId'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/company/roles/$roleId'
     | '/company/roles/new'
     | '/scout/gigs/$gigId'
+    | '/scout/work/$deliverableId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   CompanyRolesRoleIdRoute: typeof CompanyRolesRoleIdRoute
   CompanyRolesNewRoute: typeof CompanyRolesNewRoute
   ScoutGigsGigIdRoute: typeof ScoutGigsGigIdRoute
+  ScoutWorkDeliverableIdRoute: typeof ScoutWorkDeliverableIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScoutGigsGigIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scout/work/$deliverableId': {
+      id: '/scout/work/$deliverableId'
+      path: '/scout/work/$deliverableId'
+      fullPath: '/scout/work/$deliverableId'
+      preLoaderRoute: typeof ScoutWorkDeliverableIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompanyRolesRoleIdRoute: CompanyRolesRoleIdRoute,
   CompanyRolesNewRoute: CompanyRolesNewRoute,
   ScoutGigsGigIdRoute: ScoutGigsGigIdRoute,
+  ScoutWorkDeliverableIdRoute: ScoutWorkDeliverableIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

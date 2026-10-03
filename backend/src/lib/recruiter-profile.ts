@@ -57,6 +57,8 @@ export async function recruiterStats(wallet: string): Promise<{ stats: Stats; se
 				// Show-up fees pay for time, not work: they don't count.
 				isNull(schema.gigs.purpose),
 				eq(schema.submissions.scoutWallet, wallet),
+				// A recruiter's own withdrawal isn't a rejection of their work.
+				eq(schema.submissions.withdrawn, false),
 				eq(schema.submissions.confirmed, true),
 				gt(schema.submissions.submittedAt, since),
 			),

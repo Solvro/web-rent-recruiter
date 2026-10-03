@@ -1,18 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
-import { Appeal } from "@/components/appeal";
-import { Chip, EmptyState, ErrorState } from "@/components/bits";
+import { EmptyState, ErrorState } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
-import { FollowUps } from "@/components/follow-ups";
 import { Avatar } from "@/components/person";
-import { Receipt, type ReceiptDetails } from "@/components/receipt";
 import { buttonVariants } from "@/components/ui/button";
-import { firstName, formatMoney, personInTitle } from "@/lib/format";
-import { GIG_TYPES } from "@/lib/gig-types";
+import { personOf, WorkStatus, workInfo } from "@/components/work";
+import { firstName, formatMoney } from "@/lib/format";
 import { useMyWork } from "@/lib/gigs/api";
 import type { DeliverableView } from "@/lib/gigs/schemas";
-import { inCents } from "@/lib/payout";
 
 export const Route = createFileRoute("/scout/submissions")({
 	component: () => (
@@ -62,7 +57,7 @@ function Earnings({ operator, slug }: { operator: string | null; slug: string })
 					Your public profile
 				</Link>
 			</div>
-			<ul className="divide-y">
+			<ul className="space-y-1">
 				{list.map((d) => (
 					<Row key={d.id} work={d} />
 				))}
@@ -71,31 +66,16 @@ function Earnings({ operator, slug }: { operator: string | null; slug: string })
 	);
 }
 
-const LATER: Record<string, { label: string; tone: "accent" | "good" | "neutral" }> = {
-	HELD: { label: "after the interview", tone: "accent" },
-	RELEASED: { label: "paid", tone: "good" },
-	REFUNDED: { label: "refunded", tone: "neutral" },
-};
-
-function personOf(d: DeliverableView) {
-	if (d.deliverable.type === "SOURCING") return d.deliverable.name;
-	return personInTitle(d.gigTitle);
-}
-
 function Row({ work: d }: { work: DeliverableView }) {
-	const info = GIG_TYPES[/^language check/i.test(d.gigTitle) ? "LANGUAGE_CHECK" : d.gigType];
+	const info = workInfo(d);
 	const person = personOf(d);
-	const p = d.payout && { ...d.payout, ...inCents(d.payout.now, d.payout.later) };
-	const later = p && p.laterStatus !== "NONE" ? LATER[p.laterStatus] : null;
-	const receipt: ReceiptDetails | undefined = p
-		? {
-				title: `Paid ${formatMoney(p.laterStatus === "RELEASED" ? BigInt(p.now) + BigInt(p.later) : p.now)} to you`,
-				lines: [`${info.name} · ${person}`, d.roleTitle],
-			}
-		: undefined;
+	const asks = (d.followUps ?? []).some((f) => !f.answer);
+	const confirmUrl =
+		d.status === "PENDING" && d.confirmation?.status === "PENDING" ? d.confirmation.url : null;
+	const callLink = d.callChecks?.find((c) => c.status === "PENDING" && c.url);
 
 	return (
-		<li className="flex items-center gap-4 py-5">
+		<li className="relative -mx-3 flex items-center gap-4 rounded-3xl px-3 py-5 transition-colors hover:bg-muted/60">
 			{d.gigType === "SOURCING" ? (
 				<Avatar name={person} />
 			) : (
@@ -104,39 +84,23 @@ function Row({ work: d }: { work: DeliverableView }) {
 				</span>
 			)}
 			<div className="min-w-0 flex-1">
-				<p className="truncate">{person}</p>
+				<Link
+					to="/scout/work/$deliverableId"
+					params={{ deliverableId: d.id }}
+					className="block truncate after:absolute after:inset-0 after:rounded-3xl focus-visible:outline-none"
+				>
+					{person}
+				</Link>
 				<p className="truncate type-label text-muted-foreground">
 					{info.name} · {d.roleTitle}
 				</p>
 			</div>
-			<div className="flex shrink-0 flex-col items-end gap-1.5">
-				<FollowUps d={d} />
-				{d.status === "PENDING" && d.confirmation?.status === "PENDING" ? (
-					<>
-						<Chip tone="accent">Waiting for {firstName(person)} to confirm</Chip>
-						{d.confirmation.url && <CopyButton text={d.confirmation.url} />}
-					</>
-				) : d.status === "PENDING" ? (
-					<Chip tone="accent">
-						<Loader2 className="size-3.5 animate-spin" /> The agent is checking
-					</Chip>
-				) : d.status === "REJECTED" ? (
-					<>
-						<Chip>Not accepted</Chip>
-						<Appeal d={d} align="end" />
-					</>
-				) : (
-					<>
-						<div className="flex items-center gap-2">
-							{p && <span className="type-label tabular text-success">+{formatMoney(p.now)}</span>}
-							{later && p && (
-								<Chip tone={later.tone}>
-									<span className="tabular">{formatMoney(p.later)}</span> {later.label}
-								</Chip>
-							)}
-						</div>
-						<Receipt signature={d.settlementTx} details={receipt} />
-					</>
+			<div className="relative z-10 flex shrink-0 flex-col items-end gap-1.5 text-right">
+				<WorkStatus d={d} person={person} />
+				{asks && <span className="type-label text-primary">The agent asks you something</span>}
+				{confirmUrl && <CopyButton text={confirmUrl} />}
+				{callLink?.url && (
+					<CopyButton text={callLink.url} label={`Copy call check for ${firstName(person)}`} />
 				)}
 			</div>
 		</li>

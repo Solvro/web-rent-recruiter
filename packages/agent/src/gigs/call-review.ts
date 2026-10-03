@@ -220,6 +220,8 @@ export function decideCall(
 	deliverable: Pick<CallDeliverable, "recommendation">,
 	checks: QuestionCheck[],
 	recommendationConsistent: number,
+	/** The script's questions: reasons quote them instead of ids (missing/checks keep the ids). */
+	questions?: { id: string; question: string }[],
 ): Decided {
 	const t = CALL_THRESHOLDS;
 	const n = Math.max(1, checks.length);
@@ -232,12 +234,20 @@ export function decideCall(
 	const candidateFit = answered.length ? Math.round((100 * answered.reduce((s, c) => s + c.fit, 0)) / n) : 0;
 	const inconsistent = Boolean(deliverable.recommendation) && recommendationConsistent < t.consistent;
 
+	const text = new Map((questions ?? []).map((q) => [q.id, q.question]));
+	const quote = (ids: string[]) =>
+		ids
+			.map((id) => {
+				const q = text.get(id);
+				if (!q) return id;
+				return `"${q.length > 70 ? `${q.slice(0, 69).trimEnd()}…` : q}"`;
+			})
+			.join("; ");
 	const reasons: string[] = [];
-	if (missing.length) reasons.push(`No usable answer to ${missing.join(", ")}.`);
-	if (generic.length)
-		reasons.push(`Generic answers without candidate-specific facts: ${generic.join(", ")}.`);
+	if (missing.length) reasons.push(`No usable answer to ${quote(missing)}.`);
+	if (generic.length) reasons.push(`Generic answers without candidate-specific facts: ${quote(generic)}.`);
 	if (contradictions.length)
-		reasons.push(`Answers contradict the profile or each other: ${contradictions.join(", ")}.`);
+		reasons.push(`Answers contradict the profile or each other: ${quote(contradictions)}.`);
 	if (inconsistent)
 		reasons.push(`The recommendation (${deliverable.recommendation}) doesn't match what the answers say.`);
 
@@ -574,7 +584,7 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 		const answer = answers.get(q.id) ?? "";
 		return checkFrom(q, answer, probs?.get(q.id) ?? offlineProbs(q, answer), mode);
 	});
-	let decided = decideCall(d, checks, consistent);
+	let decided = decideCall(d, checks, consistent, d.script.questions);
 	if (d.script.kind === "language" && d.script.language) {
 		const estimate =
 			d.transcript && cefr
@@ -596,14 +606,6 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 	}
 	const confidence: CallReview["confidence"] =
 		d.recording || (decided.integrity && !decided.integrity.failed.length) ? "recorded" : "self-reported";
-	if (confidence === "self-reported" && decided.verdict === "ACCEPT")
-		decided = {
-			...decided,
-			reasons: [
-				...decided.reasons,
-				"No recording: paid with a holdback until the candidate confirms the call.",
-			],
-		};
 	if (flags.length) {
 		decided = {
 			...decided,
@@ -613,6 +615,15 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 			],
 		};
 	}
+	// Payout wording only on the final verdict: a rejected or escalated call is not being paid.
+	if (confidence === "self-reported" && decided.verdict === "ACCEPT" && !flags.length)
+		decided = {
+			...decided,
+			reasons: [
+				...decided.reasons,
+				"No recording: paid with a holdback until the candidate confirms the call.",
+			],
+		};
 	const extractedAnswers =
 		mode === "transcript"
 			? d.script.questions.map((q) => ({ questionId: q.id, answer: answers.get(q.id) ?? "" }))

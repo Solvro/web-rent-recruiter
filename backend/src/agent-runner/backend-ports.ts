@@ -123,7 +123,7 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 			};
 		}
 		const payload = (sub.payload ?? {}) as Record<string, unknown>;
-		const recording = payload.evidence === "recording" ? await recordingMeta(gig.id) : null;
+		const recording = payload.evidence === "self-reported" ? null : await recordingMeta(gig.id);
 		const script = gig.script as { questions?: ScriptQuestion[]; candidate?: unknown; kind?: string } | null;
 		return {
 			...base,

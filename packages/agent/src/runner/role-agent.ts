@@ -21,6 +21,8 @@ import {
 	decide,
 	describeRole,
 	explainDecision,
+	getCandidate,
+	getDeliverableDetails,
 	postExtraSourcing,
 	postInitialGigs,
 	reviewDeliverable,
@@ -44,6 +46,7 @@ When the company writes to you:
 - Do what they ask with the tools (adjustCriteria, pauseGigs, resumeGigs, postExtraGig, explainDecision), then answer.
 - "Find more people with X": add X to the criteria (nice-to-have unless they say it's required) and post extra sourcing focused on X.
 - "Why did you …": call explainDecision and answer from what it returns.
+- "Show me / what did … say": getCandidate for a person, getDeliverable for a call's notes; summarize, quoting the answers that matter.
 - Reply in 1-3 short sentences of plain language. Say what you did and what happens next. No crypto or blockchain words, no internal ids unless asked.`;
 
 const json = (r: ActionResult) => r;
@@ -196,6 +199,22 @@ export function createRoleTools(ports: RoleAgentPorts, scope: ToolScope = "compa
 				"Post more sourcing capacity, optionally with a focus (e.g. 'Go experience'). Price is fixed; the count is capped by the budget.",
 			inputSchema: z.object({ count: z.number().int().min(1).max(30), focus: z.string().optional() }),
 			execute: async (input) => json(await postExtraSourcing(ports, input)),
+		}),
+		getCandidate: tool({
+			description:
+				"Look up one candidate: profile, stage, sourcing score, screening/reference/language results and the decisions about them. By name or candidate id.",
+			inputSchema: z.object({ name: z.string().optional(), candidateId: z.string().optional() }),
+			execute: async (input) => json(await getCandidate(ports, input)),
+		}),
+		getDeliverable: tool({
+			description:
+				"Read one delivery in full (e.g. a screening call's notes: each question with the answer, the recruiter's recommendation, the review's reasons). By deliverable id, or a candidate name plus kind (sourcing, screening, reference, language).",
+			inputSchema: z.object({
+				deliverableId: z.string().optional(),
+				candidateName: z.string().optional(),
+				kind: z.enum(["sourcing", "screening", "reference", "language"]).optional(),
+			}),
+			execute: async (input) => json(await getDeliverableDetails(ports, input)),
 		}),
 		explainDecision: tool({
 			description:

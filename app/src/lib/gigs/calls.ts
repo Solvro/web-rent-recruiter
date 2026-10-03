@@ -2,12 +2,18 @@
  * Call bookkeeping (mock first; asked from Stream B): the candidate didn't join, and "this candidate looks fake".
  */
 import { z } from "zod";
-import { untypedClient } from "../trpc";
+import { typedClient, untypedClient } from "../trpc";
 
-const NoShowResult = z.object({ noShows: z.number(), status: z.string(), deadline: z.string() });
+const NoShowResult = z.object({
+	noShows: z.number(),
+	status: z.string(),
+	deadline: z.string(),
+	showUpFee: z.object({ amount: z.string() }).nullable().optional(),
+});
 
 export const callApi = {
 	noShow: async (gigId: string) => NoShowResult.parse(await untypedClient.mutation("gigs.noShow", { gigId })),
+	claimShowUpFee: (gigId: string) => typedClient.gigs.claimShowUpFee.mutate({ gigId }),
 	report: (gigId: string, reason: string) => untypedClient.mutation("gigs.report", { gigId, reason }),
 	reportCandidate: (roleId: string, candidateId: string, reason: string) =>
 		untypedClient.mutation("roles.reportCandidate", { roleId, candidateId, reason }),

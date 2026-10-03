@@ -141,6 +141,12 @@ export const hasRecording = (gigId: string) => {
 	return !!s && (Date.now() - s.startedAt) / 1000 > 22;
 };
 
+/** The notetaker joined the meeting (the recruiter showed up), whether or not the candidate did. */
+export const notetakerJoined = (gigId: string) => {
+	const s = sessions.get(gigId);
+	return !!s && (Date.now() - s.startedAt) / 1000 > 4;
+};
+
 /** The recorded call's transcript lines for a gig, when there is one. */
 export const transcriptOf = (gigId: string) => (hasRecording(gigId) ? (transcriptFixture as Line[]) : null);
 

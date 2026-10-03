@@ -34,6 +34,9 @@ export const GigCandidate = z.object({
 	name: z.string().nullable(),
 	profileUrl: z.string().nullable(),
 	card: CandidateInfo.nullable(),
+	/** What the candidate told us on their confirmation page (claimant and company only; null when redacted). */
+	availability: z.string().nullable().optional(),
+	salaryExpectation: z.string().nullable().optional(),
 });
 export type GigCandidate = z.infer<typeof GigCandidate>;
 
@@ -226,6 +229,8 @@ export const DeliverableView = z.object({
 	id: z.string(),
 	gigId: z.string(),
 	gigType: GigType,
+	/** SCREENING_CALL flavour (null for other types). */
+	gigVariant: z.enum(["standard", "language"]).nullable().optional(),
 	gigTitle: z.string(),
 	roleId: z.string(),
 	roleTitle: z.string(),
@@ -356,7 +361,15 @@ export const RoleDecideRequest = z.object({
 export const RoleMessageRequest = z.object({ roleId: z.string().uuid(), text: z.string().min(1).max(4000) });
 export const RoleMessageResponse = z.object({ messageId: z.string() });
 
-export const RoleDecideResponse = z.object({ unsignedTx: UnsignedTx.nullable() });
+export const RoleDecideResponse = z.object({
+	unsignedTx: UnsignedTx.nullable(),
+	/** attended: what each recruiter gets released once the tx confirms (their held-back parts). */
+	releases: z
+		.array(
+			z.object({ recruiter: z.string(), wallet: Pubkey, amount: BaseUnits, deliverables: z.number().int() }),
+		)
+		.optional(),
+});
 
 // ---- Candidate confirmation page (/c/<token>, public) -------------------------------
 

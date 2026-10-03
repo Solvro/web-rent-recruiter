@@ -44,6 +44,8 @@ function Card({ view, token }: { view: CandidateConfirmView; token: string }) {
 	const status = respond.data?.status ?? view.status;
 	const recruiter = firstName(view.recruiterName);
 
+	if (view.kind === "call") return <CallCheck view={view} token={token} />;
+
 	if (status !== "PENDING")
 		return (
 			<div className="space-y-4 text-center">
@@ -59,7 +61,7 @@ function Card({ view, token }: { view: CandidateConfirmView; token: string }) {
 				</h1>
 				<p className="text-muted-foreground">
 					{status === "YES"
-						? `${recruiter} will be in touch to set up a call.`
+						? "A recruiter will be in touch to set up a call."
 						: status === "NO"
 							? "Nobody will contact you about this role."
 							: `If you're still interested, reply to ${recruiter} directly.`}
@@ -74,6 +76,7 @@ function Card({ view, token }: { view: CandidateConfirmView; token: string }) {
 			interested: a === "yes",
 			availability: availability.trim() || undefined,
 			salaryExpectation: salary.trim() || undefined,
+			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		});
 	};
 
@@ -138,6 +141,84 @@ function Card({ view, token }: { view: CandidateConfirmView; token: string }) {
 			</div>
 			<p className="type-label text-muted-foreground">
 				Your answer goes only to {recruiter} and the hiring company. Nothing else happens until you talk.
+			</p>
+		</>
+	);
+}
+
+/** "Did you have a call with Andreea about this role?" The call wasn't recorded; the candidate's yes confirms it. */
+function CallCheck({ view, token }: { view: CandidateConfirmView; token: string }) {
+	const respond = useCandidateRespond();
+	const [answer, setAnswer] = useState<"yes" | "no" | null>(null);
+	const status = respond.data?.status ?? view.status;
+	const caller = view.callWith ?? "a recruiter";
+	const what = view.callKind === "language check" ? "a short language check" : "a call";
+
+	if (status !== "PENDING")
+		return (
+			<div className="space-y-4 text-center">
+				<span className="mx-auto grid size-12 place-items-center rounded-full bg-accent text-accent-foreground">
+					<Check className="size-5" />
+				</span>
+				<h1 className="type-display">{status === "EXPIRED" ? "This link has expired" : "Thank you"}</h1>
+				<p className="text-muted-foreground">
+					{status === "YES"
+						? "That's all we needed. The hiring company will be in touch about next steps."
+						: status === "NO"
+							? "Thanks for telling us. We'll look into it."
+							: "Nothing else to do here."}
+				</p>
+			</div>
+		);
+
+	const send = (a: "yes" | "no") => {
+		setAnswer(a);
+		respond.mutate({
+			token,
+			interested: a === "yes",
+			timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+		});
+	};
+
+	return (
+		<>
+			<div className="space-y-3">
+				<p className="text-muted-foreground">Hi {view.candidateFirstName}, one quick question.</p>
+				<h1 className="type-display">
+					Did you have {what} with {caller}?
+				</h1>
+				<p className="text-muted-foreground">
+					About the {view.roleTitle} role at {view.companyDescriptor}.
+				</p>
+			</div>
+			<div className="flex items-center gap-3 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
+				<Avatar name={caller} />
+				<p className="min-w-0">
+					<span className="block truncate">{caller}</span>
+					<span className="type-label text-muted-foreground">
+						{view.callKind === "language check" ? "Language check" : "Screening call"}
+					</span>
+				</p>
+			</div>
+			<div className="space-y-3">
+				<Button size="lg" className="h-12 w-full" onClick={() => send("yes")} disabled={respond.isPending}>
+					{respond.isPending && answer === "yes" && <Loader2 className="animate-spin" />}
+					Yes, we talked
+				</Button>
+				<Button
+					size="lg"
+					variant="outline"
+					className="h-12 w-full"
+					onClick={() => send("no")}
+					disabled={respond.isPending}
+				>
+					{respond.isPending && answer === "no" && <Loader2 className="animate-spin" />}
+					No, we didn't
+				</Button>
+				{respond.isError && <p className="text-center text-destructive">{errorMessage(respond.error)}</p>}
+			</div>
+			<p className="type-label text-muted-foreground">
+				Your answer goes only to the hiring company. It takes one tap, nothing else to fill in.
 			</p>
 		</>
 	);

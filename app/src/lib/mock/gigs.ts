@@ -9,6 +9,7 @@ import type {
 	AgentActivity,
 	AgentReview,
 	AppealView,
+	CallDetail,
 	Criteria,
 	Deliverable,
 	DeliverableView,
@@ -32,6 +33,7 @@ import { formatMoney } from "../format";
 import type { CandidateCall, CandidateDetail, CandidateStage, RoleCandidate } from "../gigs/candidates";
 import { planGigs, withLevel } from "../gigs/plan";
 import type { RoleActivityView, ShortlistItemView } from "../gigs/schemas";
+import type { GigWorkView } from "../gigs/work";
 import { splitBounty } from "../payout";
 import { PERSONAS } from "../personas";
 import {
@@ -43,7 +45,7 @@ import {
 } from "./confirm";
 import fixtures from "./demo-data.json";
 import { avatarFor, candidateInfo } from "./people";
-import { hasRecording, recallProcedures, transcriptOf } from "./recall";
+import { hasRecording, notetakerJoined, recallProcedures, transcriptOf } from "./recall";
 import {
 	ANDREEA,
 	candidateHash,
@@ -83,6 +85,8 @@ type MockGig = {
 	claimedAt?: string;
 	/** Times the candidate didn't join the call. */
 	noShows?: number;
+	/** Offered when the notetaker was in the call but the candidate never joined. */
+	showUpFee?: { amount: bigint; signature: string | null } | null;
 	/** Raises by the agent when nobody takes the gig, oldest first. */
 	priceHistory?: { bounty: bigint; at: string; reason: string }[];
 };
@@ -114,6 +118,12 @@ type MockDelivery = {
 	/** Sourcing: pre-accepted by the agent, paid only after the candidate confirms on /c/<token>. */
 	confirmToken?: string | null;
 	confirmExpiresAt?: number | null;
+	/** Self-reported call: the candidate's "yes, we talked" link (sent by the sourcer), reviewed only after a yes. */
+	callToken?: string | null;
+	/** The recruiter's own note, edited while pending (gigs.edit). */
+	note?: string;
+	/** gigs.withdraw: taken back before the agent decided. */
+	withdrawn?: boolean;
 };
 
 type MockShortlist = {
@@ -472,14 +482,19 @@ function simScreening(gig: MockGig) {
 		});
 		return;
 	}
-	addDelivery(gig, ANDREEA, {
+	// Andreea's calls aren't recorded: when a demo recruiter sourced the candidate, they get the "did you talk?" link.
+	const sourcer = gig.candidate ? g.deliveries.get(gig.candidate.id)?.scout : undefined;
+	const selfReported = !!sourcer && sourcer !== ANDREEA;
+	const d = addDelivery(gig, ANDREEA, {
 		type: "SCREENING_CALL",
 		recommendation: "ADVANCE",
+		...(selfReported ? { evidence: "self-reported" as const } : {}),
 		answers: (gig.script ?? []).map((q, i) => ({
 			questionId: q.id,
 			answer: SIM_SCREENING(q, i),
 		})),
 	});
+	if (selfReported) askAboutCall(d, gig);
 }
 
 function simReference(gig: MockGig) {
@@ -817,6 +832,79 @@ function preAccept(d: MockDelivery) {
 	if (d.scout === ANDREEA) schedule(role.id, 6 * SECOND, "sim-confirm", d.id);
 }
 
+/** Where the candidate is, and what the role pays, in the words the candidate page uses. */
+function publicFacts(role: MockRole) {
+	const location = role.criteria.location;
+	const salary = role.criteria.salaryRange;
+	return {
+		roleTitle: role.title,
+		companyDescriptor: role.companyName,
+		summary:
+			role.jobDescription
+				.split("\n")
+				.map((l) => l.trim())
+				.find((l) => l.length > 60)
+				?.split(/(?<=\.)\s/)[0] ?? "",
+		location:
+			location.mode === "REMOTE"
+				? "Remote"
+				: [location.places.join(", "), location.mode === "HYBRID" ? "hybrid" : null]
+						.filter(Boolean)
+						.join(", ") || null,
+		salaryLabel: salary
+			? `${salary.min.toLocaleString("en-US")}–${salary.max.toLocaleString("en-US")} ${salary.currency} a ${salary.period === "YEAR" ? "year" : "month"}`
+			: null,
+	};
+}
+
+const CALL_CONFIRM_WINDOW_MS = 10 * 60 * SECOND;
+/** Without an answer, the simulated candidate says yes after this long (so a company-only demo keeps moving). */
+const CALL_CONFIRM_FALLBACK_MS = 90 * SECOND;
+
+/**
+ * A call that wasn't recorded: before reviewing, the agent asks the candidate whether it happened. The link goes
+ * to the candidate's sourcer (who knows them), never to the recruiter who claims the call.
+ */
+function askAboutCall(d: MockDelivery, gig: MockGig) {
+	const role = db.roles.get(gig.roleId);
+	if (!role || !gig.candidate) return;
+	d.callToken = createConfirmation({
+		...publicFacts(role),
+		candidateFirstName: first(gig.candidate.name),
+		recruiterName: displayName(d.scout),
+		expiresAt: iso(Date.now() + CALL_CONFIRM_WINDOW_MS),
+		kind: "call",
+		callWith: displayName(d.scout),
+		callKind: gig.variant === "language" ? "language check" : "screening call",
+	});
+	schedule(role.id, CALL_CONFIRM_FALLBACK_MS, "sim-call-confirm", d.id);
+	log(
+		role.id,
+		"NOTE",
+		`No recording, so I asked ${first(gig.candidate.name)} to confirm the call with ${displayName(d.scout)} happened`,
+		{ gigId: gig.id, deliverableId: d.id },
+	);
+}
+
+/** Calls about a sourced candidate that wait for the candidate's "yes, we talked" (shown to the sourcer). */
+function callChecksFor(sourced: MockDelivery): NonNullable<DeliverableView["callChecks"]> {
+	return [...g.deliveries.values()]
+		.filter((x) => x.callToken && g.gigs.get(x.gigId)?.candidate?.id === sourced.id)
+		.map((x) => {
+			const c = confirmationFor(x.callToken ?? "");
+			const gig = g.gigs.get(x.gigId);
+			const status = c?.status ?? "EXPIRED";
+			return {
+				deliverableId: x.id,
+				recruiterName: displayName(x.scout),
+				callKind: gig?.variant === "language" ? "language check" : "screening call",
+				status,
+				url: status === "PENDING" ? (c?.url ?? null) : null,
+				expiresAt: c?.expiresAt ?? iso(),
+			};
+		});
+}
+
 /** The candidate said yes: now the sourcing work is accepted and paid, and the next gigs follow. */
 function acceptSourcing(d: MockDelivery) {
 	const gig = g.gigs.get(d.gigId);
@@ -987,8 +1075,36 @@ export async function tick() {
 		await ensureGigs();
 		const now = Date.now();
 		let changed = false;
+		// Self-reported calls: reviewed after the candidate's yes; a no (or no answer) rejects them.
+		for (const d of g.deliveries.values()) {
+			if (d.status !== "PENDING" || !d.callToken) continue;
+			const answer = confirmationOf(d.callToken)?.status;
+			const expired = answer === "PENDING" && Date.parse(confirmationOf(d.callToken)?.expiresAt ?? "") <= now;
+			if (expired) answerConfirmation(d.callToken, "EXPIRED");
+			if (answer !== "NO" && answer !== "EXPIRED" && !expired) continue;
+			const who = first(g.gigs.get(d.gigId)?.candidate?.name ?? "The candidate");
+			reject(
+				d,
+				answer === "NO" ? `${who} says the call didn't happen` : `${who} didn't confirm the call in time`,
+			);
+			log(d.roleId, "DELIVERY_REJECTED", `${who} didn't confirm the call with ${displayName(d.scout)}`, {
+				gigId: d.gigId,
+				deliverableId: d.id,
+				detail: d.reasons[0],
+			});
+			changed = true;
+		}
+		const waitingForCall = (d: MockDelivery) =>
+			!!d.callToken && confirmationOf(d.callToken)?.status !== "YES";
 		for (const d of g.deliveries.values())
-			if (d.status === "PENDING" && !d.reviewedAt && !d.confirmToken && !d.escalated && d.reviewAt <= now) {
+			if (
+				d.status === "PENDING" &&
+				!d.reviewedAt &&
+				!d.confirmToken &&
+				!waitingForCall(d) &&
+				!d.escalated &&
+				d.reviewAt <= now
+			) {
 				const reviewer = reviewerOf(d.roleId);
 				if (reviewer.mode === "scout") review(d);
 				else if (!d.awaitingReviewer) d.awaitingReviewer = true;
@@ -1029,6 +1145,7 @@ export async function tick() {
 				if (a.action === "reply" && a.ref) reply(a.roleId, a.ref);
 				const dlv = a.ref ? g.deliveries.get(a.ref) : undefined;
 				if (a.action === "sim-confirm" && dlv?.confirmToken) answerConfirmation(dlv.confirmToken, "YES");
+				if (a.action === "sim-call-confirm" && dlv?.callToken) answerConfirmation(dlv.callToken, "YES");
 			}
 		}
 		for (const d of g.deliveries.values())
@@ -1058,14 +1175,23 @@ export function ensureGigs() {
 		const fde = others.find((r) => r.title.startsWith("Forward Deployed"));
 		const src = fde && [...g.gigs.values()].find((x) => x.roleId === fde.id && x.type === "SOURCING");
 		if (fde && src) {
+			const SEEDED_NOTES: Record<string, string> = {
+				"Marek Zieliński":
+					"Five years shipping computer-vision pipelines at a robotics startup, spent half his time on customer sites getting deployments running. Open to Zürich, wants a hands-on customer role.",
+				"Julia Kowalska":
+					"Solutions engineer turned developer: Python and TypeScript, led on-site integrations for three industrial clients. Told me she's ready to move this quarter.",
+			};
 			for (const [i, name] of ["Marek Zieliński", "Julia Kowalska"].entries()) {
+				const profileUrl = `https://linkedin.com/in/${name.toLowerCase().replace(/[^a-z]+/g, "-")}-fde-demo`;
+				const notes = SEEDED_NOTES[name] ?? "";
 				const d = addDelivery(src, PERSONAS.scout.mockAddress, {
 					type: "SOURCING",
 					name,
-					profileUrl: `https://linkedin.com/in/${name.toLowerCase().replace(/[^a-z]+/g, "-")}-fde-demo`,
-					notes: "Seeded history",
+					profileUrl,
+					notes,
 					consent: true,
 				});
+				d.candidateReview = reviewFor(fde.criteria, { name, profileUrl, notes });
 				d.status = "ACCEPTED";
 				d.reviewedAt = d.submittedAt = iso(Date.now() - (4 - i) * 86_400_000);
 				pay(d, src);
@@ -1178,6 +1304,53 @@ function gigView(gig: MockGig, wallet: string | null): GigView & CallState {
 		priceHistory: (gig.priceHistory ?? []).map((p) => ({ ...p, bounty: p.bounty.toString() })),
 		noShows: gig.noShows ?? 0,
 		claimedAt: gig.claimedAt ?? null,
+		...(role ? { post: postOf(role) } : {}),
+		...(gig.type !== "SOURCING" && !redacted ? callFactsOf(gig, wallet) : {}),
+	};
+}
+
+const csv = (s: string | null | undefined) => s ?? null;
+/** The job post recruiters read on every gig: criteria and summary only. */
+function postOf(role: MockRole): NonNullable<GigView["post"]> {
+	const c = role.criteria;
+	return {
+		title: role.title,
+		companyDescriptor: role.companyName,
+		location: c.location.places.length ? c.location.places.join(", ") : null,
+		workMode: c.location.mode,
+		seniority: c.seniority,
+		salaryRange: c.salaryRange,
+		mustHave: c.mustHave.map((x) => x.label),
+		niceToHave: c.niceToHave.map((x) => x.label),
+		dealBreakers: c.dealBreakers.map((x) => x.label),
+		languages: c.languages,
+		summary: publicFacts(role).summary,
+	};
+}
+
+/** For the recruiter holding the call: what the candidate told us on their confirmation page, and the show-up fee. */
+function callFactsOf(gig: MockGig, wallet: string | null) {
+	const source = gig.candidate ? g.deliveries.get(gig.candidate.id) : undefined;
+	const told = source?.confirmToken ? confirmationOf(source.confirmToken) : null;
+	return {
+		candidateTimeZone: csv(told?.timeZone),
+		...(gig.candidate
+			? {
+					candidate: {
+						...candidateFor(gig.candidate, false),
+						availability: csv(told?.availability),
+						salaryExpectation: csv(told?.salaryExpectation),
+					},
+				}
+			: {}),
+		showUpFee:
+			gig.showUpFee && wallet && gig.claimant === wallet
+				? {
+						amount: gig.showUpFee.amount.toString(),
+						status: gig.showUpFee.signature ? ("PAID" as const) : ("OFFERED" as const),
+						signature: gig.showUpFee.signature,
+					}
+				: null,
 	};
 }
 
@@ -1336,6 +1509,88 @@ function deliverableView(d: MockDelivery): DeliverableView {
 		confirmation: d.confirmToken ? confirmationFor(d.confirmToken) : null,
 		appeal: g.appeals.get(d.id) ?? null,
 		followUps: d.followUps ?? [],
+		...(d.type === "SOURCING" ? { callChecks: callChecksFor(d) } : {}),
+		gigVariant: gig?.variant ?? null,
+	};
+}
+
+/** What the role pays a recruiter whose candidate never joined (the backend's SHOW_UP_FEE). */
+const SHOW_UP_FEE = 5_000_000n;
+
+function ownUndecided(wallet: string, id: unknown) {
+	const d = g.deliveries.get(String(id));
+	if (!d || d.scout !== wallet) throw new MockError(404, "NOT_FOUND", "We couldn't find this work.");
+	if (d.status !== "PENDING" || d.reviewedAt || d.confirmToken)
+		throw new MockError(409, "ALREADY_DECIDED", "The agent already decided on this deliverable.");
+	return d;
+}
+
+/** gigs.work: one deliverable of the recruiter, with everything the detail page shows. */
+function workView(d: MockDelivery): GigWorkView {
+	const gig = g.gigs.get(d.gigId);
+	const role = db.roles.get(d.roleId);
+	const p = d.payload;
+	const kind =
+		p.type === "SOURCING"
+			? "sourcing"
+			: p.type === "REFERENCE_CHECK"
+				? "reference"
+				: gig?.variant === "language"
+					? "language"
+					: "screening";
+	const call: CallDetail | null =
+		gig && p.type !== "SOURCING"
+			? {
+					deliverableId: d.id,
+					gigId: gig.id,
+					kind: kind === "sourcing" ? "screening" : kind,
+					recruiter: { wallet: d.scout, displayName: displayName(d.scout) },
+					status: d.status,
+					submittedAt: d.submittedAt,
+					questions: (gig.script ?? []).map((q) => {
+						const answer = p.answers.find((a) => a.questionId === q.id)?.answer ?? null;
+						const len = answer?.trim().length ?? 0;
+						return {
+							id: q.id,
+							question: q.question,
+							whatGoodLooksLike: q.whatGoodLooksLike,
+							answer,
+							check: d.reviewedAt
+								? {
+										missing: len === 0,
+										generic: len > 0 && len < 12,
+										contradiction: false,
+										fit: Math.min(1, len / 120),
+									}
+								: null,
+						};
+					}),
+					recommendation: p.recommendation,
+					followUps: d.followUps ?? [],
+					recruiterNote: d.note ?? null,
+					assessedLevel: p.type === "SCREENING_CALL" ? (p.assessedLevel ?? null) : null,
+					referee: p.type === "REFERENCE_CHECK" ? { name: p.refereeName, relation: p.refereeRelation } : null,
+					evidence: p.type === "SCREENING_CALL" ? (p.evidence ?? null) : null,
+					confirmation: d.callToken ? confirmationFor(d.callToken) : null,
+					transcript: p.type === "SCREENING_CALL" && p.evidence === "recording" ? transcriptOf(gig.id) : null,
+					recordingUrl: null,
+					integrity: null,
+					review: null,
+					summary: null,
+					score: null,
+				}
+			: null;
+	const view = deliverableView(d);
+	return {
+		work: view,
+		kind,
+		companyName: role?.companyName ?? "",
+		candidateName: p.type === "SOURCING" ? p.name : (gig?.candidate?.name ?? null),
+		criteria: role?.criteria ?? null,
+		call,
+		rejectText: d.status === "REJECTED" ? (d.reasons[0] ?? null) : null,
+		editable: d.status === "PENDING" && !d.reviewedAt && !d.confirmToken,
+		note: p.type === "SOURCING" ? p.notes : (d.note ?? null),
 	};
 }
 
@@ -1706,18 +1961,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 					hash,
 					deliverableId,
 				);
-				if (selfReported) {
-					d.reviewAt = Date.now() + 15 * SECOND;
-					log(
-						gig.roleId,
-						"NOTE",
-						`No recording, so I asked ${first(gig.candidate?.name ?? "the candidate")} to confirm the call happened`,
-						{
-							gigId: gig.id,
-							deliverableId: d.id,
-						},
-					);
-				}
+				if (selfReported) askAboutCall(d, gig);
 				// A real recruiter brought this person: drop the simulated fallback for them.
 				if (payload.type === "SOURCING")
 					g.agenda = g.agenda.filter(
@@ -1931,12 +2175,101 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 				detail: `${displayName(wallet)} is not penalised for it.`,
 			});
 		}
+		// The notetaker was in the meeting, so the recruiter showed up: the role pays them for their time, once.
+		if (!gig.showUpFee && notetakerJoined(gig.id)) {
+			gig.showUpFee = { amount: SHOW_UP_FEE < gig.bounty ? SHOW_UP_FEE : gig.bounty / 4n, signature: null };
+			log(
+				gig.roleId,
+				"NOTE",
+				`Offered ${displayName(wallet)} a ${formatMoney(gig.showUpFee.amount)} show-up fee (the notetaker was in the call)`,
+				{ gigId: gig.id },
+			);
+		}
 		save();
 		return {
 			noShows: gig.noShows,
 			status: gig.status,
 			deadline: iso(Date.parse(gig.claimedAt ?? gig.createdAt) + 24 * HOUR),
+			showUpFee: gig.showUpFee ? { amount: gig.showUpFee.amount.toString() } : null,
 		};
+	},
+	/** One signature: the role pays the recruiter's show-up fee. */
+	"gigs.claimShowUpFee": (ctx) => {
+		const wallet = need(ctx);
+		const gig = gigOf(ctx.input.gigId);
+		if (gig.claimant !== wallet)
+			throw new MockError(403, "NOT_CLAIMANT", "Only the recruiter who took the gig.");
+		const fee = gig.showUpFee;
+		if (!fee) throw new MockError(409, "NO_SHOW_UP_FEE", "There is no show-up fee for this gig.");
+		if (fee.signature) throw new MockError(409, "ALREADY_PAID", "You already got this fee.");
+		return {
+			unsignedTx: registerTx(`Get your ${formatMoney(fee.amount)} show-up fee`, () => {
+				const role = db.roles.get(gig.roleId);
+				const scout = db.profiles.get(wallet);
+				fee.signature = fakeSignature();
+				if (role) {
+					role.balance -= fee.amount;
+					role.paid += fee.amount;
+				}
+				if (scout) {
+					scout.balance += fee.amount;
+					scout.earned += fee.amount;
+				}
+				log(
+					gig.roleId,
+					"DELIVERY_ACCEPTED",
+					`Paid ${displayName(wallet)} a ${formatMoney(fee.amount)} show-up fee`,
+					{
+						gigId: gig.id,
+						signature: fee.signature,
+					},
+				);
+				save();
+			}),
+		};
+	},
+	/** The recruiter's own deliverable, in full (My work detail). */
+	"gigs.work": (ctx) => {
+		const wallet = need(ctx);
+		const d = g.deliveries.get(String(ctx.input.deliverableId));
+		if (!d || d.scout !== wallet) throw new MockError(404, "NOT_FOUND", "We couldn't find this work.");
+		return workView(d);
+	},
+	/** Change the note while the agent hasn't decided. */
+	"gigs.edit": (ctx) => {
+		const wallet = need(ctx);
+		const d = ownUndecided(wallet, ctx.input.deliverableId);
+		const note = String(ctx.input.note ?? "").trim();
+		if (!note) throw new MockError(400, "VALIDATION", "Write a note first.");
+		if (d.payload.type === "SOURCING") d.payload = { ...d.payload, notes: note };
+		else d.note = note;
+		log(d.roleId, "NOTE", `${displayName(d.scout)} edited ${whatOf(d)}`, {
+			gigId: d.gigId,
+			deliverableId: d.id,
+		});
+		save();
+		return { ok: true };
+	},
+	/** Take it back before the agent decides: rejected as withdrawn, not counted against the recruiter. */
+	"gigs.withdraw": (ctx) => {
+		const wallet = need(ctx);
+		const d = ownUndecided(wallet, ctx.input.deliverableId);
+		d.withdrawn = true;
+		reject(d, "Withdrawn by the recruiter.");
+		d.settlementTx = fakeSignature();
+		const gig = g.gigs.get(d.gigId);
+		// A call gig goes back on the board for someone else.
+		if (gig?.exclusive) {
+			gig.claimant = null;
+			gig.claimedAt = undefined;
+		}
+		log(d.roleId, "NOTE", `${displayName(d.scout)} withdrew ${whatOf(d)}`, {
+			gigId: d.gigId,
+			deliverableId: d.id,
+			signature: d.settlementTx,
+		});
+		save();
+		return { signature: d.settlementTx, bondKept: "0" };
 	},
 	/** A recruiter (or the company) suspects the candidate isn't real. The agent stops and looks into it. */
 	"gigs.report": (ctx) => {

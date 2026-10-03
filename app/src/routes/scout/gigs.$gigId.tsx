@@ -1,4 +1,4 @@
-import type { Deliverable, Me, RecordingView } from "@scout/shared";
+import type { Deliverable, DeliverableView, Me, RecordingView } from "@scout/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, Copy, ExternalLink, Loader2, Lock, Mic, UserRound } from "lucide-react";
@@ -6,14 +6,16 @@ import { useEffect, useRef, useState } from "react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { Appeal } from "@/components/appeal";
 import { Chip, Countdown, Disclosure, EmptyState, ErrorState } from "@/components/bits";
-import { BookingTimes, NoShow, ReportFake } from "@/components/call-tools";
+import { BookingTimes, NoShow, ReportFake, ShowUpFee } from "@/components/call-tools";
 import { CopyButton } from "@/components/copy";
 import { FollowUps } from "@/components/follow-ups";
 import { Avatar } from "@/components/person";
+import { JobPost, locationText, salaryText } from "@/components/role-draft/job-post";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { appCodeOf, errorData, errorMessage, isDuplicate } from "@/lib/errors";
+import { personOf, WorkStatus } from "@/components/work";
+import { appCodeOf, errorData, errorMessage, isDuplicate, isNotFound } from "@/lib/errors";
 import { firstName, formatMoney } from "@/lib/format";
 import { eligibilityLine, requirementChips } from "@/lib/gig-access";
 import { CLAIM_HOURS, GIG_TYPES, kindOf } from "@/lib/gig-types";
@@ -33,27 +35,34 @@ export const Route = createFileRoute("/scout/gigs/$gigId")({
 
 function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 	const gig = useGig(gigId);
+	const work = useMyWork();
 	const [sent, setSent] = useState<string | null>(null);
-	if (gig.isError) return <ErrorState />;
+	if (gig.isError)
+		return isNotFound(gig.error) ? <Back title="We couldn't find this gig." /> : <ErrorState />;
 	if (gig.isPending) return <PageSkeleton />;
 	const g = gig.data;
 	const earn = earnFor(g, me.operator?.feeBps ?? 0);
 	const split = splitFor(g, me.operator?.feeBps ?? 0);
+	// Newest first: what this recruiter already sent to this gig.
+	const mine = (work.data ?? []).filter((d) => d.gigId === g.id);
+	const latest = mine[0];
 
 	if (sent) return <Checking deliverableId={sent} gig={g} onAgain={() => setSent(null)} />;
-	if (g.status !== "OPEN") return <Back title="This gig is closed." />;
+	// A call you delivered: its status, never the empty form again.
+	if (g.exclusive && latest && latest.status !== "REJECTED" && (g.claimedByMe || g.status !== "OPEN"))
+		return <Delivered gig={g} work={mine} />;
+	if (g.status !== "OPEN")
+		return mine.length || g.showUpFee ? (
+			<Delivered gig={g} work={mine} />
+		) : (
+			<Back title="This gig is closed." />
+		);
 	if (g.exclusive && g.claimant && !g.claimedByMe) return <Back title="Another recruiter took this gig." />;
 
 	return (
 		<div className="mx-auto max-w-xl space-y-10">
 			<header className="space-y-3">
-				<Chip tone="accent">
-					{(() => {
-						const Icon = GIG_TYPES[kindOf(g)].icon;
-						return <Icon className="size-3.5" />;
-					})()}
-					{GIG_TYPES[kindOf(g)].name}
-				</Chip>
+				<KindChip gig={g} />
 				<h1 className="type-display">
 					Earn {formatMoney(earn)} <span className="text-muted-foreground">{GIG_TYPES[kindOf(g)].unit}</span>
 				</h1>
@@ -70,16 +79,163 @@ function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 				<p className="text-muted-foreground">{g.title}</p>
 				{g.candidate && <CandidateLine gig={g} />}
 			</header>
+			{g.type === "SOURCING" && g.post && <PostOf post={g.post} />}
 			{g.exclusive && !g.claimedByMe ? (
 				<Claim gig={g} />
 			) : g.type === "SOURCING" ? (
 				<>
-					<WaitingLinks gigId={g.id} />
+					<SentHere work={mine} />
 					<SourcingForm gig={g} onSent={setSent} operator={me.operator?.name ?? null} />
 				</>
 			) : (
-				<ScriptForm gig={g} onSent={setSent} />
+				<>
+					{latest?.status === "REJECTED" && <SentBack d={latest} />}
+					<ScriptForm gig={g} onSent={setSent} />
+				</>
 			)}
+		</div>
+	);
+}
+
+function KindChip({ gig }: { gig: GigView }) {
+	const info = GIG_TYPES[kindOf(gig)];
+	return (
+		<Chip tone="accent">
+			<info.icon className="size-3.5" />
+			{info.name}
+		</Chip>
+	);
+}
+
+/** The job post the recruiter sources for: must-haves, nice-to-haves, salary and place. */
+function PostOf({ post }: { post: NonNullable<GigView["post"]> }) {
+	const crit = (labels: string[], prefix: string) =>
+		labels.map((label, i) => ({ id: `${prefix}-${i}`, label, weight: 3 }));
+	const location = { mode: post.workMode, places: post.location ? post.location.split(/,\s*/) : [] };
+	const meta = [
+		locationText(location),
+		salaryText(post.salaryRange),
+		post.mustHave.length ? `${post.mustHave.length} must-haves` : null,
+	]
+		.filter(Boolean)
+		.join(" · ");
+	return (
+		<div className="space-y-3">
+			{meta && <p className="type-label text-muted-foreground">{meta}</p>}
+			<Disclosure label="Read the job post">
+				<JobPost
+					className="rounded-4xl bg-card p-6 ring-1 ring-foreground/5 sm:p-8"
+					data={{
+						title: post.title,
+						company: post.companyDescriptor,
+						seniority: post.seniority,
+						location,
+						salary: post.salaryRange,
+						summary: post.summary,
+						mustHave: crit(post.mustHave, "must"),
+						niceToHave: crit(post.niceToHave, "nice"),
+						dealBreakers: crit(post.dealBreakers, "deal"),
+						languages: post.languages,
+					}}
+				/>
+			</Disclosure>
+		</div>
+	);
+}
+
+/** Your work on this gig so far, each a link to its detail. */
+function SentHere({ work }: { work: DeliverableView[] }) {
+	if (!work.length) return null;
+	return (
+		<section className="space-y-2">
+			<h2 className="type-label text-muted-foreground">
+				You sent {work.length} profile{work.length === 1 ? "" : "s"} here
+			</h2>
+			<ul className="divide-y rounded-3xl bg-card px-4 ring-1 ring-foreground/5">
+				{work.map((d) => {
+					const person = personOf(d);
+					const url =
+						d.status === "PENDING" && d.confirmation?.status === "PENDING" ? d.confirmation.url : null;
+					return (
+						<li key={d.id} className="relative flex items-center gap-3 py-3">
+							<Avatar name={person} size="sm" />
+							<Link
+								to="/scout/work/$deliverableId"
+								params={{ deliverableId: d.id }}
+								className="min-w-0 flex-1 truncate after:absolute after:inset-0"
+							>
+								{person}
+							</Link>
+							<span className="relative z-10 flex flex-col items-end gap-1">
+								<WorkStatus d={d} person={person} />
+								{url && <CopyButton text={url} />}
+							</span>
+						</li>
+					);
+				})}
+			</ul>
+		</section>
+	);
+}
+
+/** A call the agent sent back: why, and the way to fix and resend below. */
+function SentBack({ d }: { d: DeliverableView }) {
+	return (
+		<div className="space-y-1 rounded-3xl bg-muted p-4">
+			<p>The agent sent your notes back</p>
+			{d.review?.reasons[0] && <p className="type-label text-muted-foreground">{d.review.reasons[0]}</p>}
+			<Link
+				to="/scout/work/$deliverableId"
+				params={{ deliverableId: d.id }}
+				className="type-label text-primary underline-offset-4 hover:underline"
+			>
+				See what you sent
+			</Link>
+		</div>
+	);
+}
+
+/** The gig after you delivered (or after it closed): where your work stands, and the show-up fee if there is one. */
+function Delivered({ gig, work }: { gig: GigView; work: DeliverableView[] }) {
+	const d = work[0];
+	const person = d ? personOf(d, gig.candidate?.name) : (gig.candidate?.name ?? "the candidate");
+	const title = !d
+		? gig.status === "OPEN"
+			? "Nothing sent yet"
+			: "This gig is closed"
+		: d.status === "ACCEPTED"
+			? "Accepted"
+			: d.status === "PENDING"
+				? "Sent to the agent"
+				: "Not accepted";
+	return (
+		<div className="mx-auto max-w-xl space-y-10">
+			<header className="space-y-3">
+				<KindChip gig={gig} />
+				<h1 className="type-display">{title}</h1>
+				<p className="text-muted-foreground">{gig.exclusive ? gig.roleTitle : gig.title}</p>
+			</header>
+			{gig.showUpFee && <ShowUpFee gig={gig} />}
+			{gig.type === "SOURCING" ? (
+				<SentHere work={work} />
+			) : (
+				d && (
+					<Link
+						to="/scout/work/$deliverableId"
+						params={{ deliverableId: d.id }}
+						className="flex items-center gap-4 rounded-3xl bg-card p-5 ring-1 ring-foreground/5 transition-colors hover:bg-muted/60"
+					>
+						<span className="min-w-0 flex-1">
+							<span className="block truncate">{person}</span>
+							<span className="type-label text-muted-foreground">See your notes and the agent's review</span>
+						</span>
+						<WorkStatus d={d} person={person} />
+					</Link>
+				)
+			)}
+			<Link to="/scout" className={buttonVariants({ variant: "outline" })}>
+				Back to gigs
+			</Link>
 		</div>
 	);
 }
@@ -481,6 +637,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 					</div>
 				</fieldset>
 			)}
+			{!reference && <ShowUpFee gig={gig} />}
 			{!reference && (
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<NoShow gig={gig} />
@@ -609,29 +766,6 @@ function notetakerError(e: unknown) {
 	return errorMessage(e);
 }
 
-/** Profiles on this gig still waiting for the candidate's yes, so the link survives a reload. */
-function WaitingLinks({ gigId }: { gigId: string }) {
-	const work = useMyWork();
-	const waiting = (work.data ?? []).filter(
-		(d) => d.gigId === gigId && d.status === "PENDING" && d.confirmation?.status === "PENDING",
-	);
-	if (!waiting.length) return null;
-	return (
-		<ul className="space-y-2">
-			{waiting.map((d) => {
-				const name = d.deliverable.type === "SOURCING" ? d.deliverable.name : "";
-				return (
-					<li key={d.id} className="flex items-center gap-3 rounded-3xl bg-accent p-4 text-accent-foreground">
-						<Avatar name={name} size="sm" />
-						<span className="flex-1">Waiting for {firstName(name)} to confirm</span>
-						{d.confirmation?.url && <CopyButton text={d.confirmation.url} />}
-					</li>
-				);
-			})}
-		</ul>
-	);
-}
-
 function CopyLink({ url }: { url: string }) {
 	const [copied, setCopied] = useState(false);
 	return (
@@ -720,7 +854,16 @@ function Checking({
 				</>
 			)}
 			{mine && <FollowUps d={mine} />}
-			<div className="flex gap-3">
+			<div className="flex flex-wrap justify-center gap-3">
+				{mine && (
+					<Link
+						to="/scout/work/$deliverableId"
+						params={{ deliverableId: mine.id }}
+						className={buttonVariants({ variant: "outline" })}
+					>
+						See your work
+					</Link>
+				)}
 				{status !== "PENDING" && (gig.type === "SOURCING" || status === "REJECTED") && (
 					<Button variant="outline" onClick={onAgain}>
 						{gig.type === "SOURCING" ? "Send another" : "Fix and resend"}

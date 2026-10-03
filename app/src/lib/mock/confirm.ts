@@ -14,6 +14,7 @@ type Stored = Omit<CandidateConfirmView, "status"> & {
 	respondedAt: string | null;
 	availability?: string;
 	salaryExpectation?: string;
+	timeZone?: string;
 };
 
 function all(): Record<string, Stored> {
@@ -56,8 +57,14 @@ export function confirmationFor(token: string): CandidateConfirmation | null {
 	);
 }
 
-const view = ({ token: _t, respondedAt: _r, availability: _a, salaryExpectation: _s, ...card }: Stored) =>
-	card;
+const view = ({
+	token: _t,
+	respondedAt: _r,
+	availability: _a,
+	salaryExpectation: _s,
+	timeZone: _z,
+	...card
+}: Stored) => card;
 
 export const confirmProcedures = {
 	"candidate.view": ({ input }: { input: Record<string, unknown> }) => {
@@ -79,6 +86,7 @@ export const confirmProcedures = {
 			respondedAt: new Date().toISOString(),
 			availability: req.availability,
 			salaryExpectation: req.salaryExpectation,
+			timeZone: req.timeZone,
 		});
 		return { status };
 	},

@@ -113,6 +113,8 @@ type GigContext = {
 	about: SubRow | null;
 	/** From the candidate's confirmation page (Intl time zone). */
 	candidateTimeZone: string | null;
+	/** The candidate's own answers on /c (availability, salary expectation). */
+	candidateAnswers: { availability?: string; salaryExpectation?: string } | null;
 	/** The one-slot task paying the claimant's show-up fee, if any. */
 	feeGig: GigRow | null;
 };
@@ -171,21 +173,24 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 		script,
 		redacted: !visible,
 		candidate: c.about
-			? gigCandidate(
-					{
-						id: c.about.id,
-						name: c.about.candidateName,
-						profileUrl: c.about.profileUrl,
-						notes: c.about.notes,
-						card: {
-							avatarUrl: c.about.candidateAvatarUrl,
-							currentTitle: c.about.candidateTitle,
-							currentCompany: c.about.candidateCompany,
-							location: c.about.candidateLocation,
+			? withAnswers(
+					gigCandidate(
+						{
+							id: c.about.id,
+							name: c.about.candidateName,
+							profileUrl: c.about.profileUrl,
+							notes: c.about.notes,
+							card: {
+								avatarUrl: c.about.candidateAvatarUrl,
+								currentTitle: c.about.candidateTitle,
+								currentCompany: c.about.candidateCompany,
+								location: c.about.candidateLocation,
+							},
 						},
-					},
-					visible,
-					role.criteria.seniority,
+						visible,
+						role.criteria.seniority,
+					),
+					visible ? c.candidateAnswers : null,
 				)
 			: null,
 		bounty: gig.bounty.toString(),
@@ -241,6 +246,18 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 							: null,
 				}
 			: {}),
+	};
+}
+
+/** Claimant / company: what the candidate told us on /c. Redacted viewers get nulls. */
+function withAnswers<T extends object>(
+	candidate: T,
+	answers: { availability?: string; salaryExpectation?: string } | null,
+) {
+	return {
+		...candidate,
+		availability: answers?.availability ?? null,
+		salaryExpectation: answers?.salaryExpectation ?? null,
 	};
 }
 
@@ -340,6 +357,11 @@ async function gigContexts(gigs: GigRow[]): Promise<GigContext[]> {
 							timeZone?: string;
 						}
 					).timeZone ?? null,
+				candidateAnswers:
+					(confirmations.find((x) => x.submissionId === gig.aboutCandidateId)?.answers as {
+						availability?: string;
+						salaryExpectation?: string;
+					} | null) ?? null,
 				feeGig: feeGigs.find((f) => f.aboutGigId === gig.id) ?? null,
 			},
 		];
@@ -355,7 +377,23 @@ export async function loadGig(id: string): Promise<GigContext> {
 }
 
 /** The role agent's stored review (C's StoredReview) as the recruiter/company-facing DeliverableReview. */
-function toDeliverableReview(sub: SubRow, preAccepted = false): DeliverableReview | null {
+/** "No usable answer to ref-strength" → "No usable answer to “What are her strengths?”": no internal ids in reasons. */
+function withQuestionText(text: string, gig: Pick<GigRow, "script"> | null) {
+	const qs = (gig?.script as { questions?: { id: string; question: string }[] } | null)?.questions ?? [];
+	let out = text;
+	for (const q of [...qs].sort((a, b) => b.id.length - a.id.length))
+		out = out.replace(
+			new RegExp(`\\b${q.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"),
+			`“${q.question}”`,
+		);
+	return out;
+}
+
+export function toDeliverableReview(
+	sub: SubRow,
+	preAccepted = false,
+	gig: Pick<GigRow, "script"> | null = null,
+): DeliverableReview | null {
 	const r = sub.agentReview as {
 		decision?: { action: string; reason: string };
 		call?: { reasons?: string[]; summaryForCompany?: string };
@@ -388,7 +426,18 @@ function toDeliverableReview(sub: SubRow, preAccepted = false): DeliverableRevie
 		first ?? r?.decision?.reason,
 		...(r?.decision?.action === "follow_up" && question ? [question] : []),
 		...(r?.call?.reasons ?? []),
-	].filter((x, i, all): x is string => Boolean(x) && all.indexOf(x) === i);
+	]
+		// The agent's accept wording ("paid with a holdback until…") is stale once the deliverable was rejected.
+		.filter(
+			(x) =>
+				!(
+					sub.status === "REJECTED" &&
+					typeof x === "string" &&
+					/^(Accepted|Pre-accepted)\b|paid with a holdback/i.test(x)
+				),
+		)
+		.map((x) => (typeof x === "string" ? withQuestionText(x, gig) : x))
+		.filter((x, i, all): x is string => Boolean(x) && all.indexOf(x) === i);
 	const fromAction = (
 		{ accept: "ACCEPT", reject: "REJECT", escalate: "ESCALATE", follow_up: "FOLLOW_UP" } as Record<
 			string,
@@ -435,11 +484,12 @@ export function deliverableView(
 		id: sub.id,
 		gigId: gig.id,
 		gigType: gig.type,
+		gigVariant: gig.type === "SCREENING_CALL" ? (gig.variant ?? "standard") : null,
 		gigTitle: gig.title,
 		roleId: role.id,
 		roleTitle: role.title,
 		status: sub.status,
-		review: toDeliverableReview(sub, Boolean(confirmation)),
+		review: toDeliverableReview(sub, Boolean(confirmation), gig),
 		deliverable,
 		payout: submissionPayout(sub, termsOf(role, gig)),
 		submittedAt: sub.submittedAt.toISOString(),
@@ -937,11 +987,33 @@ export async function roleDecide(
 		(n, { sub }) => n + (sub.laterStatus === "HELD" ? (sub.payoutLater ?? 0n) : 0n),
 		0n,
 	);
+	// Per recruiter, what this releases (shown before signing and in the confirmation).
+	const byWallet = new Map<string, { amount: bigint; deliverables: number }>();
+	for (const { sub } of open) {
+		if (sub.laterStatus !== "HELD" || !sub.payoutLater) continue;
+		const cur = byWallet.get(sub.scoutWallet) ?? { amount: 0n, deliverables: 0 };
+		byWallet.set(sub.scoutWallet, {
+			amount: cur.amount + sub.payoutLater,
+			deliverables: cur.deliverables + 1,
+		});
+	}
+	const names = byWallet.size
+		? await db
+				.select()
+				.from(schema.accounts)
+				.where(inArray(schema.accounts.wallet, [...byWallet.keys()]))
+		: [];
 	return {
 		unsignedTx: await buildUnsignedTx(
 			ixs,
 			`${name} came to the interview${later > 0n ? `: release ${usdc(later)} to the recruiters` : ""}`,
 		),
+		releases: [...byWallet].map(([w, r]) => ({
+			recruiter: names.find((n) => n.wallet === w)?.displayName ?? "A recruiter",
+			wallet: w,
+			amount: r.amount.toString(),
+			deliverables: r.deliverables,
+		})),
 	};
 }
 

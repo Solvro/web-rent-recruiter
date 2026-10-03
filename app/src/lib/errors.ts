@@ -46,3 +46,15 @@ export function errorMessage(e: unknown) {
 }
 
 export const isDuplicate = (e: unknown) => appCodeOf(e) === "DUPLICATE_CANDIDATE";
+
+/** The thing asked for doesn't exist (or the link is malformed): show "not found", not an error page. */
+export function isNotFound(e: unknown) {
+	const data = errorData(e);
+	return (
+		data?.httpStatus === 404 ||
+		data?.httpStatus === 400 ||
+		/NOT_FOUND$/.test(data?.appCode ?? "") ||
+		data?.appCode === "VALIDATION" ||
+		data?.appCode === "BAD_REQUEST"
+	);
+}
