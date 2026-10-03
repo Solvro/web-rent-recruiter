@@ -110,7 +110,10 @@ export const CallDetail = z.object({
 	review: DeliverableReview.nullable(),
 	/** The agent's summary for the company (calls). */
 	summary: z.string().nullable(),
+	/** Quality of the recruiter's notes (0–100): complete, specific answers. This is what gets them paid. */
 	score: z.number().int().nullable(),
+	/** How well the candidate fits, from the answers (0–100). Separate from the notes' quality. */
+	candidateFit: z.number().int().nullable().optional(),
 });
 export type CallDetail = z.infer<typeof CallDetail>;
 

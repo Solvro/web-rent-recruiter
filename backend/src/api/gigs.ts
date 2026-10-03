@@ -37,7 +37,7 @@ import { splitBounty } from "../lib/money.ts";
 import { recruiterProfile } from "../lib/recruiter-profile.ts";
 import { submissionPayout } from "../lib/views.ts";
 import { recordingEvidence } from "../recall/service.ts";
-import { scoutChainInfo } from "../solana/chain.ts";
+import { fetchProgramAccount, type SubmissionAccount, scoutChainInfo } from "../solana/chain.ts";
 import { gatekeeperOf, isHosted } from "../solana/gatekeeper.ts";
 import { attestOutcomeIx, claimTaskIx, registerScoutIx, submitDeliverableIx } from "../solana/scout.ts";
 import { buildUnsignedTx } from "../solana/tx.ts";
@@ -989,14 +989,15 @@ export async function roleDecide(
 		0n,
 	);
 	// Per recruiter, what this releases (shown before signing and in the confirmation).
+	// From the chain, not the cache: a part accepted seconds ago may not be marked HELD in the DB yet.
 	const byWallet = new Map<string, { amount: bigint; deliverables: number }>();
 	for (const { sub } of open) {
-		if (sub.laterStatus !== "HELD" || !sub.payoutLater) continue;
+		if (!sub.onchainAddress) continue;
+		const acc = await fetchProgramAccount<SubmissionAccount>("Submission", address(sub.onchainAddress));
+		const held = BigInt(acc?.holdbackAmount ?? 0n);
+		if (held <= 0n) continue;
 		const cur = byWallet.get(sub.scoutWallet) ?? { amount: 0n, deliverables: 0 };
-		byWallet.set(sub.scoutWallet, {
-			amount: cur.amount + sub.payoutLater,
-			deliverables: cur.deliverables + 1,
-		});
+		byWallet.set(sub.scoutWallet, { amount: cur.amount + held, deliverables: cur.deliverables + 1 });
 	}
 	const names = byWallet.size
 		? await db

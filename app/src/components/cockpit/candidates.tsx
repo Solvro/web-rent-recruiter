@@ -344,7 +344,10 @@ function CallSection({ call }: { call: CallDetail }) {
 					: call.status === "ACCEPTED"
 						? "Accepted"
 						: "Not accepted"}
-				{call.score !== null && <span className="text-muted-foreground"> · {call.score}</span>}
+				{call.score !== null && <span className="text-muted-foreground"> · notes {call.score}</span>}
+				{call.candidateFit != null && (
+					<span className="text-muted-foreground"> · fit {call.candidateFit}</span>
+				)}
 				{call.assessedLevel && (
 					<span className="ml-1 rounded-full bg-accent px-2 py-0.5 text-accent-foreground">
 						{call.assessedLevel}

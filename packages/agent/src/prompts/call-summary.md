@@ -1,3 +1,5 @@
-Summarize this {{kind}} about {{name}} for the hiring manager in at most 2 sentences (under 50 words). Lead with the most decision-relevant fact the call established, then the main open point or risk. Use only what the answers say; the recruiter recommends {{recommendation}}.
+Write ONE plain sentence (under 25 words) for the hiring manager about this {{kind}} with {{name}}. List the facts that matter most for the decision, separated by semicolons, e.g. "Strong on Rust and mainnet programs; open to hybrid; 1 month notice; 32–36k PLN." Then, only if there is one, a short open point.
+
+Use only what the answers say. No scores, no labels like ADVANCE/MAYBE/PASS, no "the recruiter says", no question ids. The recruiter {{recommendation}}.
 
 {{qa}}

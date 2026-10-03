@@ -239,7 +239,19 @@ async function stepMock(row: Row): Promise<Row> {
 	const i = MOCK_ORDER.indexOf(row.status);
 	const nextStatus = i >= 0 ? MOCK_ORDER[i + 1] : undefined;
 	if (nextStatus) return update(row, { status: nextStatus });
-	return finish(row, mockTranscript());
+	const gig = await loadGig(row.gigId);
+	const [who] = await db.select().from(schema.accounts).where(eq(schema.accounts.wallet, row.wallet));
+	const script = (gig.script ?? {}) as { questions?: ScriptQuestion[]; candidate?: { name?: string } };
+	return finish(
+		row,
+		mockTranscriptFor({
+			kind:
+				gig.type === "REFERENCE_CHECK" ? "reference" : gig.variant === "language" ? "language" : "screening",
+			recruiter: who?.displayName ?? "Recruiter",
+			candidate: script.candidate?.name ?? "Karolina Mazurek",
+			questions: script.questions ?? [],
+		}),
+	);
 }
 
 async function finish(row: Row, lines: TranscriptLine[]): Promise<Row> {
@@ -283,6 +295,64 @@ export async function recordingFor(
 	if (!row || row.wallet !== wallet || row.status !== "done") return null;
 	const mediaUrl = row.mock ? null : await client.getMediaUrl(row.botId).catch(() => null);
 	return { lines: row.lines ?? [], mediaUrl };
+}
+
+const agentFixture = (name: string) =>
+	JSON.parse(readFileSync(new URL(`../agent/fixtures/${name}`, import.meta.url), "utf8")) as Record<
+		string,
+		unknown
+	>;
+const spread = (lines: { speaker: string; text: string }[], seconds: number): TranscriptLine[] =>
+	lines.map((l, i) => ({
+		...l,
+		startSec: Math.round((i / Math.max(1, lines.length - 1)) * (seconds - 30)) + 3,
+	}));
+
+/**
+ * RECALL_MOCK: a transcript that fits the call kind (the agent checks answers against the script): the screening
+ * fixture, the English language-check fixture, or a reference call with the referee built from the script.
+ */
+export function mockTranscriptFor(input: {
+	kind: "screening" | "language" | "reference";
+	recruiter: string;
+	candidate: string;
+	questions: { id: string; question: string }[];
+}): TranscriptLine[] {
+	if (input.kind === "language") {
+		const text = String(agentFixture("language-karolina-english.json").transcript ?? "");
+		const lines = text
+			.split("\n")
+			.map((l) => l.match(/^([^:]{1,40}):\s*(.+)$/))
+			.filter((m): m is RegExpMatchArray => Boolean(m))
+			.map((m) => ({
+				speaker: /recruiter/i.test(m[1] ?? "") ? input.recruiter : input.candidate,
+				text: m[2] ?? "",
+			}));
+		return spread(lines, 14 * 60);
+	}
+	if (input.kind === "reference") {
+		const fx = agentFixture("reference-karolina.json") as {
+			answers?: { questionId: string; answer: string }[];
+		};
+		const answers = fx.answers ?? [];
+		const lines = input.questions.flatMap((q, i) => [
+			{ speaker: input.recruiter, text: q.question },
+			{
+				speaker: "Marek Nowicki",
+				text:
+					(answers.find((a) => a.questionId === q.id) ?? answers[i % Math.max(1, answers.length)])?.answer ??
+					"",
+			},
+		]);
+		return spread(
+			[
+				{ speaker: input.recruiter, text: `Thanks for taking the time to talk about ${input.candidate}.` },
+				...lines,
+			],
+			12 * 60,
+		);
+	}
+	return mockTranscript();
 }
 
 /** Recording metadata for the agent's transcript-integrity checks (duration, who spoke). */

@@ -493,7 +493,8 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 				? await db.select().from(schema.submissions).where(eq(schema.submissions.id, input.deliverableId))
 				: [];
 			if (sub?.status === "PENDING") {
-				publish({ type: "agent.activity", roleId, submissionId: sub.id, message: input.question });
+				// The ESCALATED timeline row (the agent's log) says it; this only nudges the cockpit to refresh.
+				publish({ type: "role.status", roleId });
 				return;
 			}
 			await logActivity(roleId, "ESCALATED", input.question, {

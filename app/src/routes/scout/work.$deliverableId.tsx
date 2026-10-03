@@ -257,6 +257,9 @@ function Review({ d, w }: { d: DeliverableView; w: GigWorkView }) {
 	return (
 		<section className="space-y-4">
 			<h2 className="type-label text-muted-foreground">The agent's review</h2>
+			{d.status === "PENDING" && d.review?.verdict === "ESCALATE" && (
+				<p>The agent asked the company to decide before paying. Nothing for you to do.</p>
+			)}
 			{rejectText && <p>{rejectText}</p>}
 			{review && (
 				<div className="space-y-4">

@@ -197,6 +197,22 @@ function SentBack({ d }: { d: DeliverableView }) {
 	);
 }
 
+/** "The agent asked the company about 2 answers" or the agent's first reason. */
+function escalationLine(d: DeliverableView) {
+	const reasons = d.review?.reasons ?? [];
+	if (reasons.length > 1)
+		return `The agent asked the company about ${reasons.length} points before paying. Nothing for you to do.`;
+	if (reasons[0]) return `The agent asked the company before paying: ${reasons[0]}`;
+	return "The agent asked the company before paying. Nothing for you to do.";
+}
+
+/** Under the person on a delivered call: what happens next, or a pointer to the detail. */
+function deliveredLine(d: DeliverableView) {
+	if (d.status === "PENDING" && d.review?.verdict === "ESCALATE") return escalationLine(d);
+	if (d.status === "REJECTED") return d.review?.reasons[0] ?? "See why";
+	return "See your notes and the agent's review";
+}
+
 /** The gig after you delivered (or after it closed): where your work stands, and the show-up fee if there is one. */
 function Delivered({ gig, work }: { gig: GigView; work: DeliverableView[] }) {
 	const d = work[0];
@@ -229,7 +245,7 @@ function Delivered({ gig, work }: { gig: GigView; work: DeliverableView[] }) {
 					>
 						<span className="min-w-0 flex-1">
 							<span className="block truncate">{person}</span>
-							<span className="type-label text-muted-foreground">See your notes and the agent's review</span>
+							<span className="block type-label text-muted-foreground">{deliveredLine(d)}</span>
 						</span>
 						<WorkStatus d={d} person={person} />
 					</Link>
@@ -499,10 +515,38 @@ const RECOMMENDATIONS = [
 	{ value: "PASS", label: "Not a fit" },
 ] as const;
 
+const draftKey = (gigId: string) => `scout.answers.${gigId}`;
+function readDraft(gigId: string): Record<string, string> {
+	try {
+		return JSON.parse(sessionStorage.getItem(draftKey(gigId)) ?? "{}") as Record<string, string>;
+	} catch {
+		return {};
+	}
+}
+function writeDraft(gigId: string, answers: Record<string, string>) {
+	try {
+		sessionStorage.setItem(draftKey(gigId), JSON.stringify(answers));
+	} catch {
+		// private mode: the draft lives in memory only
+	}
+}
+
 /** Screening and reference gigs: the agent's questions, one answer each, and the recruiter's own call. */
 function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => void }) {
 	const script = gig.script ?? [];
-	const [answers, setAnswers] = useState<Record<string, string>>({});
+	// A draft survives a reload or a re-render; what the recruiter typed is never replaced by the notetaker.
+	const [answers, setAnswersState] = useState<Record<string, string>>(() => readDraft(gig.id));
+	const touched = useRef(new Set(Object.keys(readDraft(gig.id))));
+	const setAnswers = (update: (a: Record<string, string>) => Record<string, string>) =>
+		setAnswersState((current) => {
+			const next = update(current);
+			writeDraft(gig.id, next);
+			return next;
+		});
+	const typeAnswer = (id: string, text: string) => {
+		touched.current.add(id);
+		setAnswers((a) => ({ ...a, [id]: text }));
+	};
 	const [recommendation, setRecommendation] = useState<"ADVANCE" | "MAYBE" | "PASS" | null>(null);
 	const [refereeName, setRefereeName] = useState("");
 	const [refereeRelation, setRefereeRelation] = useState("");
@@ -519,7 +563,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 		setAnswers((current) => {
 			const next = { ...current };
 			for (const a of view.prefill?.answers ?? [])
-				if (!next[a.questionId]?.trim()) next[a.questionId] = a.answer;
+				if (!touched.current.has(a.questionId) && !next[a.questionId]?.trim()) next[a.questionId] = a.answer;
 			return next;
 		});
 		setRecommendation((r) => r ?? view.prefill?.recommendation ?? null);
@@ -590,7 +634,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 						<Textarea
 							id={`a-${q.id}`}
 							value={answers[q.id] ?? ""}
-							onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+							onChange={(e) => typeAnswer(q.id, e.target.value)}
 							className="min-h-20 rounded-3xl p-4"
 						/>
 					</li>
@@ -830,6 +874,11 @@ function Checking({
 						The call wasn't recorded, so the agent asks the candidate whether it happened. Then it checks your
 						notes.
 					</p>
+				</>
+			) : status === "PENDING" && mine?.review?.verdict === "ESCALATE" ? (
+				<>
+					<h1 className="type-display">The company is deciding</h1>
+					<p className="max-w-md text-muted-foreground">{escalationLine(mine)}</p>
 				</>
 			) : status === "PENDING" ? (
 				<>

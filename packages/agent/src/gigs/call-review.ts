@@ -422,9 +422,14 @@ export function applyRecommendationCheck(
 /** No-show from recording metadata: the candidate isn't a speaker, or the call was very short. */
 export function isNoShow(d: Pick<CallDeliverable, "recording" | "script">): string | null {
 	if (!d.recording) return null;
-	const first = fold(d.script.candidate.name).split(/\s+/)[0] ?? "";
-	const present = d.recording.speakers.some((s) => fold(s).includes(first));
-	if (!present) return `${d.recording.speakers.length} speaker(s), none is the candidate`;
+	if (d.script.kind === "reference") {
+		// The referee speaks, not the candidate: any second speaker besides the recruiter will do.
+		if (d.recording.speakers.length < 2) return `${d.recording.speakers.length} speaker(s), no referee`;
+	} else {
+		const first = fold(d.script.candidate.name).split(/\s+/)[0] ?? "";
+		const present = d.recording.speakers.some((s) => fold(s).includes(first));
+		if (!present) return `${d.recording.speakers.length} speaker(s), none is the candidate`;
+	}
 	if (d.recording.durationSeconds < POLICY.noShowMaxSeconds)
 		return `${Math.round(d.recording.durationSeconds / 60)} min call`;
 	return null;
@@ -436,23 +441,52 @@ const KIND_LABEL = {
 	language: "Language check",
 } as const;
 
-function templateSummary(d: CallDeliverable, answers: Map<string, string>, review: Decided) {
-	const what = KIND_LABEL[d.script.kind];
-	const name = d.script.candidate.name;
-	if (review.verdict === "REJECT")
-		return `${what} for ${name} was sent back to the recruiter: ${review.reasons[0] ?? "answers were not usable"}`;
-	if (review.language) {
-		return `${what} for ${name}: ${review.language.cefrLevel} in ${review.language.required.split(" ")[0]} (${
-			review.language.meetsLevel ? "meets" : "below"
-		} the required ${review.language.required.split(" ").at(-1)}).`;
-	}
-	const strongest = review.checks.filter((c) => !c.missing && !c.generic).sort((a, b) => b.fit - a.fit)[0];
-	const q = d.script.questions.find((x) => x.id === strongest?.questionId);
-	const a = strongest ? answers.get(strongest.questionId) : undefined;
-	return `${what} for ${name}: candidate fit ${review.candidateFit}/100${
-		d.recommendation ? `, recruiter recommends ${d.recommendation}` : ""
-	}.${q && a ? ` On "${q.question}": ${a.length > 140 ? `${a.slice(0, 137)}…` : a}` : ""}`;
+/** The first clause of an answer, at most ~12 words: "6 years of Rust in production". */
+export function answerClause(answer: string, maxWords = 12): string {
+	const first = answer.trim().split(/(?<=[.!?])\s+/)[0] ?? "";
+	const cut = (first.split(/[;:]|\s\(|\s[—–-]\s/)[0] ?? first).replace(/[.,]+$/, "").trim();
+	const words = cut.split(/\s+/).filter(Boolean);
+	return words.length > maxWords ? `${words.slice(0, maxWords).join(" ")}…` : cut;
 }
+
+/** Answers worth leading with: per kind, the questions that carry the decision. */
+const SUMMARY_IDS: Record<CallDeliverable["script"]["kind"], string[]> = {
+	screening: ["q-logistics"],
+	reference: ["ref-strength", "ref-rehire"],
+	language: [],
+};
+
+/**
+ * One plain sentence for the company (the drawer shows every question and answer, and the scores
+ * live in their own fields): the strongest facts, no recommendation tokens, no numbers of ours.
+ */
+export function templateSummary(d: CallDeliverable, answers: Map<string, string>, review: Decided) {
+	if (review.verdict === "REJECT")
+		return `Sent back to the recruiter: ${(review.reasons[0] ?? "the answers weren't usable").replace(/\.$/, "")}.`;
+	if (review.language) {
+		const [lang, required] = [review.language.required.split(" ")[0], review.language.required.split(" ").at(-1)];
+		return `${lang} ${review.language.cefrLevel}, ${review.language.meetsLevel ? "meets" : "below"} the required ${required}.`;
+	}
+	const usable = review.checks.filter((c) => !c.missing && !c.generic && answers.get(c.questionId));
+	const byFit = [...usable].sort((a, b) => b.fit - a.fit);
+	const criterionIds = new Set(d.script.questions.filter((q) => q.criterionId).map((q) => q.id));
+	const pinned = SUMMARY_IDS[d.script.kind].filter((id) => usable.some((c) => c.questionId === id));
+	const lead =
+		d.script.kind === "screening"
+			? byFit.filter((c) => criterionIds.has(c.questionId)).slice(0, 2).map((c) => c.questionId)
+			: [];
+	const ids = [...new Set([...lead, ...pinned, ...byFit.map((c) => c.questionId)])].slice(0, 3);
+	const parts = ids.map((id) => answerClause(answers.get(id) ?? "")).filter(Boolean);
+	if (!parts.length) return "The call notes need a closer look; see the answers.";
+	const sentence = parts.join("; ");
+	return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+const RECOMMENDATION_WORDS = {
+	ADVANCE: "recommends moving forward",
+	MAYBE: "is unsure",
+	PASS: "recommends not moving forward",
+} as const;
 
 const SummaryOutput = z.object({ summary: z.string() });
 
@@ -637,12 +671,12 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 			prompt: prompt("call-summary", {
 				kind: KIND_LABEL[d.script.kind].toLowerCase(),
 				name: d.script.candidate.name,
-				recommendation: d.recommendation ?? "nothing (transcript only)",
+				recommendation: d.recommendation ? RECOMMENDATION_WORDS[d.recommendation] : "gave no recommendation",
 				qa: [
 					...(decided.language ? [`Assessed level: ${decided.reasons[0]}`] : []),
 					...d.script.questions.map(
 						(q) =>
-							`Q (${q.id}): ${q.question}\nA: ${untrusted("recruiter_notes", answers.get(q.id) || "(no answer)")}`,
+							`Q: ${q.question}\nA: ${untrusted("recruiter_notes", answers.get(q.id) || "(no answer)")}`,
 					),
 				].join("\n\n"),
 			}),

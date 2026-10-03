@@ -187,6 +187,7 @@ export async function callDetail(sub: SubRow, gig: GigRow): Promise<CallDetail> 
 				integrity?: { durationSeconds: number; speakers: number; failed: string[] };
 				summaryForCompany?: string;
 				score?: number;
+				candidateFit?: number;
 		  }
 		| undefined;
 	const questions = ((
@@ -237,6 +238,7 @@ export async function callDetail(sub: SubRow, gig: GigRow): Promise<CallDetail> 
 		review: toDeliverableReview(sub, Boolean(conf), gig),
 		summary: call?.summaryForCompany ?? null,
 		score: call?.score ?? null,
+		candidateFit: call?.candidateFit ?? null,
 	};
 }
 
