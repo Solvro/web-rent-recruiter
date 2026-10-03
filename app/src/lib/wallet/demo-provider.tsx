@@ -2,14 +2,14 @@ import { signBytes } from "@solana/kit";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { API_MOCK, DEMO_SECRETS } from "../env";
-import { PERSONAS, type PersonaId } from "../personas";
+import { PERSONA_STORAGE_KEY, PERSONAS, type PersonaId } from "../personas";
 import { setSessionSigner } from "../session";
 import { setCurrentWallet } from "../trpc";
 import { WalletContext, type WalletContextValue } from "./context";
 import { useResetOnAccountChange } from "./reset";
 import { keyPairFromSecret, signWithKeyPair } from "./sign";
 
-const STORAGE_KEY = "scout.persona";
+const STORAGE_KEY = PERSONA_STORAGE_KEY;
 
 type Loaded = Partial<Record<PersonaId, { keyPair: CryptoKeyPair; address: string }>>;
 

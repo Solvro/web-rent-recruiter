@@ -83,7 +83,8 @@ export function JdBackdrop({
 			aria-hidden
 			className={cn(
 				"rd-backdrop pointer-events-none select-none whitespace-pre-wrap break-words",
-				hidden && "opacity-0",
+				// Faded out, then out of layout: a long posting must not leave empty scroll under the finished post.
+				hidden && "invisible max-h-0 overflow-hidden opacity-0",
 				className,
 			)}
 		>

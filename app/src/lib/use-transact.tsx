@@ -37,6 +37,8 @@ export function useTransact() {
 				toast.success(labels.success, {
 					id,
 					description: labels.receipt ? <Receipt signature={res.signature} /> : undefined,
+					// Long enough to reach the Receipt link.
+					duration: labels.receipt ? 10_000 : undefined,
 				});
 				await queryClient.invalidateQueries();
 				return res;

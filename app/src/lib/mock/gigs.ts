@@ -835,6 +835,7 @@ function preAccept(d: MockDelivery) {
 	const salary = role.criteria.salaryRange;
 	d.confirmExpiresAt = Date.now() + CONFIRM_WINDOW_MS;
 	d.confirmToken = createConfirmation({
+		...{ dealBreakers: role.criteria.dealBreakers.map((c) => c.label) },
 		recruiterSlug: slugify(from),
 		recruiterAvatarUrl: avatarFor(from),
 		candidateFirstName: first(p.name),
@@ -852,7 +853,7 @@ function preAccept(d: MockDelivery) {
 		location:
 			location.mode === "REMOTE"
 				? "Remote"
-				: [location.places.join(", "), location.mode === "HYBRID" ? "hybrid" : null]
+				: [location.places.join(", "), location.mode === "HYBRID" ? "hybrid" : "on-site"]
 						.filter(Boolean)
 						.join(", ") || null,
 		salaryLabel: salary
@@ -888,12 +889,13 @@ function publicFacts(role: MockRole) {
 		location:
 			location.mode === "REMOTE"
 				? "Remote"
-				: [location.places.join(", "), location.mode === "HYBRID" ? "hybrid" : null]
+				: [location.places.join(", "), location.mode === "HYBRID" ? "hybrid" : "on-site"]
 						.filter(Boolean)
 						.join(", ") || null,
 		salaryLabel: salary
 			? `${salary.min.toLocaleString("en-US")}–${salary.max.toLocaleString("en-US")} ${salary.currency} a ${salary.period === "YEAR" ? "year" : "month"}`
 			: null,
+		dealBreakers: role.criteria.dealBreakers.map((c) => c.label),
 	};
 }
 
@@ -1675,11 +1677,11 @@ function wilson(ok: number, n: number) {
 	return Math.round(Math.max(0, lower) * 100);
 }
 
-/** Skills the recruiter set themselves (me.setSkills), kept per browser tab like the rest of the mock. */
+/** Skills the recruiter set themselves (me.setSkills), kept with the rest of the mock. */
 const SKILLS_KEY = "scout.mock-skills.v1";
 function selfSkills(): Record<string, string[]> {
 	try {
-		return JSON.parse(sessionStorage.getItem(SKILLS_KEY) ?? "{}") as Record<string, string[]>;
+		return JSON.parse(localStorage.getItem(SKILLS_KEY) ?? "{}") as Record<string, string[]>;
 	} catch {
 		return {};
 	}
@@ -1690,7 +1692,7 @@ export function setSelfSkills(wallet: string, skills: string[]) {
 		[wallet]: [...new Set(skills.map((x) => x.trim().toLowerCase()).filter(Boolean))],
 	};
 	try {
-		sessionStorage.setItem(SKILLS_KEY, JSON.stringify(next));
+		localStorage.setItem(SKILLS_KEY, JSON.stringify(next));
 	} catch {
 		// private mode: lost on reload
 	}
@@ -1889,8 +1891,7 @@ function status(roleId: string) {
 	if (dels.some((d) => d.status === "PENDING" && d.escalated)) return "Waiting for your answer";
 	if (!g.started.has(roleId)) return "Getting ready";
 	const screening = open((x) => x.type === "SCREENING_CALL" && x.variant !== "language");
-	if (screening)
-		return `Screening · ${screening} call${screening === 1 ? "" : "s"} booked · notes usually within a day`;
+	if (screening) return `Screening · ${screening} call${screening === 1 ? "" : "s"} booked`;
 	if (open((x) => x.type === "REFERENCE_CHECK")) return "Checking a reference";
 	if ([...g.shortlist.values()].some((s) => s.roleId === roleId)) return "Shortlist ready";
 	const sourcing = gigs.find((x) => x.type === "SOURCING" && x.status === "OPEN");
@@ -2353,12 +2354,8 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		const name = d.payload.name;
 		d.escalated = false;
 		if (ctx.input.take) {
+			// A button press: the "Taking …, as you asked" step says it all, no chat reply on top.
 			preAccept(d);
-			log(
-				d.roleId,
-				"AGENT_MESSAGE",
-				`OK. I'll pay for ${first(name)} once they confirm they're open to a call.`,
-			);
 		} else {
 			reject(d, "The company decided not to take this profile");
 			log(d.roleId, "DELIVERY_REJECTED", `Passed on ${name}'s profile`, {

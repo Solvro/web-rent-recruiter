@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
 import { rememberIntent } from "@/components/account";
 import { Button } from "@/components/ui/button";
 import { useTitle } from "@/lib/use-title";
@@ -37,13 +36,17 @@ function Landing() {
 			</div>
 			<div className="flex w-full flex-col justify-center gap-3 sm:w-auto sm:flex-row">
 				<Button size="lg" className="h-12 px-6" onClick={() => go("company")}>
-					Hire with an agent <ArrowUpRight />
+					Hire with an agent
 				</Button>
 				<Button size="lg" variant="outline" className="h-12 px-6" onClick={() => go("scout")}>
-					Earn from recruiting gigs <ArrowUpRight />
+					Earn as a recruiter
 				</Button>
 			</div>
-			<ol className="mt-10 grid w-full max-w-3xl grid-cols-2 gap-6 border-t pt-8 text-left sm:grid-cols-4">
+			<p className="max-w-md type-label text-muted-foreground">
+				Got a link from a recruiter? It's a real role at a real company. Answer in one tap; you never pay
+				anything.
+			</p>
+			<ol className="mt-6 grid w-full max-w-3xl grid-cols-2 gap-6 border-t pt-8 text-left sm:grid-cols-4">
 				{STEPS.map((step, i) => (
 					<li key={step} className="space-y-1">
 						<span className="type-label text-muted-foreground tabular">0{i + 1}</span>

@@ -18,6 +18,7 @@
     "test:program": "anchor test",
     "e2e": "tsx scripts/e2e.mts",
     "seed": "pnpm --filter @scout/backend seed",
+    "demo:prepare": "pnpm --filter @scout/backend demo:prepare",
     "db:up": "docker compose up -d postgres"
   },
   "dependencies": {

@@ -143,11 +143,11 @@ function Row({ work: d }: { work: DeliverableView }) {
 				>
 					{person}
 				</Link>
-				<p className="truncate type-label text-muted-foreground">
+				<p className="line-clamp-2 type-label text-muted-foreground">
 					{info.name} · {dayLabel(d.review?.reviewedAt ?? d.submittedAt)} · {d.roleTitle}
 				</p>
 			</div>
-			<div className="relative z-10 flex shrink-0 flex-col items-end gap-1.5 text-right">
+			<div className="relative z-10 flex max-w-[48%] shrink-0 flex-col items-end gap-1.5 text-right">
 				<WorkStatus d={d} person={person} />
 				{confirmUrl && <CopyButton text={confirmUrl} />}
 				{callLink?.url && (
@@ -189,7 +189,7 @@ function ClosedRow({ gig }: { gig: GigView }) {
 				>
 					{person}
 				</Link>
-				<p className="truncate type-label text-muted-foreground">
+				<p className="line-clamp-2 type-label text-muted-foreground">
 					{info.name}
 					{gig.closedAt && ` · ${dayLabel(gig.closedAt)}`} · {gig.roleTitle}
 				</p>

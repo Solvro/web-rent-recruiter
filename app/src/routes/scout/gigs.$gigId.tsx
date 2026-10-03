@@ -5,7 +5,7 @@ import { ArrowLeft, ExternalLink, Loader2, Lock, Mic, UserRound } from "lucide-r
 import { useEffect, useRef, useState } from "react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { Appeal } from "@/components/appeal";
-import { Chip, Countdown, Disclosure, EmptyState, ErrorState } from "@/components/bits";
+import { Chip, Disclosure, EmptyState, ErrorState } from "@/components/bits";
 import { BookingTimes, NoShow, ReportFake, ShowUpFee } from "@/components/call-tools";
 import { CopyButton } from "@/components/copy";
 import { FollowUps } from "@/components/follow-ups";
@@ -772,8 +772,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 						hour: "2-digit",
 						minute: "2-digit",
 					})}
-					<Countdown deadline={new Date(yoursUntil).toISOString()} prefix=" ·" suffix="left" tone="good" />.
-					If you don't send your notes by then, the gig goes back on the board.
+					. If you don't send your notes by then, the gig goes back on the board.
 				</p>
 			)}
 			{!reference && <BookingTimes gig={gig} />}

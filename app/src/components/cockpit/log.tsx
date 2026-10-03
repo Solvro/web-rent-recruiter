@@ -121,7 +121,7 @@ export function Log({
 				</MessageScroller>
 				<div ref={bottom} className="space-y-3 pb-4">
 					{pinned}
-					{!closed && <Composer roleId={roleId} items={items} />}
+					{!closed && <Composer roleId={roleId} items={items} asking={!!pinnedKey} />}
 				</div>
 			</div>
 		</MessageScrollerProvider>
@@ -221,10 +221,19 @@ function StepLine({ item }: { item: ThreadActivity }) {
 /** Two or three things worth asking right now, from what actually happened. */
 function suggestionsFor(items: ThreadActivity[]) {
 	const out = ["What are you waiting for?"];
-	const rejected = items
-		.findLast((i) => i.kind === "DELIVERY_REJECTED")
-		?.message.match(/on (.+?)'s profile/)?.[1];
-	if (rejected) out.push(`Why did you pass on ${firstName(rejected)}?`);
+	const at = items.findLastIndex((i) => i.kind === "DELIVERY_REJECTED");
+	const rejected = items[at]?.message.match(/on (.+?)'s profile/)?.[1];
+	// Stale once the company took them anyway or already asked.
+	const settled =
+		rejected &&
+		items
+			.slice(at + 1)
+			.some(
+				(i) =>
+					i.message.includes(firstName(rejected)) &&
+					/\b(took|taking|accepted|why did you pass)\b/i.test(i.message),
+			);
+	if (rejected && !settled) out.push(`Why did you pass on ${firstName(rejected)}?`);
 	const paused = items.findLast((i) => i.kind === "PAUSED" || i.kind === "RESUMED")?.kind === "PAUSED";
 	const screening = items.some((i) => i.kind === "GIG_POSTED" && /screening/i.test(i.message));
 	if (paused) out.push("Resume");
@@ -232,7 +241,8 @@ function suggestionsFor(items: ThreadActivity[]) {
 	return out.slice(0, 3);
 }
 
-function Composer({ roleId, items }: { roleId: string; items: ThreadActivity[] }) {
+/** `asking`: a "Needs you" card sits above; on a phone the suggestions then give way to the feed. */
+function Composer({ roleId, items, asking }: { roleId: string; items: ThreadActivity[]; asking?: boolean }) {
 	const [text, setText] = useState("");
 	const send = useSendMessage(roleId);
 	const { byName, open } = useCandidatesPanel();
@@ -262,7 +272,12 @@ function Composer({ roleId, items }: { roleId: string; items: ThreadActivity[] }
 	return (
 		<div className="space-y-2">
 			{!text && (
-				<div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:flex-wrap sm:px-0">
+				<div
+					className={cn(
+						"-mx-4 flex gap-1.5 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:flex-wrap sm:px-0",
+						asking && "max-sm:hidden",
+					)}
+				>
 					{suggestionsFor(items).map((s) => (
 						<button
 							key={s}

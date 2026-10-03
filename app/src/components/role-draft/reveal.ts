@@ -78,10 +78,11 @@ const pauseFor = (key: FieldKey, reduced: boolean) => {
  * Reveal fields one by one. `skip()` shows everything at once. `lastKey` is the most recently revealed field (used to
  * highlight where in the job description it came from).
  */
-export function useReveal(partial: PartialDraft, done: boolean, reduced: boolean) {
+/** `instant`: a post restored after a reload appears whole, without replaying the reveal. */
+export function useReveal(partial: PartialDraft, done: boolean, reduced: boolean, instant = false) {
 	const [shown, setShown] = useState<Set<FieldKey>>(() => new Set());
 	const [lastKey, setLastKey] = useState<FieldKey | null>(null);
-	const [skipped, setSkipped] = useState(false);
+	const [skipped, setSkipped] = useState(instant);
 
 	const order = useMemo(() => documentOrder(partial), [partial]);
 	const settled = order.filter((k) => isSettled(k, partial, done) && present(k, partial));

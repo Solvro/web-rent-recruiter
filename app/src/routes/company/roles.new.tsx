@@ -5,7 +5,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RequireAccount } from "@/components/account";
-import { Disclosure } from "@/components/bits";
 import { ReviewerChoice, validReviewer } from "@/components/reviewer";
 import { Curtain } from "@/components/role-draft/curtain";
 import { followInto, useFollow } from "@/components/role-draft/follow";
@@ -87,10 +86,17 @@ function NewRole({ me }: { me: Me }) {
 		restored.current = true;
 		stream.restore(saved.result);
 	}, [saved, stream.restore]);
+	// Back to the job description from a finished draft: forget the draft (not on the mount that restores it).
+	const wasDone = useRef(false);
 	useEffect(() => {
-		if (stream.phase === "done" && stream.result) save({ result: stream.result });
-		if (stream.phase === "idle" && restored.current)
+		if (stream.phase === "done" && stream.result) {
+			wasDone.current = true;
+			save({ result: stream.result });
+		}
+		if (stream.phase === "idle" && wasDone.current) {
+			wasDone.current = false;
 			save({ result: null, title: null, company: null, edits: {} });
+		}
 	}, [stream.phase, stream.result]);
 
 	if (stream.phase === "idle") {
@@ -108,7 +114,11 @@ function NewRole({ me }: { me: Me }) {
 					<Button
 						size="lg"
 						className="h-12 px-8"
-						onClick={() => stream.start(jd)}
+						onClick={() => {
+							// The status line sits at the top of the next view: start there, not at the end of a long posting.
+							window.scrollTo({ top: 0 });
+							stream.start(jd);
+						}}
 						disabled={jd.trim().length < 50}
 					>
 						Next
@@ -169,7 +179,7 @@ function Drafting({
 	const reduced = useReducedMotion() || !!saved;
 	const done = stream.phase === "done";
 	const result = stream.result;
-	const reveal = useReveal(result ?? stream.partial, done, reduced);
+	const reveal = useReveal(result ?? stream.partial, done, reduced, !!saved);
 
 	// One page throughout. The pasted text sits where the post will be; the agent turns it into the post line by
 	// line, the leftover text folds away, the plan lands under it, and the Start controls (already laid out with the
@@ -241,6 +251,7 @@ function Drafting({
 	const { transact, pending } = useTransact();
 	const [budgetUsd, setBudgetUsd] = useState(saved?.budgetUsd ?? DEFAULT_BUDGET_USD);
 	useEffect(() => save({ budgetUsd }), [budgetUsd]);
+	const [pickReviewer, setPickReviewer] = useState(false);
 	const [reviewer, setReviewer] = useState<{ mode: ReviewerModeValue; key: string }>({
 		mode: "scout",
 		key: "",
@@ -437,6 +448,22 @@ function Drafting({
 						</div>
 
 						<div className="space-y-4">
+							{/* Decided before Start, not after it. Once open it stays open: no lone "Hide" link. */}
+							{pickReviewer ? (
+								<ReviewerChoice
+									mode={reviewer.mode}
+									agentKey={reviewer.key}
+									onChange={(mode, key) => setReviewer({ mode, key })}
+								/>
+							) : (
+								<button
+									type="button"
+									onClick={() => setPickReviewer(true)}
+									className="block type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+								>
+									Who checks the work: your Scout agent · change
+								</button>
+							)}
 							<Button
 								size="lg"
 								className="h-12 w-full sm:w-auto sm:px-10"
@@ -466,14 +493,12 @@ function Drafting({
 									Add budget so your agent can book at least one screening call.
 								</p>
 							)}
+							{!validReviewer(reviewer.mode, reviewer.key) && (
+								<p className="type-label text-destructive">
+									Paste your agent's ID above to start, or let your Scout agent check the work.
+								</p>
+							)}
 							{start.isError && <p className="type-label text-destructive">{errorMessage(start.error)}</p>}
-							<Disclosure label="Change who checks the work">
-								<ReviewerChoice
-									mode={reviewer.mode}
-									agentKey={reviewer.key}
-									onChange={(mode, key) => setReviewer({ mode, key })}
-								/>
-							</Disclosure>
 						</div>
 					</div>
 				</section>

@@ -19,6 +19,12 @@ const TYPE: Record<string, string> = {
 
 export function plain(text: string): string {
 	let t = text
+		// Markdown emphasis from the agent: the words stay, the asterisks go.
+		.replace(/\*\*(.+?)\*\*/g, "$1")
+		.replace(/(^|\s)\*(\S.*?\S)\*(?=\s|$|[.,;:])/g, "$1$2")
+		// " · 51" after a name is a fit score: say so.
+		.replace(/('s profile|profile) · (\d{1,3})\b/g, "$1 · fit $2")
+		.replace(/\bcheck out\b/g, "are solid")
 		// "26/100 PASS", "ACCEPT 96/100" → "26/100", "96/100"
 		.replace(/\b(ADVANCE|MAYBE|PASS|ACCEPT|REJECT|ESCALATE)\s+(\d{1,3}\/100)/g, "$2")
 		.replace(/(\d{1,3}\/100)\s*\(?(ADVANCE|MAYBE|PASS|ACCEPT|REJECT|ESCALATE)\)?/g, "$1")

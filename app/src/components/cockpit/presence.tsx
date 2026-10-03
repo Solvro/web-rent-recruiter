@@ -68,14 +68,14 @@ export function WaitingList({ roleId, status }: { roleId: string; status: RoleSt
 							: left === null && due !== null && due > 0
 								? ` · usually within ${since(due)}`
 								: ""}
-						<span className="mt-0.5 flex flex-wrap gap-x-3 sm:mt-0 sm:inline">
+						<span className="mt-1.5 flex flex-wrap gap-2">
 							{(w.actions ?? []).map((action) => (
 								<button
 									key={`${action.id}-${action.criterionId ?? action.gigId ?? ""}`}
 									type="button"
 									disabled={run.isPending}
 									onClick={() => run.mutate({ action })}
-									className="text-foreground underline-offset-4 hover:underline disabled:opacity-50 sm:ml-2"
+									className="rounded-full border bg-background px-3 py-1 text-foreground hover:bg-muted disabled:opacity-50"
 								>
 									{run.isPending && run.variables?.action === action ? "…" : action.label}
 								</button>
@@ -124,10 +124,11 @@ export function WhatHappensNext({ roleId, started }: { roleId: string; started: 
 			</div>
 			<ol className="space-y-2 type-label text-muted-foreground">
 				{[
-					["Recruiters find profiles", "first ones usually within a day"],
-					["Candidates confirm they're interested", "you pay only then, usually within hours"],
-					["Recruiters run screening calls", "notes checked by your agent, 1–3 days"],
-					["You get a shortlist to decide on", "usually 5–10 days from now"],
+					// No time estimates here: the live waiting line below says how long each step usually takes.
+					["Recruiters find profiles", "your agent checks each one"],
+					["Candidates confirm they're interested", "you pay for a profile only then"],
+					["Recruiters run screening calls", "your agent checks the notes"],
+					["You get a shortlist to decide on", "you choose who to interview"],
 				].map(([what, when], i) => (
 					<li key={what} className="flex gap-3">
 						<span className="tabular">{i + 1}</span>
@@ -142,12 +143,19 @@ export function WhatHappensNext({ roleId, started }: { roleId: string; started: 
 }
 
 /** One line under the header: what to expect next, from where the pipeline is. */
-export function nextLine(p: RoleStatusView["pipeline"] | undefined): string | null {
+export function nextLine(
+	p: RoleStatusView["pipeline"] | undefined,
+	waiting?: RoleStatusView["waitingOn"],
+): string | null {
 	if (!p) return null;
-	if (p.shortlisted > 0) return "Next: your decision on the shortlist";
-	if (p.referenceDone > 0) return "Next: shortlist, usually within a day";
-	if (p.screeningDone > 0) return "Next: reference check, usually 1–2 days";
-	if (p.confirmed > 0) return "Next: screening calls, notes usually within 1–3 days";
-	if (p.sourcingAccepted > 0) return "Next: candidates confirm interest, usually within hours";
-	return "Next: first profiles usually within a day";
+	// The concrete next thing from what the agent waits on beats a generic stage line.
+	if (waiting?.some((w) => w.who === "company")) return "Next: your decision (pinned above the message box)";
+	const soon = waiting?.find((w) => w.who !== "company");
+	if (soon) return `Next: ${soon.what.replace(/^(Recruiters|A recruiter|The)\b/, (m) => m.toLowerCase())}`;
+	if (p.shortlisted > 0) return "Next: nothing needed from you right now";
+	if (p.referenceDone > 0) return "Next: the shortlist";
+	if (p.screeningDone > 0) return "Next: a reference check";
+	if (p.confirmed > 0) return "Next: screening calls";
+	if (p.sourcingAccepted > 0) return "Next: candidates confirm interest";
+	return "Next: the first profiles";
 }

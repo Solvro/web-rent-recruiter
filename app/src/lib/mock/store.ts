@@ -288,6 +288,8 @@ export function resetMockData() {
 		localStorage.removeItem("scout.mock-recall.v1");
 		localStorage.removeItem("scout.mock-confirm.v1");
 		localStorage.removeItem("scout.mock-recruiter-used");
+		localStorage.removeItem("scout.mock-skills.v1");
+		localStorage.removeItem("scout.mock-bios.v1");
 	} catch {
 		// ignore
 	}

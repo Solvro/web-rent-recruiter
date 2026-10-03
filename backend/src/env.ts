@@ -52,11 +52,11 @@ export const env = {
 	/** Default holdback for new roles (CreateRoleRequest can override). Demo: 30% for 120 s. */
 	holdbackBps: Number(process.env.HOLDBACK_BPS ?? 3000),
 	/**
-	 * 14 days in production. DEMO_FAST: 60 minutes (a full live run takes ~30), long enough that "Came to the interview" (not the timer) is
+	 * 14 days in production. DEMO_FAST: 3 hours (a role prepared at 08:00 still holds parts at 09:30), long enough that "Came to the interview" (not the timer) is
 	 * what releases it during the live demo.
 	 */
 	holdbackWindowSeconds: Number(
-		process.env.HOLDBACK_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 3600 : 14 * 24 * 3600),
+		process.env.HOLDBACK_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 3 * 3600 : 14 * 24 * 3600),
 	),
 	/**
 	 * Floors for roles run by Scout's agent. The agent can only reject within the review window, so a candidate's
@@ -71,7 +71,7 @@ export const env = {
 		process.env.MIN_REVIEW_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 1200 : 24 * 3600),
 	),
 	minHoldbackWindowSeconds: Number(
-		process.env.MIN_HOLDBACK_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 3600 : 0),
+		process.env.MIN_HOLDBACK_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 3 * 3600 : 0),
 	),
 	/** Sign-In-With-Solana message fields (what the wallet shows the user). */
 	/** The app, for links we hand out (candidate confirmation /c/<token>). */

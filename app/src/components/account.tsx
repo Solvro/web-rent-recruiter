@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { API_MOCK, PRIVY_AVAILABLE, switchAuthMode } from "@/lib/env";
 import { errorMessage } from "@/lib/errors";
 import { resetMockData } from "@/lib/mock/store";
-import { PERSONAS, type PersonaId } from "@/lib/personas";
+import { PERSONAS, type PersonaId, rememberPersona } from "@/lib/personas";
 import { useMe } from "@/lib/queries";
 import { useTRPC } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -243,10 +243,13 @@ export function LoginGate({ kind, title }: { kind: Me["kind"]; title?: string })
 						</Button>
 						<button
 							type="button"
-							onClick={() => switchAuthMode("demo")}
+							onClick={() => {
+								rememberPersona(wanted);
+								switchAuthMode("demo");
+							}}
 							className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
 						>
-							Try the demo accounts
+							Try the demo as {PERSONAS[wanted].displayName}
 						</button>
 					</div>
 				)

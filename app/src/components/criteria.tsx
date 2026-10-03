@@ -116,7 +116,15 @@ export function WhyThisScore({ review, criteria }: { review: AgentReview; criter
 				const bad = isDeal ? v.verdict === "MET" : v.verdict === "NOT_MET";
 				const label = criterionLabel(criteria, v.criterionId);
 				// Never a green check next to a negative statement.
-				const text = isDeal && good ? positiveDealBreaker(label) : label;
+				const lower = `${label[0]?.toLowerCase()}${label.slice(1)}`;
+				// A deal-breaker reads as one in every state: cleared, unknown, or hit.
+				const text = !isDeal
+					? label
+					: good
+						? positiveDealBreaker(label)
+						: bad
+							? `Deal-breaker: ${lower}`
+							: `No sign of: ${lower}`;
 				const Icon = good ? Check : bad ? X : Minus;
 				return (
 					<li key={v.criterionId} className="flex items-start gap-3">

@@ -414,6 +414,8 @@ export const CandidateView = z.object({
 	salaryLabel: z.string().nullable(),
 	status: z.enum(["PENDING", "YES", "NO", "EXPIRED"]),
 	expiresAt: z.string(),
+	/** The role's deal-breakers in plain words, so a candidate can't say yes without knowing them. */
+	dealBreakers: z.array(z.string()).optional(),
 	/** The recruiter's public profile and photo, so the candidate can check who sent the link. */
 	recruiterSlug: z.string().nullable().optional(),
 	recruiterAvatarUrl: z.string().nullable().optional(),

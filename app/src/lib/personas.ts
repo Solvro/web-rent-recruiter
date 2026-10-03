@@ -41,3 +41,14 @@ export const PERSONAS: Record<PersonaId, Persona> = {
 		mockAddress: "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH",
 	},
 };
+
+export const PERSONA_STORAGE_KEY = "scout.persona";
+
+/** Pick the demo account before switching to demo mode, so the switch lands signed in instead of on another gate. */
+export function rememberPersona(id: PersonaId) {
+	try {
+		localStorage.setItem(PERSONA_STORAGE_KEY, id);
+	} catch {
+		// private mode: the gate asks once more
+	}
+}

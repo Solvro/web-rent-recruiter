@@ -38,7 +38,7 @@ export type JobPostEdit = {
 	onCriteria: (patch: Partial<Pick<Criteria, "mustHave" | "niceToHave" | "dealBreakers">>) => void;
 };
 
-const SENIORITY: Record<Criteria["seniority"], string> = {
+export const SENIORITY: Record<Criteria["seniority"], string> = {
 	JUNIOR: "Junior",
 	MID: "Mid-level",
 	SENIOR: "Senior",

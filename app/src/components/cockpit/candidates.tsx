@@ -233,7 +233,7 @@ function Detail({
 				</div>
 			</div>
 			<Actions roleId={roleId} d={d} />
-			<Notes roleId={roleId} d={d} />
+			<Notes key={d.candidateId} roleId={roleId} d={d} />
 			<Section title={`${d.sourcedBy.displayName}'s note`}>
 				<p>{d.recruiterNote}</p>
 			</Section>
@@ -429,41 +429,77 @@ function Actions({ roleId, d }: { roleId: string; d: CandidateDetail }) {
 	const run = (action: "accept" | "pass" | "remove") =>
 		act.mutate(action, { onError: (e) => toast.error(errorMessage(e)) });
 	const closed = d.stage === "PASSED" || d.stage === "REJECTED";
-	const pending = d.stage === "REVIEWING" || d.stage === "CONFIRMING";
+	const first = d.name.split(" ")[0];
+	const canPass = !closed && d.stage !== "ATTENDED";
 	return (
-		<div className="flex flex-wrap items-center gap-2">
-			{(closed || pending) && (
-				<Button size="sm" onClick={() => run("accept")} disabled={act.isPending}>
-					{act.isPending && act.variables === "accept" && <Loader2 className="animate-spin" />}
-					{closed ? "Take anyway" : "Accept"}
-				</Button>
+		<div className="space-y-2">
+			{d.stage === "CONFIRMING" && (
+				<p className="type-label text-muted-foreground">
+					You accepted {first}. Waiting for {first} to say yes to a screening call.
+				</p>
 			)}
-			{!closed && d.stage !== "ATTENDED" && (
-				<Button size="sm" variant="ghost" onClick={() => run("pass")} disabled={act.isPending}>
-					Pass
-				</Button>
-			)}
-			{!d.removed && (
-				<Button size="sm" variant="ghost" onClick={() => run("remove")} disabled={act.isPending}>
-					Remove
-				</Button>
-			)}
-			<span className="ml-auto">
-				<ReportFake
-					label="Report a problem"
-					onReport={async (why) => {
-						const res = await callApi.reportCandidate(roleId, d.candidateId, why);
-						if (res.unsignedTx)
-							await transact(res.unsignedTx, { pending: "Reporting…", success: "Reported." });
-					}}
-				/>
-			</span>
+			<div className="flex flex-wrap items-center gap-2">
+				{(closed || d.stage === "REVIEWING") && (
+					<Button size="sm" onClick={() => run("accept")} disabled={act.isPending}>
+						{act.isPending && act.variables === "accept" && <Loader2 className="animate-spin" />}
+						{closed ? "Take anyway" : "Accept"}
+					</Button>
+				)}
+				{canPass && (
+					<Button
+						size="sm"
+						variant="ghost"
+						title="Not for this role."
+						onClick={() => run("pass")}
+						disabled={act.isPending}
+					>
+						Pass
+					</Button>
+				)}
+				{!d.removed && (
+					<Button
+						size="sm"
+						variant="ghost"
+						title="Hide from your list, for example a duplicate or someone you already know."
+						onClick={() => run("remove")}
+						disabled={act.isPending}
+					>
+						Remove
+					</Button>
+				)}
+				<span className="ml-auto">
+					<ReportFake
+						label="Report a problem"
+						onReport={async (why) => {
+							const res = await callApi.reportCandidate(roleId, d.candidateId, why);
+							if (res.unsignedTx)
+								await transact(res.unsignedTx, { pending: "Reporting…", success: "Reported." });
+						}}
+					/>
+				</span>
+			</div>
+			<p className="type-label text-muted-foreground">
+				{[
+					canPass && "Pass: not for this role.",
+					!d.removed && "Remove: hide from your list, for example a duplicate.",
+				]
+					.filter(Boolean)
+					.join(" ")}
+			</p>
 		</div>
 	);
 }
 
+/** Unsent private notes, per candidate: closing the drawer or switching people keeps what was typed. */
+const noteDrafts = new Map<string, string>();
+
 function Notes({ roleId, d }: { roleId: string; d: CandidateDetail }) {
-	const [text, setText] = useState("");
+	const [text, setDraft] = useState(() => noteDrafts.get(d.candidateId) ?? "");
+	const setText = (v: string) => {
+		setDraft(v);
+		if (v) noteDrafts.set(d.candidateId, v);
+		else noteDrafts.delete(d.candidateId);
+	};
 	const { add, remove } = useCandidateNotes(roleId, d.candidateId);
 	return (
 		<div className="space-y-2">
@@ -490,7 +526,14 @@ function Notes({ roleId, d }: { roleId: string; d: CandidateDetail }) {
 				<Button
 					size="sm"
 					variant="outline"
-					onClick={() => add.mutate(text.trim(), { onSuccess: () => setText("") })}
+					onClick={() =>
+						add.mutate(text.trim(), {
+							onSuccess: () => {
+								setText("");
+								toast.success("Note saved.");
+							},
+						})
+					}
 					disabled={add.isPending}
 				>
 					{add.isPending && <Loader2 className="animate-spin" />}

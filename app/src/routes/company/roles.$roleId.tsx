@@ -2,7 +2,7 @@ import type { RoleDetail } from "@scout/shared";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
-import { EmptyState, ErrorState } from "@/components/bits";
+import { Disclosure, EmptyState, ErrorState } from "@/components/bits";
 import { Pinned, useAsks } from "@/components/cockpit/asks";
 import { CandidatesProvider } from "@/components/cockpit/candidates";
 import { RoleHeader } from "@/components/cockpit/header";
@@ -10,6 +10,7 @@ import { CloseRole, FundRole, MoneyRecord } from "@/components/cockpit/lifecycle
 import { Log } from "@/components/cockpit/log";
 import { Thinking, WaitingList, WhatHappensNext } from "@/components/cockpit/presence";
 import { ReviewerSettings } from "@/components/reviewer-settings";
+import { locationText, SENIORITY, salaryText } from "@/components/role-draft/job-post";
 import { buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { appCodeOf, errorMessage } from "@/lib/errors";
@@ -92,8 +93,27 @@ function Cockpit({ roleId }: { roleId: string }) {
 				</div>
 				<Dialog open={details} onOpenChange={setDetails}>
 					<DialogContent className="max-h-[85svh] gap-6 overflow-y-auto p-6 sm:max-w-xl">
-						<DialogTitle>{r.title}</DialogTitle>
+						<div className="space-y-1">
+							<DialogTitle>{r.title}</DialogTitle>
+							<p className="type-label text-muted-foreground">
+								{[
+									SENIORITY[r.criteria.seniority],
+									locationText(r.criteria.location),
+									salaryText(r.criteria.salaryRange),
+									r.criteria.languages.join(", "),
+								]
+									.filter(Boolean)
+									.join(" · ")}
+							</p>
+						</div>
 						<RequirementsList criteria={r.criteria} />
+						{r.jobDescription && (
+							<Disclosure label="Show the job post you pasted">
+								<p className="max-h-80 overflow-y-auto rounded-2xl bg-muted p-4 type-label whitespace-pre-wrap">
+									{r.jobDescription}
+								</p>
+							</Disclosure>
+						)}
 						<MoneyRecord items={items} />
 						{!closed && <ReviewerSettings roleId={r.id} />}
 						{r.status === "OPEN" && <CloseRole role={r} />}

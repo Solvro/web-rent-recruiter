@@ -124,6 +124,7 @@ export async function candidateView(token: string) {
 		candidateFirstName: sub.candidateName.split(" ")[0] ?? sub.candidateName,
 		recruiterName: scout?.displayName ?? "Your recruiter",
 		recruiterSlug: scout?.slug ?? null,
+		dealBreakers: role.criteria.dealBreakers.map((d) => d.label),
 		recruiterAvatarUrl: scout?.avatarUrl ?? null,
 		roleTitle: role.title,
 		companyDescriptor: company?.companyName ?? "A hiring company",

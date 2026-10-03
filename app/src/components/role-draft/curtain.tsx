@@ -35,7 +35,8 @@ export function Curtain({
 	const y = useHeight(post);
 	const b = useHeight(backdrop);
 	// Absolutely positioned, so its own height never moves anything; it only has to reach past both layers.
-	const height = Math.max(y, (backdrop.current?.offsetTop ?? 0) + b) + EDGE;
+	const height =
+		Math.max(y, (backdrop.current?.offsetTop ?? 0) + Math.min(b, backdrop.current?.scrollHeight ?? b)) + EDGE;
 	return (
 		<div aria-hidden className="pointer-events-none absolute inset-x-[-16px] top-0" style={{ height }}>
 			<div

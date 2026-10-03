@@ -28,7 +28,7 @@ export const Route = createFileRoute("/scout/")({
 		q: typeof s.q === "string" && s.q ? s.q : undefined,
 		type: GIG_TYPE_ORDER.includes(s.type as GigKind) ? (s.type as GigKind) : undefined,
 		where: typeof s.where === "string" && s.where ? s.where : undefined,
-		pay: Number(s.pay) > 0 ? Number(s.pay) : undefined,
+		pay: [5, 15].includes(Number(s.pay)) ? Number(s.pay) : undefined,
 		sort: s.sort === "new" || s.sort === "full" ? s.sort : undefined,
 	}),
 	component: GigBoard,
@@ -42,7 +42,7 @@ const SORTS = [
 const PAYS = [
 	{ value: "0", label: "Any pay" },
 	{ value: "5", label: "$5 or more" },
-	{ value: "25", label: "$25 or more" },
+	{ value: "15", label: "$15 or more" },
 ];
 /** "Remote" or the gig's city. */
 const placeOf = (g: GigView) => (g.remote ? "Remote" : g.city);
@@ -280,9 +280,9 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 	const myScore = me.data?.reputation?.byType[gig.type] ?? null;
 	const locked = loggedIn && gig.eligibility && !gig.eligibility.allowed && !gig.claimedByMe;
 	const chips = requirementChips(gig.requirements);
-	const raisedFrom = gig.priceHistory[0]
-		? (earn * BigInt(gig.priceHistory[0].bounty)) / BigInt(gig.bounty)
-		: null;
+	const was = gig.priceHistory[0] ? (earn * BigInt(gig.priceHistory[0].bounty)) / BigInt(gig.bounty) : null;
+	// Only a real raise: rounding to cents must show a lower old price.
+	const raisedFrom = was !== null && formatMoney(was) !== formatMoney(earn) && was < earn ? was : null;
 	const action = !loggedIn
 		? wallet.mode === "demo"
 			? "Pick an account to start"
@@ -337,7 +337,7 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 			<div className="flex flex-wrap items-center justify-between gap-4 sm:pl-14">
 				{myScore !== null && myScore > 0 && (
 					<span className="type-label text-muted-foreground">
-						You: {TYPE_WORD[gig.type]} · {standing(myScore)}
+						Your {TYPE_WORD[gig.type].toLowerCase()} record: {standing(myScore)}
 					</span>
 				)}
 				{loggedIn && gig.eligibility ? (

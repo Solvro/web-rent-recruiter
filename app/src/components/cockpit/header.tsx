@@ -33,10 +33,10 @@ export function RoleHeader({
 	onDetails: () => void;
 }) {
 	return (
-		<header className="space-y-1.5 py-4">
+		<header className="relative z-10 space-y-1.5 bg-background py-4 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-4 after:h-4 after:bg-gradient-to-b after:from-background after:to-transparent">
 			{/* Desktop: title · status on one line. Phone: the title, then the status, so neither is squeezed. */}
 			<div className="flex items-baseline gap-3">
-				<p className="min-w-0 flex-1 truncate sm:whitespace-normal">
+				<p className="min-w-0 flex-1 truncate" title={role.title}>
 					<button type="button" onClick={onDetails} className="inline text-left hover:text-primary">
 						{role.title}
 					</button>
@@ -62,7 +62,9 @@ export function RoleHeader({
 				)}
 			</div>
 			{status && (
-				<p className="hidden type-label text-muted-foreground sm:block">{nextLine(status.pipeline)}</p>
+				<p className="hidden type-label text-muted-foreground sm:block">
+					{nextLine(status.pipeline, status.waitingOn)}
+				</p>
 			)}
 		</header>
 	);
@@ -70,8 +72,7 @@ export function RoleHeader({
 
 function StatusText({ status, className }: { status: RoleStatus | undefined; className?: string }) {
 	// Something waiting for the company always wins over "sourcing…": the header never hides a decision.
-	const asking =
-		status?.waitingOn.some((w) => w.who === "company") && !/^waiting for you/i.test(status.now.text);
+	const asking = status?.waitingOn.some((w) => w.who === "company");
 	return (
 		<span
 			className={cn(
@@ -101,31 +102,40 @@ function CandidatesButton() {
 	);
 }
 
+const WORK: Record<string, string> = {
+	sourcing: "profile",
+	screening: "screening call",
+	language: "language check",
+	reference: "reference check",
+	show_up_fee: "interview show-up",
+	appeal: "appeal",
+};
+
 /** Who got what, for which gig, with the receipt. */
 function Ledger({ roleId }: { roleId: string }) {
 	const ledger = usePayments(roleId, true);
 	if (!ledger.data?.length) return null;
 	return (
-		<ul className="max-h-56 space-y-1.5 overflow-y-auto border-t pt-3 type-label">
+		<ul className="max-h-64 space-y-3 overflow-y-auto border-t pt-3 type-label">
 			{ledger.data.map((p) => {
 				// The line at its plan price (what the company paid for it); the recruiter's share and fee in the detail.
 				const price = BigInt(p.bounty ?? BigInt(p.amount) + BigInt(p.held) + BigInt(p.fees));
 				const c = inCents(p.amount, p.held);
 				return (
-					<li key={p.deliverableId} className="flex items-baseline justify-between gap-3">
-						<span className="min-w-0 truncate">
-							{p.recruiter} <span className="text-muted-foreground">· {p.kind.replace("_", " ")}</span>
-						</span>
-						<span className="shrink-0 text-right tabular">
-							{formatMoney(price)}
-							<span className="block text-muted-foreground">
-								{formatMoney(c.now)} to {p.recruiter.split(" ")[0]}
-								{BigInt(p.held) > 0n &&
-									` · ${formatMoney(c.later)} ${p.heldStatus === "HELD" ? "after the interview" : p.heldStatus === "RELEASED" ? "paid after the interview" : "returned to you"}`}
-								{BigInt(p.fees) > 0n && ` · ${formatMoney(p.fees)} fee`}
+					<li key={p.deliverableId} className="space-y-0.5">
+						<p className="flex items-baseline justify-between gap-3">
+							<span className="min-w-0 truncate">
+								{p.recruiter} <span className="text-muted-foreground">· {WORK[p.kind] ?? "task"}</span>
 							</span>
-							{p.signature && <Receipt signature={p.signature} />}
-						</span>
+							<span className="shrink-0 tabular">{formatMoney(price)}</span>
+						</p>
+						<p className="text-muted-foreground">
+							{formatMoney(c.now)} to {p.recruiter.split(" ")[0]}
+							{BigInt(p.held) > 0n &&
+								` · ${formatMoney(c.later)} ${p.heldStatus === "HELD" ? "after the interview" : p.heldStatus === "RELEASED" ? "paid after the interview" : "returned to you"}`}
+							{BigInt(p.fees) > 0n && ` · ${formatMoney(p.fees)} fee`}
+							{p.signature && <Receipt signature={p.signature} className="ml-2" />}
+						</p>
 					</li>
 				);
 			})}
@@ -168,7 +178,7 @@ function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"
 			<PopoverTrigger className="shrink-0 type-label text-muted-foreground tabular hover:text-foreground">
 				{formatMoney(spent)} of {formatMoney(budget.deposited)} spent
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-80 space-y-4">
+			<PopoverContent align="end" className="w-[min(26rem,calc(100vw-2rem))] space-y-4">
 				<dl className="space-y-2.5">
 					{rows.map(([k, v, note]) => (
 						<div key={k}>
@@ -230,7 +240,7 @@ function Progress({ p }: { p: RoleStatus["pipeline"] }) {
 						["Profiles accepted", `${p.sourcingAccepted} of ${p.sourcingSlots} planned`],
 						["Candidates who confirmed interest", p.confirmed],
 						["Screening calls done", `${p.screeningDone} of ${p.screeningSlots}`],
-						["Language checks done", p.languageDone],
+						...(p.languageDone ? [["Language checks done", p.languageDone] as [string, number]] : []),
 						["References done", p.referenceDone],
 						["On your shortlist", p.shortlisted],
 					].map(([k, v]) => (

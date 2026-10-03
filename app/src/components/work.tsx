@@ -6,7 +6,7 @@ import { type AgentReview, type Criteria, type DeliverableView, explorerTxUrl } 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Chip, Countdown, Disclosure } from "@/components/bits";
+import { Chip, Disclosure } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
 import { API_MOCK } from "@/lib/env";
 import { errorMessage } from "@/lib/errors";
@@ -303,9 +303,7 @@ export function SendLink({
 				<p className="rounded-2xl bg-card p-3 text-foreground">{message}</p>
 			</Disclosure>
 			<p className="type-label">
-				{who} has until {until} to answer
-				<Countdown deadline={c.expiresAt} prefix=" ·" suffix="left" />. If they don't, the profile isn't
-				accepted
+				{who} has until {until} to answer. If they don't, the profile isn't accepted
 				{d.deposit?.status === "HELD" ? " and your deposit stays with the company" : ""}.{" "}
 				<button
 					type="button"

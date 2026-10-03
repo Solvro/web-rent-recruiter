@@ -6,6 +6,7 @@ import { Avatar } from "@/components/person";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { API_MOCK } from "@/lib/env";
 import { appCodeOf, errorMessage } from "@/lib/errors";
 import { firstName } from "@/lib/format";
 import {
@@ -51,7 +52,9 @@ function Confirm({ token }: { token: string }) {
 					<Loader2 className="mx-auto size-6 animate-spin text-muted-foreground" />
 				) : view.isError || !v ? (
 					<p className="text-center text-muted-foreground">
-						This link isn't valid anymore. If you were expecting it, ask the recruiter for a new one.
+						We couldn't find this link. Check that you opened the whole link, or ask the recruiter who sent it
+						for a new one.
+						{API_MOCK && " (Demo links only open in the browser they were made in.)"}
 					</p>
 				) : v.kind === "call" ? (
 					<CallCheck view={v} token={token} />
@@ -165,6 +168,7 @@ function Interest({ view, token }: { view: CandidateConfirmView; token: string }
 	const [availability, setAvailability] = useState("");
 	const [salary, setSalary] = useState("");
 	const [contact, setContact] = useState("");
+	const [sure, setSure] = useState(false);
 	const recruiter = firstName(view.recruiterName);
 
 	if (status === "EXPIRED")
@@ -180,7 +184,12 @@ function Interest({ view, token }: { view: CandidateConfirmView; token: string }
 			/>
 		);
 	if (status === "YES")
-		return <Done title="Thank you" line="A recruiter will be in touch to set up a call." />;
+		return (
+			<Done
+				title="Thank you"
+				line={`You said yes to a call about the ${view.roleTitle} role at ${view.companyDescriptor}. A recruiter will contact you${contact.trim() ? ` at ${contact.trim()}` : ""} within two working days to set it up. Changed your mind? Just tell them on the call.`}
+			/>
+		);
 	if (status === "NO")
 		return (
 			<Done
@@ -202,6 +211,10 @@ function Interest({ view, token }: { view: CandidateConfirmView; token: string }
 		});
 	};
 	const facts = [view.location, view.salaryLabel].filter(Boolean).join(" · ");
+	// The role's deal-breakers, as the company wrote them, so nobody says yes without knowing.
+	const notAFit = ((view as { dealBreakers?: string[] }).dealBreakers ?? []).map(
+		(t) => t[0]?.toLowerCase() + t.slice(1),
+	);
 
 	return (
 		<>
@@ -213,6 +226,11 @@ function Interest({ view, token }: { view: CandidateConfirmView; token: string }
 				<p>{view.companyDescriptor}</p>
 				{view.summary && <p className="text-muted-foreground">{view.summary}</p>}
 				{facts && <p className="text-muted-foreground">{facts}</p>}
+				{notAFit.length > 0 && (
+					<p className="text-muted-foreground">
+						<span className="text-foreground">Not a fit if:</span> {notAFit.join("; ")}.
+					</p>
+				)}
 			</div>
 			<div className="space-y-1">
 				<p>Are you open to a 30-minute call about it?</p>
@@ -247,16 +265,24 @@ function Interest({ view, token }: { view: CandidateConfirmView; token: string }
 					{respond.isPending && answer === "yes" && <Loader2 className="animate-spin" />}
 					Yes, I'm open to a conversation
 				</Button>
-				<Button
-					size="lg"
-					variant="ghost"
-					className="h-12 w-full"
-					onClick={() => send("no")}
-					disabled={respond.isPending}
-				>
-					{respond.isPending && answer === "no" && <Loader2 className="animate-spin" />}
-					Not now
-				</Button>
+				{sure ? (
+					<div className="space-y-3 rounded-3xl bg-muted p-4 text-center">
+						<p className="text-muted-foreground">Nobody will contact you about this role. Sure?</p>
+						<div className="flex justify-center gap-2">
+							<Button variant="outline" onClick={() => send("no")} disabled={respond.isPending}>
+								{respond.isPending && answer === "no" && <Loader2 className="animate-spin" />}
+								Yes, not interested
+							</Button>
+							<Button variant="ghost" onClick={() => setSure(false)}>
+								Go back
+							</Button>
+						</div>
+					</div>
+				) : (
+					<Button size="lg" variant="ghost" className="h-12 w-full" onClick={() => setSure(true)}>
+						Not now
+					</Button>
+				)}
 				{respond.isError && !expired && (
 					<p className="text-center text-destructive">{errorMessage(respond.error)}</p>
 				)}

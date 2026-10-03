@@ -497,9 +497,10 @@ check(
 );
 {
 	// Piotr's rejection forfeited the sourcer's bond into the role: it's shown apart from the company's deposit.
+	// The bond event and the vault's total_deposited land in separate updates: wait until both are in.
 	const b = await waitFor("Piotr's forfeited bond recorded", async () => {
 		const x = (await asCompany.roles.byId.query({ id: roleId })).budget;
-		return BigInt(x.bondsForfeited ?? "0") > 0n ? x : null;
+		return BigInt(x.bondsForfeited ?? "0") > 0n && BigInt(x.deposited) === DEPOSIT ? x : null;
 	});
 	check(
 		BigInt(b.deposited) === DEPOSIT,

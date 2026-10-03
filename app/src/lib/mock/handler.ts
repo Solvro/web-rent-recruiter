@@ -207,7 +207,7 @@ function pipelineSummary(r: MockRole) {
 	return `${subs.length} submitted, ${accepted} accepted, ${pending} waiting for your review. Average agent score ${avg}. ${advice}`;
 }
 
-/** Recruiters' one-line bios (me.upsert bio), kept per tab like the rest of the mock; demo people have one. */
+/** Recruiters' one-line bios (me.upsert bio), kept with the rest of the mock; demo people have one. */
 const BIO_KEY = "scout.mock-bios.v1";
 const SEEDED_BIOS: Record<string, string> = {
 	"Ola Wiśniewska":
@@ -217,14 +217,14 @@ const SEEDED_BIOS: Record<string, string> = {
 };
 function bios(): Record<string, string> {
 	try {
-		return JSON.parse(sessionStorage.getItem(BIO_KEY) ?? "{}") as Record<string, string>;
+		return JSON.parse(localStorage.getItem(BIO_KEY) ?? "{}") as Record<string, string>;
 	} catch {
 		return {};
 	}
 }
 function setBio(wallet: string, bio: string) {
 	try {
-		sessionStorage.setItem(BIO_KEY, JSON.stringify({ ...bios(), [wallet]: bio.trim() }));
+		localStorage.setItem(BIO_KEY, JSON.stringify({ ...bios(), [wallet]: bio.trim() }));
 	} catch {
 		// private mode
 	}

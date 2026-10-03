@@ -10,7 +10,8 @@
 		"db:migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
-		"seed": "tsx --env-file-if-exists=.env src/scripts/seed.ts"
+		"seed": "tsx --env-file-if-exists=.env src/scripts/seed.ts",
+		"demo:prepare": "tsx --env-file-if-exists=.env src/scripts/demo-prepare.ts"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^4.0.71",
