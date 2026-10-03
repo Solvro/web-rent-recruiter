@@ -1,0 +1,12 @@
+{
+	"cluster": "devnet",
+	"rpcUrl": "https://api.devnet.solana.com",
+	"programId": "CmdM2WPuZ6ZrwDXP7DtzfBfR4LMocHs9tqNpGB7JCTo2",
+	"usdcMint": "2bK9qWsavQ7KYRPgaurwkfcaVAQkDFx4UA3dd7fVi7vm",
+	"usdcDecimals": 6,
+	"config": "GWMroNwxZ8CwitvSau8ioJx3c7uVm5LJVGYkj6u7YTKW",
+	"treasury": "8VJdBDpp55sENHDpQjJaGdWXBFQwnZ28KZ6cf5SQBv1f",
+	"treasuryTokenAccount": "9aTd1MP5Y5MVL847GN8ZHEBz7bY2mwdWHCZa99jxEbcL",
+	"feeBps": 1000,
+	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+}

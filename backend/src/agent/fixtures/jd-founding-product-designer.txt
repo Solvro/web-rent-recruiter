@@ -1,0 +1,19 @@
+Founding Product Designer
+
+Fieldnote is a seed-stage startup (8 people, backed by Point Nine) building the research repository for B2B product teams. We are hiring our first designer to own the product experience end to end.
+
+Remote across Europe, with overlap with CET working hours. We meet in person once a quarter in Berlin.
+
+You have
+- 6+ years designing B2B SaaS products, with shipped work you can walk us through
+- Strong interaction design and information architecture for data-heavy interfaces
+- Hands-on prototyping in Figma, comfortable working directly with engineers on details
+- Experience running user research and turning it into product decisions
+- Excellent written English
+
+Bonus points
+- Built or maintained a design system from scratch
+- Front-end skills (HTML/CSS, React)
+- Early-stage startup experience as the first or second designer
+
+Compensation: €75k–95k per year plus meaningful equity.

@@ -1,0 +1,5 @@
+{
+	"name": "Marta Kowalczyk",
+	"profileUrl": "https://www.linkedin.com/in/marta-kowalczyk-rust",
+	"notes": "Spoke with Marta on Tuesday. 8 years as a backend engineer, the last 4 in Rust. Since 2023 she has been a protocol engineer at a Solana DeFi lending protocol (Kraków): wrote and shipped three Anchor programs to mainnet, including the liquidation and fee-split logic, and works daily with SPL Token and Token-2022, PDAs and CPIs. Before that she built a high-throughput market data backend at a trading firm (Rust + Kafka, ~200k msgs/s). Fluent English, native Polish. Based in Warsaw, happy with 2 office days. Polish citizen, no sponsorship needed. Looking for a move because her current team is going fully remote and she wants more mentoring scope. Open to 34-37k PLN B2B. Interested in Kestrel, available with 1 month notice."
+}

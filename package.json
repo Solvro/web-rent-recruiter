@@ -1,0 +1,47 @@
+{
+  "license": "ISC",
+  "scripts": {
+    "build": "anchor build && pnpm codegen",
+    "codegen": "node scripts/codama.mjs",
+    "dev": "pnpm --parallel --filter app --filter @scout/backend dev",
+    "localnet": "anchor localnet",
+    "deploy:devnet": "anchor deploy --provider.cluster devnet",
+    "dev:app": "pnpm --filter app dev",
+    "dev:backend": "pnpm --filter @scout/backend dev",
+    "check": "biome check",
+    "check:fix": "biome check --write",
+    "typecheck": "pnpm -r typecheck",
+    "setup:localnet": "CLUSTER=localnet tsx scripts/setup.mts && CLUSTER=localnet tsx scripts/fund.mts",
+    "setup:devnet": "CLUSTER=devnet tsx scripts/setup.mts && CLUSTER=devnet tsx scripts/fund.mts",
+    "fund": "tsx scripts/fund.mts",
+    "reset:demo": "tsx scripts/reset-demo.mts",
+    "test:program": "anchor test",
+    "e2e": "tsx scripts/e2e.mts",
+    "seed": "pnpm --filter @scout/backend seed",
+    "db:up": "docker compose up -d postgres"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "^1.1.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@codama/nodes-from-anchor": "^1.5.6",
+    "@codama/renderers-js": "^2.5.0",
+    "@solana-program/system": "^0.15.0",
+    "@solana-program/token": "^0.17.0",
+    "@solana/kit": "^8.4.0",
+    "@solana/spl-token": "^0.4.15",
+    "@types/bn.js": "^5.1.0",
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^9.0.0",
+    "chai": "^4.3.4",
+    "codama": "^1.11.0",
+    "mocha": "^9.0.3",
+    "prettier": "^2.6.2",
+    "ts-mocha": "^10.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3"
+  },
+  "name": "scout",
+  "private": true
+}

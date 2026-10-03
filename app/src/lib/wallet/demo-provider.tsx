@@ -1,0 +1,105 @@
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { setApiWallet } from "../api";
+import { API_MOCK, DEMO_SECRETS } from "../env";
+import { PERSONAS, type PersonaId } from "../personas";
+import { WalletContext, type WalletContextValue } from "./context";
+import { keyPairFromSecret, signWithKeyPair } from "./sign";
+
+const STORAGE_KEY = "scout.persona";
+
+type Loaded = Partial<Record<PersonaId, { keyPair: CryptoKeyPair; address: string }>>;
+
+function readStoredPersona(): PersonaId | null {
+	try {
+		const v = localStorage.getItem(STORAGE_KEY);
+		return v && v in PERSONAS ? (v as PersonaId) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Persona switcher for the live demo: Company and Scout (plus a second scout for the
+ * duplicate-candidate step). With the mock API, personas use fixed mock addresses and
+ * signing is a no-op. Against the real API, each persona is a devnet keypair from .env.
+ */
+export function DemoWalletProvider({ children }: { children: ReactNode }) {
+	const [personaId, setPersonaId] = useState<PersonaId | null>(readStoredPersona);
+	const [keys, setKeys] = useState<Loaded>({});
+	const [ready, setReady] = useState(API_MOCK);
+
+	useEffect(() => {
+		if (API_MOCK) return;
+		let cancelled = false;
+		(async () => {
+			const loaded: Loaded = {};
+			for (const id of Object.keys(PERSONAS) as PersonaId[]) {
+				const secret = DEMO_SECRETS[id];
+				if (!secret) continue;
+				try {
+					loaded[id] = await keyPairFromSecret(secret);
+				} catch (e) {
+					console.error(`Invalid VITE_DEMO_${id.toUpperCase()}_SECRET`, e);
+				}
+			}
+			if (!cancelled) {
+				setKeys(loaded);
+				setReady(true);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const personas = useMemo(
+		() => Object.values(PERSONAS).filter((p) => API_MOCK || p.id !== "scout2" || DEMO_SECRETS.scout2),
+		[],
+	);
+	const persona = personaId ? PERSONAS[personaId] : null;
+	const address = persona ? (API_MOCK ? persona.mockAddress : (keys[persona.id]?.address ?? null)) : null;
+	const missingKeyFor = !API_MOCK && ready && persona && !keys[persona.id] ? persona.id : null;
+
+	// Set synchronously so queries issued during this render already carry the header.
+	setApiWallet(address);
+
+	const selectPersona = useCallback((id: PersonaId) => {
+		setPersonaId(id);
+		try {
+			localStorage.setItem(STORAGE_KEY, id);
+		} catch {
+			// private mode
+		}
+	}, []);
+
+	const value = useMemo<WalletContextValue>(
+		() => ({
+			mode: "demo",
+			ready,
+			address,
+			label: persona?.displayName ?? null,
+			login: () => selectPersona("company"),
+			logout: () => {
+				setPersonaId(null);
+				try {
+					localStorage.removeItem(STORAGE_KEY);
+				} catch {
+					// private mode
+				}
+			},
+			signTransaction: async (tx) => {
+				if (API_MOCK) return tx;
+				const key = persona ? keys[persona.id] : undefined;
+				if (!key) throw new Error("No demo keypair configured for this persona");
+				return signWithKeyPair(tx, key.keyPair);
+			},
+			persona,
+			personas,
+			selectPersona,
+			missingKeyFor,
+		}),
+		[ready, address, persona, personas, keys, selectPersona, missingKeyFor],
+	);
+
+	return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+}

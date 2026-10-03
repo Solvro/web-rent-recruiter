@@ -1,0 +1,12 @@
+{
+	"cluster": "localnet",
+	"rpcUrl": "http://127.0.0.1:8899",
+	"programId": "CmdM2WPuZ6ZrwDXP7DtzfBfR4LMocHs9tqNpGB7JCTo2",
+	"usdcMint": "AEsKxbpGfKoJtQP9s8TJBbaq77ekRS4jW4649Gkzv91J",
+	"usdcDecimals": 6,
+	"config": "GWMroNwxZ8CwitvSau8ioJx3c7uVm5LJVGYkj6u7YTKW",
+	"treasury": "8VJdBDpp55sENHDpQjJaGdWXBFQwnZ28KZ6cf5SQBv1f",
+	"treasuryTokenAccount": "8XQeP8ZykPSvhENBjyWJpNYg15v31CsYkY96MEo4sPuS",
+	"feeBps": 1000,
+	"tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+}

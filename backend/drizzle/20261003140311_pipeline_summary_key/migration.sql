@@ -1,0 +1,1 @@
+ALTER TABLE "roles" ADD COLUMN "pipelineSummaryKey" text;

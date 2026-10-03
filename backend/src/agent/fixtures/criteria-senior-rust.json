@@ -1,0 +1,19 @@
+{
+	"mustHave": [
+		{ "id": "rust-3-years", "label": "3+ years of production Rust", "weight": 5 },
+		{ "id": "solana-mainnet-programs", "label": "Shipped Solana programs to mainnet", "weight": 5 },
+		{ "id": "spl-token-pdas", "label": "SPL Token / Token-2022 and PDAs", "weight": 4 },
+		{ "id": "distributed-systems", "label": "Distributed or high-throughput backends", "weight": 3 },
+		{ "id": "fluent-english", "label": "Fluent English", "weight": 3 }
+	],
+	"niceToHave": [
+		{ "id": "security-audits", "label": "Security audit experience", "weight": 2 },
+		{ "id": "payments-fintech", "label": "Payments or fintech background", "weight": 2 },
+		{ "id": "polish", "label": "Speaks Polish", "weight": 1 }
+	],
+	"seniority": "SENIOR",
+	"location": { "mode": "HYBRID", "places": ["Warsaw"] },
+	"salaryRange": { "min": 30000, "max": 38000, "currency": "PLN", "period": "MONTH" },
+	"languages": ["English"],
+	"dealBreakers": [{ "id": "needs-visa-sponsorship", "label": "Needs visa sponsorship", "weight": 5 }]
+}

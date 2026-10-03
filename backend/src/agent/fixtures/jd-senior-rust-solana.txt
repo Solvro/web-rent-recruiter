@@ -1,0 +1,25 @@
+Senior Rust Engineer (Solana)
+
+Kestrel Labs builds settlement infrastructure for European fintechs on Solana. We move stablecoin payouts for marketplaces and payroll providers, and we are growing the protocol team from 4 to 7 engineers.
+
+Location: Warsaw, hybrid (2 days a week in our office near Rondo ONZ). We cannot sponsor work visas for this role; you need the right to work in the EU.
+
+What you'll do
+- Design and ship on-chain programs (Anchor) for escrow, batched payouts and fee splitting
+- Own performance and reliability of our Rust indexer and transaction relayer
+- Review code and mentor two mid-level engineers
+
+Requirements
+- 5+ years of professional software engineering, at least 3 in Rust
+- Shipped Solana programs to mainnet (Anchor or native)
+- Solid understanding of SPL Token / Token-2022 and PDAs
+- Experience with distributed systems or high-throughput backends
+- Fluent English
+
+Nice to have
+- Security audits or formal verification experience
+- Payments, fintech or stablecoin background
+- Contributions to open-source Solana tooling
+- Polish
+
+Salary: 30 000 – 38 000 PLN / month on B2B, plus token options.
