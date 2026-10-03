@@ -350,7 +350,7 @@ function CallSection({ call }: { call: CallDetail }) {
 						: "Not accepted"}
 				{call.score !== null && <span className="text-muted-foreground"> · notes {call.score}</span>}
 				{call.candidateFit != null && (
-					<span className="text-muted-foreground"> · fit {call.candidateFit}</span>
+					<span className="text-muted-foreground"> · fit after the call {call.candidateFit}</span>
 				)}
 				{call.assessedLevel && (
 					<span className="ml-1 rounded-full bg-accent px-2 py-0.5 text-accent-foreground">

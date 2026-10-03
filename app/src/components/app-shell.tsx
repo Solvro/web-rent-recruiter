@@ -9,7 +9,7 @@ import { Receipt, type ReceiptDetails } from "@/components/receipt";
 import { Button } from "@/components/ui/button";
 import { candidateOutcome, isWithdrawn } from "@/components/work";
 import { useOffline } from "@/lib/connection";
-import { AUTH_MODE } from "@/lib/env";
+import { API_MOCK } from "@/lib/env";
 import { dateLabel, firstName, formatMoney, personInTitle } from "@/lib/format";
 import { useMyWork } from "@/lib/gigs/api";
 import type { DeliverableView } from "@/lib/gigs/schemas";
@@ -252,7 +252,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 				<div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4 sm:gap-8 sm:px-6">
 					<Link to="/" aria-label="Home" className="flex items-center gap-2">
 						<Brand />
-						{AUTH_MODE === "demo" && <Chip>Demo</Chip>}
+						{/* Simulated data must never pass for the real thing: live shows no chip. */}
+						{API_MOCK && <Chip>Demo data</Chip>}
 					</Link>
 					<nav className="flex items-center gap-1">
 						{nav.map((item) => (

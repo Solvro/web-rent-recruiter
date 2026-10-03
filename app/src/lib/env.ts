@@ -56,3 +56,13 @@ export function switchAuthMode(mode: AuthMode) {
 	}
 	location.assign(`${location.pathname}?auth=${mode}`);
 }
+
+/** Flip between simulated and live data from the UI (the account menu). Remembered, like "?data=". */
+export function switchDataMode(mode: "mock" | "live") {
+	try {
+		localStorage.setItem("scout.data", mode);
+	} catch {
+		// private mode: the URL parameter still applies to this load
+	}
+	location.assign(`${location.pathname}?data=${mode}`);
+}

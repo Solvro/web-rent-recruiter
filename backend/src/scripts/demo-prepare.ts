@@ -249,7 +249,20 @@ async function runCall(gig: GigView, extra: (prefill: Record<string, string>) =>
 				} as const)
 			: ({ type: "SCREENING_CALL", answers, recommendation: "ADVANCE" } as const);
 	const id = await deliver(ola, olaKey, gig.id, { ...base, ...extra(prefill) } as Deliverable);
-	return waitFor(`the agent's decision on "${gig.title}"`, async () => {
+	const first = await waitFor(`the agent's decision on "${gig.title}"`, async () => {
+		const d = (await ola.gigs.mine.query()).deliverables.find((x) => x.id === id);
+		return d && (d.status !== "PENDING" || d.review?.verdict === "ESCALATE") ? d : null;
+	});
+	if (first.status !== "PENDING") return first;
+	// The agent asked Hanna about it (its review can be cautious): she reads the notes and accepts, as she would.
+	step(`  the agent asked Hanna about "${gig.title}" (${first.review?.reasons[0] ?? ""}); Hanna accepts it`);
+	const ok = await hanna.deliverables.decide.mutate({
+		id,
+		decision: "accept",
+		reasonText: "Read the notes and the transcript; this is fine.",
+	});
+	await signAndSend(hanna, hannaKey, ok.unsignedTx);
+	return waitFor(`"${gig.title}" paid`, async () => {
 		const d = (await ola.gigs.mine.query()).deliverables.find((x) => x.id === id);
 		return d && d.status !== "PENDING" ? d : null;
 	});

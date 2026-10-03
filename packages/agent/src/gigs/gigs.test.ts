@@ -109,7 +109,7 @@ describe("decideCall", () => {
 		const r = decideCall(deliverable, lazy, 0.1);
 		expect(r.verdict).toBe("REJECT");
 		expect(r.missing).toEqual(["q1", "q2", "q3"]);
-		expect(r.reasons.join(" ")).toMatch(/Generic answers/);
+		expect(r.reasons.join(" ")).toMatch(/no candidate-specific facts/);
 		expect(r.reasons.join(" ")).toMatch(/recommendation \(ADVANCE\)/);
 	});
 

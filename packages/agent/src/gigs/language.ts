@@ -53,27 +53,27 @@ export function languageScript(input: {
 	const questions: ScriptQuestion[] = [
 		{
 			id: "lang-intro",
-			question: `In ${language}: ask them to introduce themselves and what they do today.`,
+			question: `(In ${language}) Could you introduce yourself and tell me what you do today?`,
 			whatGoodLooksLike: `A natural self-introduction in ${language}. For ${level}: ${bar}`,
 		},
 		{
 			id: "lang-project",
-			question: `Ask them to describe a recent project they're proud of, including their own part in it.`,
+			question: `Could you describe a recent project you're proud of, and what your own part in it was?`,
 			whatGoodLooksLike: `A connected story with past tenses and some detail (what, why, result). For ${level}: ${bar}`,
 		},
 		{
 			id: "lang-explain",
-			question: `Ask them to explain a key concept from their own work (something they built or rely on daily) to someone non-technical.`,
+			question: `Could you explain something from your own work, something you built or rely on every day, to someone non-technical?`,
 			whatGoodLooksLike: `A clear explanation that reformulates when needed, not just jargon. For ${level}: ${bar}`,
 		},
 		{
 			id: "lang-scenario",
-			question: `Give a workplace scenario: a colleague disagrees with their technical decision in a meeting. How do they respond?`,
+			question: `Imagine a colleague disagrees with your technical decision in a meeting. How would you respond?`,
 			whatGoodLooksLike: `Handles a hypothetical (conditionals, polite disagreement) without switching to English. For ${level}: ${bar}`,
 		},
 		{
 			id: "lang-question",
-			question: `Ask them what they'd like to know about the role or team, and answer briefly.`,
+			question: `What would you like to know about the role or the team?`,
 			whatGoodLooksLike: `Forms their own questions and follows the answer. For ${level}: ${bar}`,
 		},
 	];

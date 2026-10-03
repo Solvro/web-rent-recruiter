@@ -93,6 +93,8 @@ export function ChipEditor({
 const POSITIVE: [RegExp, string][] = [
 	[/^not open to\b/i, "Open to"],
 	[/^unwilling to\b/i, "Willing to"],
+	[/^unable to\b/i, "Able to"],
+	[/^only open to\b/i, "Not limited to"],
 	[/^can't\b|^cannot\b/i, "Can"],
 	[/^needs\b/i, "Doesn't need"],
 	[/^requires\b/i, "Doesn't require"],

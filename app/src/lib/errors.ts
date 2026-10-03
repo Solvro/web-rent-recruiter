@@ -32,6 +32,11 @@ const FRIENDLY: Record<string, string> = {
 	SAME_ACCOUNT: "That's your own account.",
 	TOO_MANY_REQUESTS: "We're a little busy. Please try again in a moment.",
 };
+/** A failed payment step (appCode TX_FAILED) names the rule it hit in details.programError. */
+const PROGRAM_FRIENDLY: Record<string, string> = {
+	OpenTasks: "Some tasks on this role are still open, so it can't close yet. Try again in a minute.",
+	InsufficientFunds: "Not enough balance for this amount.",
+};
 const TECHNICAL =
 	/solana|blockchain|on-?chain|crypto|wallet|usdc|token|vault|program|transaction|signature|explorer|devnet|\bSOL\b|\bsign|keypair|anchor|lamport|codec|rpc|trpc|uuid|zod/i;
 const GENERIC = "Something went wrong. Please try again.";
@@ -40,6 +45,8 @@ const GENERIC = "Something went wrong. Please try again.";
 export function errorMessage(e: unknown) {
 	const data = errorData(e);
 	if (data?.appCode && FRIENDLY[data.appCode]) return FRIENDLY[data.appCode];
+	const rule = data?.details?.programError;
+	if (typeof rule === "string" && PROGRAM_FRIENDLY[rule]) return PROGRAM_FRIENDLY[rule];
 	// Validation failures (ours or the server's) must never surface raw JSON.
 	if (e instanceof z.ZodError || data?.appCode === "VALIDATION") return GENERIC;
 	const message = e instanceof Error ? e.message : "";

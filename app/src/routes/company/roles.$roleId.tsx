@@ -114,7 +114,7 @@ function Cockpit({ roleId }: { roleId: string }) {
 								</p>
 							</Disclosure>
 						)}
-						<MoneyRecord items={items} />
+						<MoneyRecord items={items} role={r} />
 						{!closed && <ReviewerSettings roleId={r.id} />}
 						{r.status === "OPEN" && <CloseRole role={r} />}
 					</DialogContent>

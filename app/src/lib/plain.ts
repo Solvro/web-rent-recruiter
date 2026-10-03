@@ -25,6 +25,11 @@ export function plain(text: string): string {
 		// " · 51" after a name is a fit score: say so.
 		.replace(/('s profile|profile) · (\d{1,3})\b/g, "$1 · fit $2")
 		.replace(/\bcheck out\b/g, "are solid")
+		// Backend log shorthand: "delivered X → scored 90 → waiting for …" → "delivered X · fit 90 · waiting for …"
+		.replace(/\s*→\s*scored (\d{1,3})\s*→\s*/g, " · fit $1 · ")
+		.replace(/\s*→\s*/g, " · ")
+		// A bare "(96)" after the work it scores repeats the detail line ("…, 96/100"): drop it.
+		.replace(/\s\((\d{1,3})\)(?=[\s.,;]|$)/g, "")
 		// "26/100 PASS", "ACCEPT 96/100" → "26/100", "96/100"
 		.replace(/\b(ADVANCE|MAYBE|PASS|ACCEPT|REJECT|ESCALATE)\s+(\d{1,3}\/100)/g, "$2")
 		.replace(/(\d{1,3}\/100)\s*\(?(ADVANCE|MAYBE|PASS|ACCEPT|REJECT|ESCALATE)\)?/g, "$1")

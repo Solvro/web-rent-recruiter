@@ -63,7 +63,26 @@ Sourcer and screener must be different people (program v3.1 `subject_scout`), sh
 
 ## Before the demo
 
-- `pnpm reset:demo && pnpm seed --reset`, restart the backend.
-- `DEMO_FAST=1` so agent steps take under 5 s: deterministic policy, Jev scoring, and the LLM only for chat and plan text. Short holdback window only in demo mode (default is 14 days).
-- `RECALL_MOCK=1` unless there is a live Meet ready.
-- Keep the backup recording and `?data=mock` ready.
+The morning of, in this order (about 10 minutes, most of it waiting):
+
+1. **Reset.** `pnpm reset:demo && pnpm seed --reset`. This wipes the demo database only (devnet keeps its history) and creates Hanna (Wisła Labs), Ola, Lucía and Andreea with their skills and labelled demo history.
+2. **Restart the backend** with `DEMO_FAST=1` and `RECALL_MOCK=1` (unless a live Meet is ready).
+   - DEMO_FAST makes agent steps take a few seconds and sets the demo windows: a 20-minute review window (the candidate's "yes" must land inside it), a 30-second edit/withdraw grace before the agent reviews, and a **3-hour holdback**, so a role prepared at 08:00 still holds the recruiters' parts at 09:30 and "Came to the interview" is what releases them.
+   - RECALL_MOCK recordings say "Demo recording (simulated)" everywhere and take about 40 seconds.
+3. **Check the money.** Hanna needs at least $800 of devnet USDC and Lucía at least $10 for bonds (`pnpm exec tsx scripts/fund.mts <wallet> --usdc 1000`).
+4. **Prepare the role.** `pnpm demo:prepare` (about 4–5 minutes on devnet). It drives the real flow through the API as the personas, with no database shortcuts:
+   - Hanna creates and funds a $750 role from the example job description;
+   - Lucía sources Karolina (and Piotr, whom the agent rejects);
+   - Karolina confirms on her /c page;
+   - Ola runs the screening, the English language check and the reference with the notetaker;
+   - it stops at "Shortlist ready, waiting for Invite" and prints the role URL.
+
+   If the agent asks Hanna about a call (its review can be cautious), the script accepts it as Hanna and says so. Re-running is safe: every run makes a new role.
+5. **Open the tabs** (signed in as each persona, `?data=live&auth=demo`):
+   - Hanna: the role URL the script printed (cockpit, candidate drawer, payments in Details);
+   - Ola: `/scout/submissions` (earnings, the three calls) and `/r/ola-wisniewska`;
+   - Lucía: `/scout/submissions` (Karolina paid, Piotr rejected with the bond kept);
+   - a spare tab on the gig board, and Solscan for the role vault.
+6. **On stage:** Invite → Came to the interview (releases Ola's and Lucía's held parts in one transaction), then show the thread and the ledger.
+
+Keep the backup recording and `?data=mock` ready.

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { API_MOCK, PRIVY_AVAILABLE, switchAuthMode } from "@/lib/env";
+import { API_MOCK, PRIVY_AVAILABLE, switchAuthMode, switchDataMode } from "@/lib/env";
 import { errorMessage } from "@/lib/errors";
 import { resetMockData } from "@/lib/mock/store";
 import { PERSONAS, type PersonaId, rememberPersona } from "@/lib/personas";
@@ -102,7 +102,10 @@ export function AccountMenu() {
 						))}
 					</DropdownMenuGroup>
 				)}
-				{wallet.mode === "demo" && (PRIVY_AVAILABLE || API_MOCK) && <DropdownMenuSeparator />}
+				<DropdownMenuSeparator />
+				<DropdownMenuItem onClick={() => switchDataMode(API_MOCK ? "live" : "mock")}>
+					{API_MOCK ? "Use live data" : "Use demo data"}
+				</DropdownMenuItem>
 				{wallet.mode === "demo" && PRIVY_AVAILABLE && (
 					<DropdownMenuItem onClick={() => switchAuthMode("privy")}>
 						Use Google login instead

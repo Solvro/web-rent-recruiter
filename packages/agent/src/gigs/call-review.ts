@@ -205,13 +205,21 @@ function jevQuestions(d: CallDeliverable, mode: Mode, segmentIds: string[]): Rec
 	return q;
 }
 
-function checkFrom(q: ScriptQuestion, answer: string, p: Probs, mode: Mode): QuestionCheck {
+function checkFrom(
+	q: ScriptQuestion,
+	answer: string,
+	p: Probs,
+	mode: Mode,
+	kind: CallDeliverable["script"]["kind"] = "screening",
+): QuestionCheck {
 	const tooShort = mode === "notes" && (words(answer).length < MIN_WORDS || GENERIC.test(answer.trim()));
 	const missing = tooShort || (mode === "transcript" && !answer) || p.addressed < CALL_THRESHOLDS.addressed;
-	const generic = !missing && p.specific < CALL_THRESHOLDS.specific;
+	// A language check judges how they speak, not facts about their work: an analogy or a role-played
+	// disagreement is a good answer there. Only empty or one-word answers count against it.
+	const generic = kind !== "language" && !missing && p.specific < CALL_THRESHOLDS.specific;
 	const contradiction = !missing && p.contradicts >= CALL_THRESHOLDS.contradiction;
 	// Work quality: missing 0, generic 0.35, otherwise 0.6-1.0 by specificity.
-	const quality = missing ? 0 : generic ? 0.35 : 0.6 + 0.4 * p.specific;
+	const quality = missing ? 0 : generic ? 0.35 : kind === "language" ? 0.9 : 0.6 + 0.4 * p.specific;
 	return { questionId: q.id, missing, generic, contradiction, fit: missing ? 0 : p.fit, quality };
 }
 
@@ -293,7 +301,7 @@ export function decideCall(
 			.join("; ");
 	const reasons: string[] = [];
 	if (missing.length) reasons.push(`No usable answer to ${quote(missing)}.`);
-	if (generic.length) reasons.push(`Generic answers without candidate-specific facts: ${quote(generic)}.`);
+	if (generic.length) reasons.push(`The answers to ${quote(generic)} have no candidate-specific facts.`);
 	if (contradictions.length)
 		reasons.push(`Answers contradict the profile or each other: ${quote(contradictions)}.`);
 	if (inconsistent)
@@ -699,7 +707,7 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 	const checks = d.script.questions.map((q) => {
 		const answer = answers.get(q.id) ?? "";
 		const p = probs?.get(q.id) ?? offlineProbs(q, answer);
-		return checkFrom(q, answer, misplaced.has(q.id) ? { ...p, addressed: 0 } : p, mode);
+		return checkFrom(q, answer, misplaced.has(q.id) ? { ...p, addressed: 0 } : p, mode, d.script.kind);
 	});
 	let decided = decideCall(d, checks, consistent, d.script.questions);
 	if (misplaced.size) {

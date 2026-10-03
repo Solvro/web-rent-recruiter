@@ -156,8 +156,15 @@ export function CloseRole({ role }: { role: RoleDetail }) {
 }
 
 /** Deposits and refunds on record: each with a lasting proof of payment. */
-export function MoneyRecord({ items }: { items: ThreadActivity[] }) {
-	const rows = items.filter((i) => i.kind === "BUDGET" && (i.signature || i.solscanUrl));
+export function MoneyRecord({ items, role }: { items: ThreadActivity[]; role?: RoleDetail }) {
+	const logged = items.filter((i) => i.kind === "BUDGET" && (i.signature || i.solscanUrl));
+	// Roles funded before deposits were logged: the amount from the role itself, without a receipt.
+	const deposited = role ? BigInt(role.budget.deposited) : 0n;
+	const rows: Pick<ThreadActivity, "id" | "message" | "signature">[] = logged.length
+		? logged
+		: deposited > 0n
+			? [{ id: "deposit", message: `Set aside ${formatMoney(deposited)} for this role`, signature: null }]
+			: [];
 	if (!rows.length) return null;
 	return (
 		<div className="space-y-1.5">
