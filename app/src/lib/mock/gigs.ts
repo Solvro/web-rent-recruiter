@@ -2671,24 +2671,20 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		need(ctx);
 		const d = g.deliveries.get(String(ctx.input.deliverableId));
 		if (!d?.confirmToken) throw new MockError(404, "NOT_FOUND", "Nothing to resend.");
-		d.confirmExpiresAt = Date.now() + CONFIRM_WINDOW_MS;
-		// A fresh link with the full window again (the old one stops working), like the backend.
+		// A fresh link with the same deadline (the old one stops working), like the backend: the deadline is tied
+		// to the review window and can't move.
 		const old = confirmationOf(d.confirmToken);
-		if (old?.status === "PENDING") {
-			const { token: _t, status: _s, respondedAt: _r, ...card } = old;
-			answerConfirmation(d.confirmToken, "EXPIRED");
-			d.confirmToken = createConfirmation({ ...card, expiresAt: iso(d.confirmExpiresAt) });
-		}
+		if (old?.status !== "PENDING" || Date.parse(old.expiresAt) <= Date.now())
+			throw new MockError(409, "LINK_EXPIRED", "This confirmation isn't pending any more.");
+		const { token: _t, status: _s, respondedAt: _r, ...card } = old;
+		answerConfirmation(d.confirmToken, "EXPIRED");
+		d.confirmToken = createConfirmation(card);
 		const name = d.payload.type === "SOURCING" ? first(d.payload.name) : "the candidate";
-		log(
-			d.roleId,
-			"AGENT_MESSAGE",
-			`I asked ${displayName(d.scout)} to send ${name} the link again and gave ${name} more time.`,
-		);
+		log(d.roleId, "AGENT_MESSAGE", `I made a new link for ${displayName(d.scout)} to send ${name} again.`);
 		save();
 		return {
 			url: ctx.wallet === d.scout ? (confirmationFor(d.confirmToken)?.url ?? null) : null,
-			expiresAt: iso(d.confirmExpiresAt),
+			expiresAt: old.expiresAt,
 		};
 	},
 	"roles.loosenRequirement": (ctx) => {

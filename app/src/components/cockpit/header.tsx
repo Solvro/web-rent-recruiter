@@ -41,7 +41,7 @@ export function RoleHeader({
 						{role.title}
 					</button>
 					<span className="hidden text-muted-foreground sm:inline"> · </span>
-					<StatusText status={status} className="hidden sm:inline" />
+					<StatusText status={status} pending={role.pendingCount} className="hidden sm:inline" />
 				</p>
 				<button
 					type="button"
@@ -51,7 +51,7 @@ export function RoleHeader({
 					Details
 				</button>
 			</div>
-			<StatusText status={status} className="block truncate sm:hidden" />
+			<StatusText status={status} pending={role.pendingCount} className="block truncate sm:hidden" />
 			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 				{status && <Progress p={status.pipeline} />}
 				<CandidatesButton />
@@ -61,7 +61,7 @@ export function RoleHeader({
 					</span>
 				)}
 			</div>
-			{status && (
+			{status && role.status !== "CLOSED" && (
 				<p className="hidden type-label text-muted-foreground sm:block">
 					{nextLine(status.pipeline, status.waitingOn)}
 				</p>
@@ -70,9 +70,18 @@ export function RoleHeader({
 	);
 }
 
-function StatusText({ status, className }: { status: RoleStatus | undefined; className?: string }) {
+function StatusText({
+	status,
+	pending = 0,
+	className,
+}: {
+	status: RoleStatus | undefined;
+	/** Deliveries waiting for the company's own review. */
+	pending?: number;
+	className?: string;
+}) {
 	// Something waiting for the company always wins over "sourcing…": the header never hides a decision.
-	const asking = status?.waitingOn.some((w) => w.who === "company");
+	const asking = pending > 0 || status?.waitingOn.some((w) => w.who === "company");
 	return (
 		<span
 			className={cn(
@@ -176,7 +185,9 @@ function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"
 	return (
 		<Popover>
 			<PopoverTrigger className="shrink-0 type-label text-muted-foreground tabular hover:text-foreground">
-				{formatMoney(spent)} of {formatMoney(budget.deposited)} spent
+				{role.status === "CLOSED"
+					? `${formatMoney(spent)} spent · ${formatMoney(budget.refunded ?? 0n)} back to you`
+					: `${formatMoney(spent)} of ${formatMoney(budget.deposited)} spent`}
 			</PopoverTrigger>
 			<PopoverContent align="end" className="w-[min(26rem,calc(100vw-2rem))] space-y-4">
 				<dl className="space-y-2.5">

@@ -104,6 +104,11 @@ function detectSeniority(title: string, requirements: string): Criteria["seniori
 }
 
 /** "Insider One - Customer Success Manager (Warsaw, Poland)" → title + company. */
+/** Words that start a sentence but never name a company. */
+const NOT_COMPANY =
+	/^(we|our|you|your|the|this|it|they|about|join|at|in|as|a|an|remote|hybrid|location|locations)$/i;
+
+/** "Insider One - Customer Success Manager (Warsaw, Poland)" → title + company. Never a place. */
 export function titleAndCompany(text: string): { title: string; company: string | null } {
 	const first =
 		text
@@ -111,36 +116,52 @@ export function titleAndCompany(text: string): { title: string; company: string 
 			.map((l) => l.replace(/^#+\s*|^(job )?title:\s*/i, "").trim())
 			.find((l) => l.length > 0 && l.length < 140) ?? "Open role";
 	const isPlace = (inner: string) =>
-		/\b(remote|hybrid|on-?site|anywhere)\b/i.test(inner) ||
+		/\b(remote|hybrid|on-?site|anywhere|worldwide|emea|europe|eu)\b/i.test(inner) ||
 		CITIES.some((c) => new RegExp(`\\b${c}\\b`, "i").test(inner));
 	// "(Remote - United States, Portugal)" / "(Warsaw, Poland)": a location, not part of the title.
 	const stripPlace = (p: string) =>
 		p.replace(/\s*\(([^()]*)\)\s*$/, (m, inner: string) => (isPlace(inner) ? "" : m)).trim();
-	const parts = stripPlace(first)
+	// "Data Engineer (Analytics Platform), Remote, EU": trailing comma parts that are places go too.
+	const commaParts = stripPlace(first).split(/,\s*/);
+	while (commaParts.length > 1 && isPlace(commaParts.at(-1) ?? "")) commaParts.pop();
+	const header = commaParts.join(", ");
+	const parts = header
 		.split(/\s+[-–—|]\s+|\s+at\s+/)
-		.map((p) => p.trim())
+		.map((p) => stripPlace(p.trim()))
 		.filter(Boolean);
 	const titleIdx = parts.findIndex((p) => ROLE_WORD.test(p));
-	let title = stripPlace(parts[titleIdx >= 0 ? titleIdx : 0] ?? first);
-	// "Senior Software Engineer - Go & Rust, Blockchain Infrastructure — QuickNode": keep the specialization.
-	const rest = parts.filter((_, i) => i !== titleIdx);
-	// The company is the header part the body talks about most ("Northwind Pay is …"), else the last one.
+	let title = parts[titleIdx >= 0 ? titleIdx : 0] ?? first;
+	const rest = parts.filter((_, i) => i !== titleIdx && !isPlace(parts[i] ?? ""));
+	// The company is the header part the body talks about most ("Northwind Pay is …"), else a name
+	// the body introduces ("At Northwind Freight we…", "Fakturo is …", "We're Wisła Labs").
 	const body = text.split(/\r?\n/).slice(1).join("\n");
 	const mentions = (p: string) => body.split(p).length - 1;
-	const candidates = rest.filter(
-		(p) => !ROLE_WORD.test(p) && p.split(" ").length <= 4 && /^[A-Z0-9]/.test(p) && !/^remote\b/i.test(p),
-	);
+	const valid = (p: string | undefined): p is string =>
+		Boolean(p) &&
+		!isPlace(p as string) &&
+		!NOT_COMPANY.test((p as string).split(" ")[0] ?? "") &&
+		!ROLE_WORD.test(p as string);
+	const candidates = rest.filter((p) => valid(p) && p.split(" ").length <= 4 && /^[\p{Lu}0-9]/u.test(p));
+	const NAME = "(\\p{Lu}[\\p{L}\\p{N}&.'’-]*(?:\\s+\\p{Lu}[\\p{L}\\p{N}&.'’-]*){0,3})";
+	const fromBody = [
+		new RegExp(`(?:^|\\s)(?:At|Join|We're|We are|We’re)\\s+${NAME}`, "u"),
+		new RegExp(
+			`(?:^|[\\n.!?]\\s*)${NAME}\\s+(?:is|builds|makes|helps|runs|powers|moves|was founded|has been)(?=\\s)`,
+			"u",
+		),
+	]
+		.map((re) => body.match(re)?.[1]?.trim())
+		.find(valid);
 	const company =
 		[...candidates].sort(
 			(a, b) => mentions(b) - mentions(a) || candidates.indexOf(b) - candidates.indexOf(a),
 		)[0] ??
-		text.match(/(?:^|\n)\s*([A-Z][\w&.'-]*(?:\s[A-Z][\w&.'-]*){0,3}) is (?:the|a|an)\b/)?.[1] ??
+		fromBody ??
 		null;
-	const specialization = rest.find(
-		(p) => p !== company && ROLE_WORD.test(p) === false && /,|&|\b(and)\b/.test(p),
-	);
-	if (specialization && title.split(" ").length <= 4) title = `${title} (${stripPlace(specialization)})`;
-	return { title: title || "Open role", company: company ? stripPlace(company) : null };
+	// "Senior Software Engineer - Go & Rust, Blockchain Infrastructure — QuickNode": keep the specialization.
+	const specialization = rest.find((p) => p !== company && !ROLE_WORD.test(p) && /,|&|\b(and)\b/.test(p));
+	if (specialization && title.split(" ").length <= 4) title = `${title} (${specialization})`;
+	return { title: title || "Open role", company };
 }
 
 /**

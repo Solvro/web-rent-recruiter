@@ -278,7 +278,9 @@ export function SendLink({
 	const resend = useMutation({
 		mutationFn: () => typedClient.candidate.resendConfirmation.mutate({ deliverableId: d.id }),
 		onSuccess: () => {
-			toast.success("New link ready. Send it again; the old one no longer works.");
+			toast.success(
+				"New link ready. Send it again; the old one no longer works. The deadline stays the same.",
+			);
 			void qc.invalidateQueries({ queryKey: ["gigs"] });
 		},
 		onError: (e) => toast.error(errorMessage(e)),
@@ -311,7 +313,7 @@ export function SendLink({
 					disabled={resend.isPending}
 					className="underline underline-offset-4"
 				>
-					{resend.isPending ? "Making a new link…" : "Give more time (new link)"}
+					{resend.isPending ? "Making a new link…" : "Lost the link? Get a new one"}
 				</button>
 			</p>
 		</div>

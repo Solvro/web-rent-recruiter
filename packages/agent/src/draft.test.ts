@@ -57,3 +57,20 @@ describe("drafting from a pasted job description (offline)", () => {
 		expect(d.criteria.languages).toEqual(["English (C1)"]);
 	});
 });
+
+describe("title and company from the header (never a place)", () => {
+	it.each([
+		["data-engineer-remote-eu.txt", "Data Engineer (Analytics Platform)", "Northwind Freight"],
+		["account-executive-krakow.txt", "Account Executive (Mid-Market)", "Fakturo"],
+		["product-designer-berlin.txt", "Senior Product Designer", "Fernweh"],
+	])("%s", async (file, title, company) => {
+		const { titleAndCompany } = await import("./offline.ts");
+		expect(titleAndCompany(jd(file))).toEqual({ title, company });
+	});
+
+	it("handles non-ASCII names", async () => {
+		const { titleAndCompany } = await import("./offline.ts");
+		const demo = readFileSync(new URL("./fixtures/demo-jd-senior-backend-ts.txt", import.meta.url), "utf-8");
+		expect(titleAndCompany(demo).company).toBe("Wisła Labs");
+	});
+});

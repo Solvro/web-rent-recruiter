@@ -239,6 +239,8 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 			languages: role.criteria.languages,
 			summary: role.summary,
 		},
+		// Every gig type holds part of the pay back for this long.
+		holdbackWindowSeconds: role.holdbackWindowSeconds,
 		...(gig.type !== "SOURCING"
 			? {
 					claimedAt: gig.claimedAt?.toISOString() ?? null,
@@ -246,7 +248,6 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 					candidateTimeZone: visible ? c.candidateTimeZone : null,
 					recruiterTimeZone: c.claimant?.timeZone ?? null,
 					reported: gig.reported,
-					holdbackWindowSeconds: role.holdbackWindowSeconds,
 					...(viewer && viewer === gig.claimantWallet
 						? {
 								closedReason: gig.closedReason ?? null,

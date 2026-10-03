@@ -3,6 +3,7 @@
  * so the plan the company sees is exactly what the agent will post.
  */
 import { type Criteria, toBaseUnits } from "@scout/shared";
+import { requiredLanguage } from "../../../../backend/src/agent/gigs/language";
 import { priceForRole, splitBudget } from "../../../../backend/src/agent/gigs/pure";
 import type { GigKind } from "../gig-types";
 import type { GigType } from "./schemas";
@@ -28,7 +29,8 @@ export const withLevel = (language: string) => (/\(/.test(language) ? language :
 export function planGigs(criteria: Criteria, budgetUsd: number): Plan {
 	const c = splitBudget(budgetUsd, criteria.seniority, criteria);
 	const why = (type: GigType, variant?: "language") => priceForRole(criteria, type, variant).explanation;
-	const language = criteria.languages[0];
+	// The same language the agent will check (plain "English" is assumed, not checked).
+	const required = requiredLanguage(criteria);
 	const gigs: PlannedGig[] = [
 		{
 			kind: "SOURCING",
@@ -49,7 +51,9 @@ export function planGigs(criteria: Criteria, budgetUsd: number): Plan {
 		{
 			kind: "LANGUAGE_CHECK",
 			type: "SCREENING_CALL",
-			label: withLevel(language ?? "English"),
+			label: required
+				? `${required.name} (${required.level})`
+				: withLevel(criteria.languages[0] ?? "English"),
 			count: c.languageChecks,
 			price: toBaseUnits(c.languageBounty),
 			why: why("SCREENING_CALL", "language"),

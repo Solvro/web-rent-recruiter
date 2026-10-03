@@ -143,7 +143,7 @@ describe("transcript → script answers (offline)", () => {
 		const out = offlineExtract({ questions, lines });
 		expect(out.answers.map((a) => a.questionId)).toEqual(ids);
 		expect(out.answers[0]?.answer).toContain("Six years of production Rust");
-		expect(out.answers[1]?.answer).toContain("upgrade of the pool vaults");
+		expect(out.answers[1]?.answer).toContain("upgrade of the lending pools");
 		expect(out.answers[3]?.answer).toContain("Trident fuzz suite");
 		expect(out.answers[5]?.answer).toContain("Mokotów");
 		expect(out.answers[7]?.answer).toContain("thirty-six thousand PLN");

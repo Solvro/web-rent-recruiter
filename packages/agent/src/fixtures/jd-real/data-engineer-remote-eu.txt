@@ -1,0 +1,20 @@
+Data Engineer (Analytics Platform), Remote, EU
+
+At Northwind Freight we move about 2 million parcels a month for online shops in 12 countries. Our data team is small (four people) and the business runs on it: pricing, carrier routing and every finance report come from our warehouse.
+
+The job
+You'll build and run the pipelines that feed the warehouse, own our dbt project, and make the data our analysts and pricing team depend on reliable and fast.
+
+Requirements
+- 3+ years as a data engineer
+- Strong SQL and Python
+- Production experience with dbt and a cloud warehouse (we use Snowflake)
+- Orchestration with Airflow, Dagster or similar
+- You care about data quality: tests, monitoring, alerting
+
+Bonus points
+- Kafka or another streaming tool
+- Terraform
+- Logistics or e-commerce background
+
+Fully remote within EU time zones (CET ±2). €65k–80k depending on experience. Contractor or employee.

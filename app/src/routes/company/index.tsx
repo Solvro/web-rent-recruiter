@@ -52,8 +52,12 @@ function Roles() {
 							{r.pendingCount > 0 && <Chip tone="warn">{r.pendingCount} to review</Chip>}
 							<span className="text-right type-label text-muted-foreground tabular">
 								{r.status === "DRAFT"
-									? `${formatMoney(r.intendedDeposit ?? "0")} budget not added`
-									: `${formatMoney(r.budget.spent ?? BigInt(r.budget.paid) + BigInt(r.budget.heldBack))} of ${formatMoney(r.budget.deposited)} spent`}
+									? BigInt(r.intendedDeposit ?? "0") > 0n
+										? `${formatMoney(r.intendedDeposit ?? "0")} budget not added`
+										: "No budget"
+									: r.status === "CLOSED"
+										? `${formatMoney(r.budget.spent ?? BigInt(r.budget.paid) + BigInt(r.budget.heldBack))} spent · ${formatMoney(r.budget.refunded ?? 0n)} back to you`
+										: `${formatMoney(r.budget.spent ?? BigInt(r.budget.paid) + BigInt(r.budget.heldBack))} of ${formatMoney(r.budget.deposited)} spent`}
 							</span>
 						</Link>
 					</li>

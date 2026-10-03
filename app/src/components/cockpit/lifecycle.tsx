@@ -58,22 +58,27 @@ export function FundRole({ role }: { role: RoleDetail }) {
 					: "This role hasn't started yet"}
 			</h1>
 			<p className="text-muted-foreground">
-				Nothing was charged, and your agent hasn't started. Add the budget to start it, or drop this role.
+				{amount > 0n
+					? "Nothing was charged, and your agent hasn't started. Add the budget to start it, or drop this role."
+					: "Nothing was charged, and your agent hasn't started. This draft has no budget saved with it: drop it and create the role again."}
 			</p>
 			<p className="type-label text-muted-foreground">
 				You have {formatMoney(balance)} available
 				{short && amount > 0n && ` · ${formatMoney(amount - balance)} short of the budget`}
 			</p>
 			<div className="flex flex-wrap gap-3">
+				{amount > 0n && (
+					<Button size="lg" onClick={() => fund.mutate()} disabled={short || fund.isPending || pending}>
+						{(fund.isPending || pending) && <Loader2 className="animate-spin" />}
+						Add the {formatMoney(amount)} budget
+					</Button>
+				)}
 				<Button
 					size="lg"
-					onClick={() => fund.mutate()}
-					disabled={short || fund.isPending || pending || amount === 0n}
+					variant={amount > 0n ? "ghost" : "default"}
+					onClick={() => discard.mutate()}
+					disabled={discard.isPending}
 				>
-					{(fund.isPending || pending) && <Loader2 className="animate-spin" />}
-					Add the {formatMoney(amount)} budget
-				</Button>
-				<Button size="lg" variant="ghost" onClick={() => discard.mutate()} disabled={discard.isPending}>
 					Drop this role
 				</Button>
 			</div>
