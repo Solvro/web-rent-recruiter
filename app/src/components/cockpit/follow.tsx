@@ -71,6 +71,7 @@ export function Follow({
 	}, [scrollToEnd]);
 
 	// A card appearing under the list shrinks it: keep the latest line in view.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: layoutKey is the trigger, not a value read inside
 	useEffect(() => {
 		if (following) requestAnimationFrame(() => scrollToEnd({ behavior: "auto" }));
 	}, [layoutKey, following, scrollToEnd]);

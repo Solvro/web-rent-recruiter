@@ -1793,7 +1793,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 	"roles.answer": (ctx) => {
 		need(ctx);
 		const d = g.deliveries.get(String(ctx.input.deliverableId));
-		if (!d || !d.escalated || d.payload.type !== "SOURCING")
+		if (!d?.escalated || d.payload.type !== "SOURCING")
 			throw new MockError(409, "NOT_ASKED", "Already answered.");
 		const name = d.payload.name;
 		d.escalated = false;
@@ -2239,12 +2239,12 @@ function candidateDetail(d: MockDelivery): CandidateDetail | null {
 	const payments = paidFor.flatMap((x) => {
 		if (!x.split) return [];
 		const what = x.payload.type === "SOURCING" ? "Found and confirmed" : whatOf(x).replace(/ for .*/, "");
-		const rows = [
+		const rows: CandidateDetail["payments"] = [
 			{
 				to: displayName(x.scout),
 				what,
 				amount: x.split.now.toString(),
-				status: "PAID" as const,
+				status: "PAID",
 				signature: x.settlementTx,
 			},
 		];
@@ -2299,7 +2299,7 @@ const candidateProcedures: Record<string, (ctx: Ctx) => unknown> = {
 	"candidates.update": (ctx) => {
 		need(ctx);
 		const d = g.deliveries.get(String(ctx.input.candidateId));
-		if (!d || d.payload.type !== "SOURCING") throw new MockError(404, "NOT_FOUND", "Candidate not found");
+		if (d?.payload.type !== "SOURCING") throw new MockError(404, "NOT_FOUND", "Candidate not found");
 		const name = d.payload.name;
 		const reason = String(ctx.input.reason ?? "").trim();
 		switch (ctx.input.action) {

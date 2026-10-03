@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { ErrorState } from "@/components/bits";
 import { Pinned, useAsks } from "@/components/cockpit/asks";
+import { CandidatesProvider } from "@/components/cockpit/candidates";
 import { RoleHeader } from "@/components/cockpit/header";
 import { Log } from "@/components/cockpit/log";
 import { Thinking, WaitingList, WhatHappensNext } from "@/components/cockpit/presence";
@@ -50,36 +51,38 @@ function Cockpit({ roleId }: { roleId: string }) {
 	const r = role.data;
 
 	return (
-		<div className="fixed inset-x-0 top-16 bottom-0 z-20 bg-background">
-			<div className="mx-auto flex h-full w-full max-w-[760px] flex-col px-4">
-				<RoleHeader role={r} status={status.data} onDetails={() => setDetails(true)} />
-				<Log
-					roleId={r.id}
-					items={items}
-					now={status.data?.now.text ?? null}
-					busy={!!status.data?.now.busy}
-					above={
-						<WhatHappensNext roleId={r.id} started={(status.data?.pipeline.sourcingAccepted ?? 0) > 0} />
-					}
-					below={
-						<>
-							<Thinking items={items} status={status.data} />
-							<WaitingList roleId={r.id} status={status.data} />
-						</>
-					}
-					pinned={<Pinned asks={asks} />}
-					pinnedKey={asks.map((a) => a.key).join(",")}
-				/>
+		<CandidatesProvider roleId={r.id}>
+			<div className="fixed inset-x-0 top-16 bottom-0 z-20 bg-background">
+				<div className="mx-auto flex h-full w-full max-w-[760px] flex-col px-4">
+					<RoleHeader role={r} status={status.data} onDetails={() => setDetails(true)} />
+					<Log
+						roleId={r.id}
+						items={items}
+						now={status.data?.now.text ?? null}
+						busy={!!status.data?.now.busy}
+						above={
+							<WhatHappensNext roleId={r.id} started={(status.data?.pipeline.sourcingAccepted ?? 0) > 0} />
+						}
+						below={
+							<>
+								<Thinking items={items} status={status.data} />
+								<WaitingList roleId={r.id} status={status.data} />
+							</>
+						}
+						pinned={<Pinned asks={asks} />}
+						pinnedKey={asks.map((a) => a.key).join(",")}
+					/>
+				</div>
+				<Dialog open={details} onOpenChange={setDetails}>
+					<DialogContent className="max-h-[85svh] gap-6 overflow-y-auto p-6 sm:max-w-xl">
+						<DialogTitle>{r.title}</DialogTitle>
+						<CriteriaChips criteria={r.criteria} />
+						<ReviewerSettings roleId={r.id} />
+						{r.status === "OPEN" && <CloseRole role={r} left={status.data?.budget.available} />}
+					</DialogContent>
+				</Dialog>
 			</div>
-			<Dialog open={details} onOpenChange={setDetails}>
-				<DialogContent className="max-h-[85svh] gap-6 overflow-y-auto p-6 sm:max-w-xl">
-					<DialogTitle>{r.title}</DialogTitle>
-					<CriteriaChips criteria={r.criteria} />
-					<ReviewerSettings roleId={r.id} />
-					{r.status === "OPEN" && <CloseRole role={r} left={status.data?.budget.available} />}
-				</DialogContent>
-			</Dialog>
-		</div>
+		</CandidatesProvider>
 	);
 }
 

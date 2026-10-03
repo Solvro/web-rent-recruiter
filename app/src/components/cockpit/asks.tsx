@@ -15,6 +15,7 @@ import { useReviewQueue } from "@/lib/gigs/review";
 import type { ShortlistItemView as ShortlistItem, ThreadActivity } from "@/lib/gigs/schemas";
 import { useDecideDelivery, type Waiting } from "@/lib/gigs/status";
 import { useTransact } from "@/lib/use-transact";
+import { WithCandidateLinks } from "./candidates";
 import { Meter } from "./decisions";
 
 /**
@@ -106,12 +107,14 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 	return (
 		<article className={card}>
 			<p className="type-label text-primary">Needs you</p>
-			<p>{title.charAt(0).toUpperCase() + title.slice(1)}</p>
+			<p>
+				<WithCandidateLinks text={title.charAt(0).toUpperCase() + title.slice(1)} />
+			</p>
 			{why?.detail && <p className="type-label text-muted-foreground">{why.detail}</p>}
 			<div className="flex flex-wrap gap-2">
 				{(w.actions ?? []).map((action, i) => (
 					<Button
-						key={`${action.id}-${i}`}
+						key={`${action.id}-${action.label}`}
 						variant={i === 0 ? "default" : "ghost"}
 						onClick={() => run.mutate({ action })}
 						disabled={run.isPending}

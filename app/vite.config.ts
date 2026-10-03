@@ -11,4 +11,10 @@ export default defineConfig({
 		// Backend dev server (backend/.env PORT). Override with API_PROXY_TARGET.
 		proxy: { "/trpc": { target: process.env.API_PROXY_TARGET ?? "http://localhost:8788", changeOrigin: true } },
 	},
+	// `pnpm --filter app build && pnpm --filter app preview`: the stable build used for the live demo (no HMR).
+	preview: {
+		port: 4173,
+		strictPort: true,
+		proxy: { "/trpc": { target: process.env.API_PROXY_TARGET ?? "http://localhost:8788", changeOrigin: true } },
+	},
 });

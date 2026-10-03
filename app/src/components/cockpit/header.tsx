@@ -11,6 +11,7 @@ import type { RoleStatus } from "@/lib/gigs/status";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
+import { useCandidatesPanel } from "./candidates";
 import { nextLine } from "./presence";
 
 /**
@@ -40,9 +41,26 @@ export function RoleHeader({
 				</p>
 				{status && <Spent role={role} budget={status.budget} />}
 			</div>
-			{status && <Progress p={status.pipeline} />}
+			<div className="flex flex-wrap items-baseline gap-x-4">
+				{status && <Progress p={status.pipeline} />}
+				<CandidatesButton />
+			</div>
 			{status && <p className="type-label text-muted-foreground">{nextLine(status.pipeline)}</p>}
 		</header>
+	);
+}
+
+function CandidatesButton() {
+	const { open, count } = useCandidatesPanel();
+	if (!count) return null;
+	return (
+		<button
+			type="button"
+			onClick={() => open()}
+			className="type-label text-foreground underline-offset-4 hover:underline"
+		>
+			{count} candidate{count === 1 ? "" : "s"}
+		</button>
 	);
 }
 

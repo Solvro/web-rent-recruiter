@@ -17,6 +17,7 @@ import { firstName } from "@/lib/format";
 import { useSendMessage } from "@/lib/gigs/api";
 import type { ThreadActivity } from "@/lib/gigs/schemas";
 import { cn } from "@/lib/utils";
+import { WithCandidateLinks } from "./candidates";
 import { Follow } from "./follow";
 import { Fresh, Typed, useSeen } from "./fresh";
 
@@ -128,7 +129,7 @@ function ChatLine({ item, live }: { item: ThreadActivity; live: boolean }) {
 		);
 	return (
 		<p className="my-2 px-2 whitespace-pre-line" title={new Date(item.createdAt).toLocaleString()}>
-			<Typed text={item.message} live={live} />
+			{live ? <Typed text={item.message} live /> : <WithCandidateLinks text={item.message} />}
 		</p>
 	);
 }
@@ -154,7 +155,9 @@ function StepLine({ item }: { item: ThreadActivity }) {
 				aria-expanded={open}
 				className="flex w-full items-baseline gap-3 rounded-xl px-2 py-1 text-left type-label hover:bg-muted"
 			>
-				<span className={cn("min-w-0 flex-1", tone)}>{item.message}</span>
+				<span className={cn("min-w-0 flex-1", tone)}>
+					<WithCandidateLinks text={item.message} />
+				</span>
 				<time
 					dateTime={item.createdAt}
 					className="shrink-0 tabular text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
