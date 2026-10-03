@@ -5,5 +5,5 @@
 	"currentTitle": "Senior Protocol Engineer",
 	"currentCompany": "Kelp Labs (Solana DEX and lending)",
 	"location": "Warsaw, Poland",
-	"notes": "6 years of production Rust, the last 3 writing Anchor programs at Kelp Labs, a Solana DEX and lending protocol. She shipped their lending pool and liquidation programs to mainnet and maintains the swap program. Wrote the Trident fuzz tests and worked through two external audits. Also maintains the TypeScript SDK. Fluent English, lives in Warsaw, fine with 2 office days, open to 32-36k PLN B2B."
+	"notes": "6 years of production Rust, the last 3 writing Anchor programs at Kelp Labs, a Solana DEX and lending protocol. She shipped their lending pool and liquidation logic to mainnet and maintains the swap. Wrote the Trident fuzz tests and worked through two external audits. Also maintains the TypeScript SDK. Fluent English, lives in Warsaw, fine with 2 office days, open to 32-36k PLN B2B."
 }

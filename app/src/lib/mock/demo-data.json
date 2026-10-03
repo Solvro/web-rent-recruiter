@@ -32,7 +32,7 @@
 			"company": "Wisła Labs",
 			"locationLabel": "Warsaw · hybrid, 2 days in office",
 			"salaryLabel": "30,000–38,000 PLN / month (B2B)",
-			"jobDescription": "Senior Rust Engineer (Solana programs)\n\nWe're a seed-stage DeFi startup in Warsaw building an on-chain credit marketplace on Solana: lenders and borrowers matched by programs, with no bank in the middle. The team is five people, led by our founder Hanna Lewicka, and we're hiring our second protocol engineer.\n\nYou'll design, ship and maintain our Anchor programs (lending pools, liquidations, fee splits), write the tests and fuzzing that keep them safe, and help build the TypeScript SDK our app uses.\n\nWhat we need:\n- 4+ years of production Rust\n- Solana programs you shipped to mainnet (Anchor or native)\n- Experience with DeFi protocols: a DEX, lending or AMM\n- A security mindset: property tests, fuzzing, working with auditors\n- Fluent English (C1); our investors and auditors are international\n\nNice to have: TypeScript SDKs for programs, open-source Solana work, early-stage experience.\n\nHybrid: 2 days a week in our Warsaw office. 30,000–38,000 PLN/month on B2B, plus tokens.",
+			"jobDescription": "Senior Rust Engineer (Solana programs)\n\nWe're Wisła Labs, a seed-stage startup in Warsaw building a credit marketplace: lenders and borrowers matched directly, with no bank in the middle. The team is five people, led by our founder Hanna Lewicka, and we're hiring our second protocol engineer.\n\nYou'll design, ship and maintain our Anchor programs (lending pools, liquidations, fee splits), write the tests and fuzzing that keep them safe, and help build the TypeScript SDK our app uses.\n\nWhat we need:\n- 4+ years of production Rust\n- Solana programs you shipped to mainnet (Anchor or native)\n- Experience with DeFi protocols: a DEX, lending or AMM\n- A security mindset: property tests, fuzzing, working with auditors\n- Fluent English (C1); our investors and auditors are international\n\nNice to have: TypeScript SDKs for programs, open-source Solana work, early-stage experience.\n\nHybrid: 2 days a week in our Warsaw office. 30,000–38,000 PLN/month on B2B.",
 			"criteria": {
 				"mustHave": [
 					{
@@ -334,7 +334,7 @@
 			"candidate": {
 				"name": "Karolina Mazurek",
 				"profileUrl": "https://linkedin.com/in/karolina-mazurek-backend-demo",
-				"notes": "6 years of production Rust, the last 3 writing Anchor programs at Kelp Labs, a Solana DEX and lending protocol. She shipped their lending pool and liquidation programs to mainnet and maintains the swap program. Wrote the Trident fuzz tests and worked through two external audits. Also maintains the TypeScript SDK. Fluent English, lives in Warsaw, fine with 2 office days, open to 32-36k PLN B2B."
+				"notes": "6 years of production Rust, the last 3 writing Anchor programs at Kelp Labs, a Solana DEX and lending protocol. She shipped their lending pool and liquidation logic to mainnet and maintains the swap. Wrote the Trident fuzz tests and worked through two external audits. Also maintains the TypeScript SDK. Fluent English, lives in Warsaw, fine with 2 office days, open to 32-36k PLN B2B."
 			},
 			"measuredScore": {
 				"jev": "95 ADVANCE"
@@ -347,7 +347,7 @@
 			"candidate": {
 				"name": "Tomasz Brzeziński",
 				"profileUrl": "https://linkedin.com/in/tomasz-brzezinski-demo",
-				"notes": "5 years of production Rust building low-latency order routing and market-data infrastructure at a high-frequency trading firm. Uses property-based tests (proptest) and cargo-fuzz on the order router, and owns its incident reviews. No on-chain experience yet: he has read the Anchor book but hasn't shipped a Solana program. Good English, lives in Warsaw and is fine with 2 office days."
+				"notes": "5 years of production Rust building low-latency order routing and market-data infrastructure at a high-frequency trading firm. Uses property-based tests (proptest) and cargo-fuzz on the order router, and owns its incident reviews. No Solana work yet: he has read the Anchor book but hasn't shipped a Solana program. Good English, lives in Warsaw and is fine with 2 office days."
 			},
 			"measuredScore": {
 				"jev": "51 MAYBE"
@@ -360,7 +360,7 @@
 			"candidate": {
 				"name": "Piotr Lewandowski",
 				"profileUrl": "https://linkedin.com/in/piotr-lewandowski-demo",
-				"notes": "4 years of React and TypeScript, the last 2 building dApp frontends: wallet connection and transaction flows on Solana with web3.js. No Rust and has never written a Solana program. Good English. He only wants fully remote work and won't come to an office."
+				"notes": "4 years of React and TypeScript, the last 2 building frontends for a trading app. No Rust and has never written a Solana program. Good English. He only wants fully remote work and won't come to an office."
 			},
 			"measuredScore": {
 				"jev": "26 PASS"

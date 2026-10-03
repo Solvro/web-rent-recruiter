@@ -15,7 +15,7 @@ const INFO: Record<string, Omit<CandidateInfo, "avatarUrl">> = {
 	},
 	"Piotr Lewandowski": {
 		currentTitle: "Frontend Developer",
-		currentCompany: "a marketplace startup",
+		currentCompany: "a trading app startup",
 		location: "Gdańsk",
 	},
 	"Marek Zieliński": {

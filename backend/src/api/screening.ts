@@ -13,7 +13,7 @@ import { env } from "../env.ts";
 import { publish } from "../events.ts";
 import { HttpError, notFound } from "../http.ts";
 import { normalizeProfileUrl, toHex } from "../lib/candidate-hash.ts";
-import { availableBudget } from "../lib/views.ts";
+import { availableBudget, nextTaskId } from "../lib/views.ts";
 import { recordingMeta, status as recordingStatus } from "../recall/service.ts";
 import {
 	agentSigner,
@@ -215,7 +215,7 @@ export async function claimShowUpFee(wallet: string, gigId: string): Promise<{ u
 	invalidateCached(roleVault);
 	const vault = await fetchProgramAccount<RoleVaultAccount>("RoleVault", roleVault);
 	if (!vault) throw notFound("role vault");
-	const taskId = Number(vault.taskCount);
+	const taskId = await nextTaskId(role.id, vault.taskCount);
 	const title = `Show-up fee: ${about?.candidateName ?? "the candidate"} didn't join`;
 	const brief = `The notetaker was in the call for "${gig.title}"; the candidate didn't join.`;
 	const briefHash = new Uint8Array(

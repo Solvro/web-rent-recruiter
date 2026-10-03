@@ -3,11 +3,11 @@
 	"answers": [
 		{
 			"questionId": "q-rust-production",
-			"answer": "6 years of Rust in production: 3 years on a payments backend (tokio, actix) before Kelp Labs, then 3 years of on-chain Rust. She owns code reviews for the program repo and set up their clippy/deny rules."
+			"answer": "6 years of Rust in production: 3 years on a payments backend (tokio, actix) before Kelp Labs, then 3 years writing Solana programs in Rust. She owns code reviews for the protocol repo and set up their clippy/deny rules."
 		},
 		{
 			"questionId": "q-solana-programs",
-			"answer": "Shipped the lending pool and liquidation programs to mainnet in 2024 (Anchor 0.29, then migrated to 0.31), maintains the swap program. Did the upgrade to Token-2022 for the pool vaults last spring, with a feature-flagged migration over 2 weeks."
+			"answer": "Shipped the lending pool and liquidation logic to mainnet in 2024 (Anchor 0.29, then migrated to 0.31), maintains the swap. Led the upgrade of the lending pools last spring, with a feature-flagged migration over 2 weeks."
 		},
 		{
 			"questionId": "q-defi-protocols",
@@ -15,7 +15,7 @@
 		},
 		{
 			"questionId": "q-program-security",
-			"answer": "Wrote the Trident fuzz suite for the lending program (found 2 real bugs: a rounding issue in share minting and a missing signer check). Worked through audits with OtterSec and Neodyme, fixed all findings herself and wrote the response doc."
+			"answer": "Wrote the Trident fuzz suite for the lending pool (found 2 real bugs: a rounding issue in share minting and a missing signer check). Worked through audits with OtterSec and Neodyme, fixed all findings herself and wrote the response doc."
 		},
 		{
 			"questionId": "q-fluent-english",
@@ -31,7 +31,7 @@
 		},
 		{
 			"questionId": "q-logistics",
-			"answer": "1 month notice on B2B. Expects 32-36k PLN/month plus tokens. In one other process (early stage)."
+			"answer": "1 month notice on B2B. Expects 32-36k PLN/month. In one other process (early stage)."
 		}
 	]
 }

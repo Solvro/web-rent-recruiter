@@ -13,7 +13,13 @@ import { offlineDraftRole } from "./offline.ts";
 import { prompt } from "./prompts.ts";
 import { untrusted } from "./untrusted.ts";
 
-const DraftOutput = z.object({ title: z.string(), summary: z.string(), criteria: Criteria });
+/** Same fields as draftRole's: the posting's own company comes back too (null when it doesn't name one). */
+const DraftOutput = z.object({
+	title: z.string(),
+	company: z.string().nullable(),
+	summary: z.string(),
+	criteria: Criteria,
+});
 export type RoleDraft = z.infer<typeof DraftOutput>;
 
 /** Partial draft while the agent is still reading: any field may be missing or cut mid-word. */

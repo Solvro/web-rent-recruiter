@@ -102,7 +102,7 @@ describe("summaryForCompany", () => {
 		const s = await makeScript({ criteria, candidate: fx("demo-candidate-1-strong-karolina.json") });
 		const good = await reviewCall({ script: s, ...fx("screening-karolina-good.json") });
 		expect(good.summaryForCompany).toBe(
-			"6 years of Rust in production; shipped the lending pool and liquidation programs to mainnet in 2024; 1 month notice on B2B.",
+			"6 years of Rust in production; shipped the lending pool and liquidation logic to mainnet in 2024; 1 month notice on B2B.",
 		);
 		const lazy = await reviewCall({ script: s, ...fx("screening-lazy.json") });
 		expect(lazy.summaryForCompany).toBe("Sent back to the recruiter: 8 of 8 answers weren't usable.");

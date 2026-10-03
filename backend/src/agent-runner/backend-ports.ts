@@ -317,7 +317,9 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 				.select({ last: max(schema.gigs.onchainTaskId) })
 				.from(schema.gigs)
 				.where(eq(schema.gigs.roleId, roleId));
-			const taskId = vault ? Number(vault.taskCount) : (last ?? -1) + 1;
+			// task_id must equal the vault's task_count; a just-confirmed create may not show in a read yet, so never
+			// reuse an id we already stored.
+			const taskId = Math.max(vault ? Number(vault.taskCount) : 0, (last ?? -1) + 1);
 			const script = gig.script ?? null;
 			// A language check is an ordinary ScreeningCall task on-chain with variant "language".
 			const language =

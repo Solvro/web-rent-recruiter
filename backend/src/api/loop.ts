@@ -12,7 +12,7 @@ import { env } from "../env.ts";
 import { publish } from "../events.ts";
 import { forbidden, HttpError, notFound } from "../http.ts";
 import { applyConfirmedTx } from "../indexer/apply-tx.ts";
-import { availableBudget } from "../lib/views.ts";
+import { availableBudget, nextTaskId } from "../lib/views.ts";
 import {
 	agentSigner,
 	fetchProgramAccount,
@@ -67,7 +67,7 @@ export async function repriceGig(roleId: string, gigId: string, bounty: bigint, 
 	invalidateCached(roleVault);
 	const vault = await fetchProgramAccount<RoleVaultAccount>("RoleVault", roleVault);
 	if (!vault) throw notFound("role vault");
-	const taskId = Number(vault.taskCount);
+	const taskId = await nextTaskId(roleId, vault.taskCount);
 	const subjectScout = gig.aboutCandidateId
 		? ((await db.select().from(schema.submissions).where(eq(schema.submissions.id, gig.aboutCandidateId)))[0]
 				?.scoutWallet ?? null)

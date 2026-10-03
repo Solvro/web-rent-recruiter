@@ -137,3 +137,14 @@ export function taskView(role: RoleRow, companyName: string): TaskView {
 		payoutPerCandidate: (role.bounty - feeOf(role.bounty, role.feeBps)).toString(),
 	};
 }
+
+/** The next task_id for a role: the vault's task_count, but never an id already stored (reads can lag a create). */
+export async function nextTaskId(roleId: string, vaultTaskCount: number | bigint | undefined) {
+	const { db, schema } = await import("../db/index.ts");
+	const { eq, max } = await import("drizzle-orm");
+	const [{ last }] = await db
+		.select({ last: max(schema.gigs.onchainTaskId) })
+		.from(schema.gigs)
+		.where(eq(schema.gigs.roleId, roleId));
+	return Math.max(Number(vaultTaskCount ?? 0), (last ?? -1) + 1);
+}

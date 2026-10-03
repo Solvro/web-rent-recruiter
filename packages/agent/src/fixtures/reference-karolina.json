@@ -7,11 +7,11 @@
 		},
 		{
 			"questionId": "ref-strength",
-			"answer": "The lending pool program: she wrote it from the design doc, built the Trident fuzz suite before launch and it went through two audits with no critical findings. It's run on mainnet since 2024 without a loss of funds."
+			"answer": "The lending pool: she wrote it from the design doc, built the Trident fuzz suite before launch and it went through two audits with no critical findings. It's run on mainnet since 2024 without a loss of funds."
 		},
 		{
 			"questionId": "ref-verify",
-			"answer": "Confirmed she shipped the liquidation program and led the Token-2022 migration of the pool vaults; he says it was done behind a feature flag over two weeks with no downtime."
+			"answer": "Confirmed she shipped the liquidation logic and led the migration of the lending pools; he says it was done behind a feature flag over two weeks with no downtime."
 		},
 		{
 			"questionId": "ref-growth",
@@ -19,7 +19,7 @@
 		},
 		{
 			"questionId": "ref-rehire",
-			"answer": "Yes, without hesitation. He'd hire her again for any protocol role; he only regrets that Kelp's pivot to perps doesn't fit what she wants."
+			"answer": "Yes, without hesitation. He'd hire her again for any protocol role and already asked her to lead the lending team when Kelp splits it next year; he only regrets that Kelp's pivot to perps doesn't fit what she wants."
 		}
 	]
 }
