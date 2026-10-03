@@ -16,7 +16,16 @@ export function useWaitingAction(roleId: string) {
 	const qc = useQueryClient();
 	const { transact } = useTransact();
 	return useMutation({
-		mutationFn: async ({ action, reason }: { action: WaitingAction; reason?: string }) => {
+		mutationFn: async ({
+			action,
+			reason,
+			decision,
+		}: {
+			action: WaitingAction;
+			reason?: string;
+			/** "decide" only: the company's choice, when the API offers one generic "Decide". */
+			decision?: "accept" | "reject";
+		}) => {
 			const api = typedClient;
 			switch (action.id) {
 				case "raise_price":
@@ -28,7 +37,7 @@ export function useWaitingAction(roleId: string) {
 				case "acknowledge":
 					return api.roles.ackEscalation.mutate({ roleId, activityId: action.activityId ?? "" });
 				case "decide": {
-					const reject = REJECTING.test(action.label);
+					const reject = decision ? decision === "reject" : REJECTING.test(action.label);
 					const { unsignedTx } = await api.deliverables.decide.mutate({
 						id: action.deliverableId ?? "",
 						decision: reject ? "reject" : "accept",
@@ -41,8 +50,14 @@ export function useWaitingAction(roleId: string) {
 				case "pass":
 				case "attended": {
 					const candidateId = action.candidateId ?? action.deliverableId ?? "";
-					const released = action.id === "attended" ? await heldParts(roleId, candidateId) : null;
-					const { unsignedTx } = await api.roles.decide.mutate({ roleId, candidateId, decision: action.id });
+					const { unsignedTx, releases } = await api.roles.decide.mutate({
+						roleId,
+						candidateId,
+						decision: action.id,
+					});
+					const released = releases?.length
+						? releases.map((x) => `${x.recruiter.split(" ")[0]} ${formatMoney(x.amount)}`).join(" · ")
+						: null;
 					if (unsignedTx)
 						await transact(unsignedTx, {
 							pending: action.id === "attended" ? "Releasing the held parts…" : "Saving…",
@@ -71,19 +86,4 @@ export function useWaitingAction(roleId: string) {
 		onError: (e) => toast.error(errorMessage(e)),
 		onSettled: () => qc.invalidateQueries({ queryKey: ["roles"] }),
 	});
-}
-
-/** "Lucía $6.75 · Ola $15.79": what each recruiter still has held for this candidate (released on attendance). */
-async function heldParts(roleId: string, candidateId: string) {
-	try {
-		const c = await typedClient.roles.candidate.query({ roleId, candidateId });
-		const by = new Map<string, bigint>();
-		for (const p of c.payments)
-			if (p.laterStatus === "HELD") by.set(p.recruiter, (by.get(p.recruiter) ?? 0n) + BigInt(p.later));
-		return by.size
-			? [...by].map(([who, amt]) => `${who.split(" ")[0]} ${formatMoney(amt)}`).join(" · ")
-			: null;
-	} catch {
-		return null;
-	}
 }

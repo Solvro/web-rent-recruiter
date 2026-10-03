@@ -248,6 +248,8 @@ export function resetGigs() {
 const SECOND = 1000;
 const HOLDBACK_WINDOW_MS = 15 * 60 * SECOND;
 const REVIEW_DELAY_MS = 4 * SECOND;
+/** A demo recruiter's own delivery waits this long before review (backend REVIEW_GRACE_SECONDS with DEMO_FAST). */
+const REVIEW_GRACE_MS = 30 * SECOND;
 /** How long a candidate has to confirm (48 h in production). */
 const CONFIRM_WINDOW_MS = 5 * 60 * SECOND;
 const first = (name: string) => name.split(" ")[0] ?? name;
@@ -2054,6 +2056,8 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 					hash,
 					deliverableId,
 				);
+				// Like the backend's review grace: the recruiter can still edit or withdraw for a short while.
+				d.reviewAt = Date.now() + REVIEW_GRACE_MS;
 				if (selfReported) askAboutCall(d, gig);
 				// A real recruiter brought this person: drop the simulated fallback for them.
 				if (payload.type === "SOURCING")
@@ -2339,6 +2343,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		if (!note) throw new MockError(400, "VALIDATION", "Write a note first.");
 		if (d.payload.type === "SOURCING") d.payload = { ...d.payload, notes: note };
 		else d.note = note;
+		d.reviewAt = Date.now() + REVIEW_GRACE_MS;
 		log(d.roleId, "NOTE", `${displayName(d.scout)} edited ${whatOf(d)}`, {
 			gigId: d.gigId,
 			deliverableId: d.id,
@@ -2546,7 +2551,24 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		// Showing up is a separate, later fact: only then does the held part go to the recruiters.
 		if (ctx.input.decision === "attended") {
 			if (entry.decision !== "INVITED") throw new MockError(409, "NOT_INVITED", "Invite them first.");
+			const owed = new Map<string, { amount: bigint; deliverables: number }>();
+			for (const d of g.deliveries.values()) {
+				const gig = g.gigs.get(d.gigId);
+				if (
+					(d.id === entry.sourceDeliveryId || gig?.candidate?.id === entry.candidateId) &&
+					d.laterStatus === "HELD"
+				) {
+					const o = owed.get(d.scout) ?? { amount: 0n, deliverables: 0 };
+					owed.set(d.scout, { amount: o.amount + (d.split?.later ?? 0n), deliverables: o.deliverables + 1 });
+				}
+			}
 			return {
+				releases: [...owed].map(([wallet, o]) => ({
+					recruiter: displayName(wallet),
+					wallet,
+					amount: o.amount.toString(),
+					deliverables: o.deliverables,
+				})),
 				unsignedTx: registerTx(`${name} came to the interview`, () => {
 					entry.decision = "ATTENDED";
 					entry.decidedAt = iso();

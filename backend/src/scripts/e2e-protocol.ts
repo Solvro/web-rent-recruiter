@@ -564,7 +564,7 @@ await waitFor(
 	async () =>
 		(await asRecruiter.gigs.mine.query()).deliverables.find((d) => d.id === confirmedId)?.status ===
 		"ACCEPTED",
-	180_000,
+	360_000,
 );
 await expectAppError(
 	asRecruiter.submissions.settle.mutate({ id: silentId }),

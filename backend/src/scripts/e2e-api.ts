@@ -1061,10 +1061,13 @@ const piotr = sourced.find(
 			"removing a candidate passes and hides them (still listed with includeRemoved)",
 		);
 	}
-	// The agent decides within seconds: pause it (test-only, like the seeded history) so the delivery stays undecided.
 	const { db: tdb, schema: tschema } = await import("../db/index.ts");
 	const { eq: teq } = await import("drizzle-orm");
-	await tdb.update(tschema.roles).set({ agentPaused: true }).where(teq(tschema.roles.id, roleId));
+	// The server's review grace period (REVIEW_GRACE_SECONDS) keeps a fresh delivery undecided for a while; with it
+	// off, pause the agent instead (test-only, like the seeded history).
+	const graceOff = process.env.REVIEW_GRACE_SECONDS === "0";
+	if (graceOff)
+		await tdb.update(tschema.roles).set({ agentPaused: true }).where(teq(tschema.roles.id, roleId));
 	const fresh = fixture("candidate-strong-rust.json");
 	const late = await deliver(asSourcer, sourcer, sourcing.id, {
 		...asCandidate({ ...fresh, profileUrl: `https://www.linkedin.com/in/e2e-late-${Date.now()}` }),
@@ -1076,7 +1079,8 @@ const piotr = sourced.find(
 		"the recruiter edited their note while it was undecided",
 	);
 	const w = await asSourcer.gigs.withdraw.mutate({ deliverableId: late });
-	await tdb.update(tschema.roles).set({ agentPaused: false }).where(teq(tschema.roles.id, roleId));
+	if (graceOff)
+		await tdb.update(tschema.roles).set({ agentPaused: false }).where(teq(tschema.roles.id, roleId));
 	const after = await asSourcer.gigs.work.query({ deliverableId: late });
 	check(
 		after.work.status === "REJECTED" && after.rejectText === "Withdrawn by the recruiter." && !after.editable,

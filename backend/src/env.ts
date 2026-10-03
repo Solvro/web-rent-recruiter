@@ -62,6 +62,11 @@ export const env = {
 	 * Floors for roles run by Scout's agent. The agent can only reject within the review window, so a candidate's
 	 * "yes" (interest, or "the call happened") must arrive inside it: 24 h in production, 20 min in DEMO_FAST.
 	 */
+	/**
+	 * How long a fresh (or edited) delivery waits before Scout's agent reviews it, so the recruiter can still edit
+	 * or withdraw it. 5 min in production, 30 s with DEMO_FAST; REVIEW_GRACE_SECONDS=0 turns it off (e2e).
+	 */
+	reviewGraceSeconds: Number(process.env.REVIEW_GRACE_SECONDS ?? (process.env.DEMO_FAST === "1" ? 30 : 300)),
 	minReviewWindowSeconds: Number(
 		process.env.MIN_REVIEW_WINDOW_SECONDS ?? (process.env.DEMO_FAST === "1" ? 1200 : 24 * 3600),
 	),

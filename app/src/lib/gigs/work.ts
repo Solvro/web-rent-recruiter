@@ -5,7 +5,7 @@
  */
 import { type DeliverableView, GigWorkView } from "@scout/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { untypedClient } from "../trpc";
+import { typedClient } from "../trpc";
 import { useWallet } from "../wallet";
 
 export { GigWorkView };
@@ -24,7 +24,7 @@ export function useWork(deliverableId: string) {
 	const { address } = useWallet();
 	return useQuery({
 		queryKey: ["gigs", "work", deliverableId],
-		queryFn: async () => GigWorkView.parse(await untypedClient.query("gigs.work", { deliverableId })),
+		queryFn: async () => typedClient.gigs.work.query({ deliverableId }),
 		enabled: !!address,
 		retry: false,
 		refetchInterval: (q) => (q.state.data?.work.status === "PENDING" ? 2_000 : 10_000),
@@ -34,7 +34,7 @@ export function useWork(deliverableId: string) {
 export function useEditWork(deliverableId: string) {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: (note: string) => untypedClient.mutation("gigs.edit", { deliverableId, note }),
+		mutationFn: (note: string) => typedClient.gigs.edit.mutate({ deliverableId, note }),
 		onSettled: () => qc.invalidateQueries({ queryKey: ["gigs"] }),
 	});
 }
@@ -42,7 +42,7 @@ export function useEditWork(deliverableId: string) {
 export function useWithdrawWork(deliverableId: string) {
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: () => untypedClient.mutation("gigs.withdraw", { deliverableId }),
+		mutationFn: () => typedClient.gigs.withdraw.mutate({ deliverableId }),
 		onSettled: () => qc.invalidateQueries({ queryKey: ["gigs"] }),
 	});
 }

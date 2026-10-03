@@ -1,27 +1,18 @@
 /**
  * Call bookkeeping (mock first; asked from Stream B): the candidate didn't join, and "this candidate looks fake".
  */
-import { z } from "zod";
-import { typedClient, untypedClient } from "../trpc";
-
-const NoShowResult = z.object({
-	noShows: z.number(),
-	status: z.string(),
-	deadline: z.string(),
-	showUpFee: z.object({ amount: z.string() }).nullable().optional(),
-});
+import { typedClient } from "../trpc";
 
 export const callApi = {
-	noShow: async (gigId: string) => NoShowResult.parse(await untypedClient.mutation("gigs.noShow", { gigId })),
+	noShow: (gigId: string) => typedClient.gigs.noShow.mutate({ gigId }),
 	claimShowUpFee: (gigId: string) => typedClient.gigs.claimShowUpFee.mutate({ gigId }),
-	report: (gigId: string, reason: string) => untypedClient.mutation("gigs.report", { gigId, reason }),
+	report: (gigId: string, reason: string) => typedClient.gigs.report.mutate({ gigId, reason }),
 	reportCandidate: (roleId: string, candidateId: string, reason: string) =>
-		untypedClient.mutation("roles.reportCandidate", { roleId, candidateId, reason }),
+		typedClient.roles.reportCandidate.mutate({ roleId, candidateId, reason }),
 };
 
-/** Optional call state on a gig (not in the shared GigView yet). */
-export const callStateOf = (gig: object) => {
-	const g = gig as { noShows?: number; claimedAt?: string | null };
+/** Call state on a gig: times the candidate didn't join, and when the recruiter took it. */
+export const callStateOf = (g: { noShows?: number; claimedAt?: string | null }) => {
 	return { noShows: g.noShows ?? 0, claimedAt: g.claimedAt ?? null };
 };
 

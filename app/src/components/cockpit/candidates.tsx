@@ -23,6 +23,8 @@ import {
 	useCandidateNotes,
 	useCandidates,
 } from "@/lib/gigs/candidates";
+import { inCents } from "@/lib/payout";
+import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
 
 type Ctx = { open: (candidateId?: string) => void; byName: Map<string, string>; count: number };
@@ -275,9 +277,9 @@ function Detail({
 									{p.recruiter} · {KIND_WORD[p.kind]}
 								</span>
 								<span className="tabular text-muted-foreground">
-									{formatMoney(p.now)} paid
+									{formatMoney(inCents(p.now, p.later).now)} paid
 									{BigInt(p.later) > 0n &&
-										` · ${formatMoney(p.later)} ${p.laterStatus === "HELD" ? "held" : p.laterStatus.toLowerCase()}`}
+										` · ${formatMoney(inCents(p.now, p.later).later)} ${p.laterStatus === "HELD" ? "held" : p.laterStatus.toLowerCase()}`}
 								</span>
 							</li>
 						))}
@@ -416,6 +418,7 @@ function CallSection({ call }: { call: CallDetail }) {
 
 function Actions({ roleId, d }: { roleId: string; d: CandidateDetail }) {
 	const act = useCandidateAction(d.candidateId);
+	const { transact } = useTransact();
 	const run = (action: "accept" | "pass" | "remove") =>
 		act.mutate(action, { onError: (e) => toast.error(errorMessage(e)) });
 	const closed = d.stage === "PASSED" || d.stage === "REJECTED";
@@ -441,7 +444,11 @@ function Actions({ roleId, d }: { roleId: string; d: CandidateDetail }) {
 			<span className="ml-auto">
 				<ReportFake
 					label="Report a problem"
-					onReport={(r) => callApi.reportCandidate(roleId, d.candidateId, r)}
+					onReport={async (why) => {
+						const res = await callApi.reportCandidate(roleId, d.candidateId, why);
+						if (res.unsignedTx)
+							await transact(res.unsignedTx, { pending: "Reporting…", success: "Reported." });
+					}}
 				/>
 			</span>
 		</div>

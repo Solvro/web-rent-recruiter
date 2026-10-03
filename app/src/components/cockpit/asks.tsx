@@ -6,6 +6,7 @@ import { ReportFake } from "@/components/call-tools";
 import { Avatar } from "@/components/person";
 import { ReviewCard } from "@/components/review-queue";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
 import { firstName } from "@/lib/format";
 import { useWaitingAction } from "@/lib/gigs/actions";
@@ -15,7 +16,7 @@ import { useReviewQueue } from "@/lib/gigs/review";
 import type { ShortlistItemView as ShortlistItem, ThreadActivity } from "@/lib/gigs/schemas";
 import type { Waiting } from "@/lib/gigs/status";
 import { useTransact } from "@/lib/use-transact";
-import { WithCandidateLinks } from "./candidates";
+import { useCandidatesPanel, WithCandidateLinks } from "./candidates";
 import { Meter } from "./decisions";
 
 /**
@@ -103,6 +104,9 @@ const card = "space-y-3 rounded-3xl bg-card p-4 shadow-sm ring-1 ring-foreground
 /** A company item exactly as the API describes it: what it waits for, the agent's reasoning, its actions. */
 function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread: ThreadActivity[] }) {
 	const run = useWaitingAction(roleId);
+	const { byName, open } = useCandidatesPanel();
+	const [rejecting, setRejecting] = useState(false);
+	const [reason, setReason] = useState("");
 	// The reasoning for exactly this item: its activity (agent questions) or its deliverable's review line.
 	const activityId = w.actions?.find((x) => x.activityId)?.activityId;
 	const why = activityId
@@ -117,19 +121,64 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 						),
 				)
 			: undefined;
-	const title = w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, "");
+	// "Your call on Karolina Mazurek: No usable answer to …" → a short title, and the reason underneath.
+	const raw = w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, "");
+	const [head, ...rest] = raw.split(/:\s+/);
+	const title = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
+	const reasonText = rest.length && title !== raw ? rest.join(": ") : null;
+	const detail = why?.detail && !raw.includes(why.detail.slice(0, 40)) ? why.detail : null;
+	const person = [...byName.keys()].find((n) => raw.includes(n));
+	const decides = (w.actions ?? []).filter((x) => x.id === "decide");
+	const generic = decides.length === 1 && !/accept|take|yes|reject|no\b|pass/i.test(decides[0]?.label ?? "");
+	const others = (w.actions ?? []).filter((x) => !(generic && x.id === "decide"));
+	const decide = decides[0];
 	return (
 		<article className={card}>
 			<p className="type-label text-primary">Needs you</p>
 			<p>
 				<WithCandidateLinks text={title.charAt(0).toUpperCase() + title.slice(1)} />
 			</p>
-			{why?.detail && <p className="type-label text-muted-foreground">{why.detail}</p>}
-			<div className="flex flex-wrap gap-2">
-				{(w.actions ?? []).map((action, i) => (
+			{reasonText && <p className="type-label text-muted-foreground">{reasonText}</p>}
+			{detail && <p className="type-label text-muted-foreground">{detail}</p>}
+			{rejecting && (
+				<Input
+					value={reason}
+					onChange={(e) => setReason(e.target.value)}
+					placeholder="Why? The recruiter sees this."
+					aria-label="Why you reject it"
+					className="h-9"
+					autoFocus
+				/>
+			)}
+			<div className="flex flex-wrap items-center gap-2">
+				{generic && decide && !rejecting && (
+					<Button onClick={() => run.mutate({ action: decide, decision: "accept" })} disabled={run.isPending}>
+						{run.isPending && run.variables?.decision === "accept" && <Loader2 className="animate-spin" />}
+						Accept and pay
+					</Button>
+				)}
+				{generic && decide && (
+					<Button
+						variant={rejecting ? "outline" : "ghost"}
+						onClick={() =>
+							rejecting
+								? run.mutate({
+										action: decide,
+										decision: "reject",
+										reason: reason.trim() || "Not good enough for this role",
+									})
+								: setRejecting(true)
+						}
+						disabled={run.isPending}
+					>
+						{run.isPending && run.variables?.decision === "reject" && <Loader2 className="animate-spin" />}
+						{rejecting ? "Reject" : "Reject…"}
+					</Button>
+				)}
+				{others.map((action, i) => (
 					<Button
 						key={`${action.id}-${action.label}`}
-						variant={i === 0 ? "default" : "ghost"}
+						variant={!generic && i === 0 ? "default" : "ghost"}
 						onClick={() => run.mutate({ action })}
 						disabled={run.isPending}
 					>
@@ -137,6 +186,15 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 						{action.label}
 					</Button>
 				))}
+				{person && (
+					<button
+						type="button"
+						onClick={() => open(byName.get(person))}
+						className="ml-auto type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+					>
+						See the answers
+					</button>
+				)}
 			</div>
 		</article>
 	);
@@ -144,6 +202,7 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 
 function FinalistCard({ item, roleId }: { item: ShortlistItem; roleId: string }) {
 	const qc = useQueryClient();
+	const { transact } = useTransact();
 	const decide = useMutation({
 		mutationFn: async (decision: "invite" | "pass") => {
 			await gigApi.decide(roleId, item.candidateId, decision);
@@ -179,7 +238,11 @@ function FinalistCard({ item, roleId }: { item: ShortlistItem; roleId: string })
 				<span className="ml-auto">
 					<ReportFake
 						label="Report a problem"
-						onReport={(reason) => callApi.reportCandidate(roleId, item.candidateId, reason)}
+						onReport={async (why) => {
+							const res = await callApi.reportCandidate(roleId, item.candidateId, why);
+							if (res.unsignedTx)
+								await transact(res.unsignedTx, { pending: "Reporting…", success: "Reported." });
+						}}
 					/>
 				</span>
 			</div>

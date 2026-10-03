@@ -51,6 +51,9 @@ function personOf(d: DeliverableView) {
 	if (d.deliverable.type === "SOURCING") return d.deliverable.name;
 	return personInTitle(d.gigTitle);
 }
+/** Payments this recent still get their moment even if the pending state was never seen. */
+const RECENT_MS = 30 * 60_000;
+
 function loadSeen(wallet: string): Seen | null {
 	try {
 		const raw = localStorage.getItem(seenKey(wallet));
@@ -108,7 +111,10 @@ function PayoutMoment({ wallet }: { wallet: string }) {
 		if (prev) {
 			const fresh: Moment[] = [];
 			for (const s of subs.data) {
-				const before = prev.get(s.id);
+				// Work that was sent and paid while this tab wasn't watching (e.g. the candidate confirmed while the
+				// recruiter was on another page): still a moment, if it is recent.
+				const recent = Date.now() - Date.parse(s.review?.reviewedAt ?? s.submittedAt) < RECENT_MS;
+				const before = prev.get(s.id) ?? (recent && s.status === "ACCEPTED" ? "PENDING:NONE" : undefined);
 				if (!before) continue;
 				const [wasStatus, wasLater] = before.split(":");
 				const p = s.payout && { ...s.payout, ...inCents(s.payout.now, s.payout.later) };

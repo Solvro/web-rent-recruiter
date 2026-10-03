@@ -13,7 +13,7 @@ import { useTitle } from "@/lib/use-title";
 export const Route = createFileRoute("/scout/submissions")({
 	component: () => (
 		<RequireAccount kind="scout">
-			{(me) => <Earnings operator={me.operator?.name ?? null} slug={me.slug} />}
+			{(me) => <Earnings operator={me.operator?.name ?? null} slug={me.slug} earned={me.earned ?? null} />}
 		</RequireAccount>
 	),
 });
@@ -26,7 +26,16 @@ function earnedOf(list: DeliverableView[]) {
 	}, 0n);
 }
 
-function Earnings({ operator, slug }: { operator: string | null; slug: string }) {
+/** earned: the on-chain total (released holdbacks and show-up fees included) when the API sends it. */
+function Earnings({
+	operator,
+	slug,
+	earned,
+}: {
+	operator: string | null;
+	slug: string;
+	earned: string | null;
+}) {
 	const work = useMyWork();
 	useTitle("My work");
 	if (work.isError) return <ErrorState />;
@@ -48,7 +57,7 @@ function Earnings({ operator, slug }: { operator: string | null; slug: string })
 		<div className="mx-auto max-w-3xl space-y-12">
 			<div className="flex flex-wrap items-end justify-between gap-4">
 				<div className="space-y-2">
-					<h1 className="type-display">You've earned {formatMoney(earnedOf(list))}</h1>
+					<h1 className="type-display">You've earned {formatMoney(earned ?? earnedOf(list))}</h1>
 					{operator && <p className="type-label text-muted-foreground">Vouched by {operator}</p>}
 				</div>
 				<Link

@@ -276,8 +276,12 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 						.where(eq(schema.candidateConfirmations.status, "PENDING"))
 				).map((c) => c.id),
 			);
+			const settled = (s: SubRow) =>
+				Date.now() - (s.updatedAt ?? s.submittedAt).getTime() >= env.reviewGraceSeconds * 1000;
 			const out = await Promise.all(
-				rows.filter((r) => !waiting.has(r.sub.id)).map((r) => toDeliverable(r.sub, r.gig, r.scout)),
+				rows
+					.filter((r) => !waiting.has(r.sub.id) && settled(r.sub))
+					.map((r) => toDeliverable(r.sub, r.gig, r.scout)),
 			);
 			return out.filter((d): d is Deliverable => d !== null);
 		},

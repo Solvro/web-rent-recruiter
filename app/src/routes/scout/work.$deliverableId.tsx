@@ -1,12 +1,11 @@
 import type { CallDetail, DeliverableView, Me } from "@scout/shared";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Check, ExternalLink, Loader2, Minus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { Appeal } from "@/components/appeal";
-import { Chip, Countdown, Disclosure, EmptyState, ScoreChip } from "@/components/bits";
+import { Chip, Countdown, Disclosure, EmptyState, ErrorState, ScoreChip } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
 import { WhyThisScore } from "@/components/criteria";
 import { FollowUps } from "@/components/follow-ups";
@@ -14,11 +13,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { CallChecks, PayoutBreakdown, personOf, WorkStatus, workInfo } from "@/components/work";
-import { errorMessage } from "@/lib/errors";
+import { appCodeOf, errorMessage, isNotFound } from "@/lib/errors";
 import { firstName } from "@/lib/format";
-import { useMyWork } from "@/lib/gigs/api";
 import { type GigWorkView, useEditWork, useWithdrawWork, useWork } from "@/lib/gigs/work";
-import { typedClient } from "@/lib/trpc";
 import { useTitle } from "@/lib/use-title";
 import { cn } from "@/lib/utils";
 
@@ -33,22 +30,13 @@ const dateLabel = (iso: string) =>
 	new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 function WorkPage({ id, me }: { id: string; me: Me }) {
-	const mine = useMyWork();
 	const detail = useWork(id);
-	const row = mine.data?.find((d) => d.id === id);
-	const d = detail.data?.work ?? row;
-	useTitle(d ? personOf(d, detail.data?.candidateName) : "My work");
-	// Calls: the questions come from the gig the recruiter took, until the full detail arrives.
-	const gigId = d && !detail.data && d.gigType !== "SOURCING" ? d.gigId : null;
-	const gig = useQuery({
-		queryKey: ["gigs", "byId", gigId],
-		queryFn: () => typedClient.gigs.byId.query({ id: gigId ?? "" }),
-		enabled: !!gigId,
-	});
+	const w = detail.data;
+	useTitle(w ? personOf(w.work, w.candidateName) : "My work");
 
-	if (!d) {
-		if (mine.isPending || detail.isPending) return <PageSkeleton />;
-		return (
+	if (detail.isPending) return <PageSkeleton />;
+	if (!w)
+		return isNotFound(detail.error) || appCodeOf(detail.error) === "FORBIDDEN" ? (
 			<EmptyState
 				title="We couldn't find this work."
 				action={
@@ -57,24 +45,14 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 					</Link>
 				}
 			/>
+		) : (
+			<ErrorState />
 		);
-	}
 
-	const w = detail.data ?? null;
-	const person = personOf(d, w?.candidateName);
+	const d = w.work;
+	const person = personOf(d, w.candidateName);
 	const info = workInfo(d);
-	const questions: CallDetail["questions"] =
-		w?.call?.questions ??
-		(d.deliverable.type !== "SOURCING"
-			? (gig.data?.script ?? []).map((q) => ({
-					...q,
-					answer:
-						d.deliverable.type !== "SOURCING"
-							? (d.deliverable.answers.find((a) => a.questionId === q.id)?.answer ?? null)
-							: null,
-					check: null,
-				}))
-			: []);
+	const questions = w.call?.questions ?? [];
 
 	return (
 		<div className="mx-auto max-w-xl space-y-12">
@@ -92,7 +70,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 					</Chip>
 					<h1 className="type-display">{person}</h1>
 					<p className="text-muted-foreground">
-						{[d.roleTitle, w?.companyName, `sent ${dateLabel(d.submittedAt)}`].filter(Boolean).join(" · ")}
+						{[d.roleTitle, w.companyName, `sent ${dateLabel(d.submittedAt)}`].filter(Boolean).join(" · ")}
 					</p>
 					<div className="flex">
 						<WorkStatus d={d} person={person} />
@@ -116,12 +94,12 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 							<span className="truncate">{d.deliverable.profileUrl.replace(/^https?:\/\/(www\.)?/, "")}</span>
 							<ExternalLink className="size-3.5 shrink-0" />
 						</a>
-						<p className="whitespace-pre-line">{w?.note ?? d.deliverable.notes}</p>
+						<p className="whitespace-pre-line">{w.note ?? d.deliverable.notes}</p>
 					</div>
 				) : (
-					<CallAnswers d={d} questions={questions} call={w?.call ?? null} />
+					<CallAnswers d={d} questions={questions} call={w.call ?? null} />
 				)}
-				{w?.editable && <EditNote id={d.id} note={w.note ?? ""} sourcing={d.gigType === "SOURCING"} />}
+				{w.editable && <EditNote id={d.id} note={w.note ?? ""} sourcing={d.gigType === "SOURCING"} />}
 			</section>
 
 			<Review d={d} w={w} />
@@ -131,9 +109,21 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 			)}
 
 			<div className="space-y-6">
-				{w?.call?.transcript && w.call.transcript.length > 0 && (
+				{w.call?.transcript && w.call.transcript.length > 0 && (
 					<Disclosure label="Call transcript">
-						<Transcript lines={w.call.transcript} />
+						<div className="space-y-3">
+							<Transcript lines={w.call.transcript} />
+							{w.call.recordingUrl && (
+								<a
+									href={w.call.recordingUrl}
+									target="_blank"
+									rel="noreferrer"
+									className="type-label text-primary underline-offset-4 hover:underline"
+								>
+									Listen to the recording
+								</a>
+							)}
+						</div>
 					</Disclosure>
 				)}
 				{d.payout && (
@@ -141,7 +131,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 						<PayoutBreakdown d={d} person={person} operator={me.operator?.name ?? null} />
 					</Disclosure>
 				)}
-				{w?.editable && <Withdraw d={d} person={person} />}
+				{w.editable && <Withdraw d={d} person={person} />}
 			</div>
 		</div>
 	);
@@ -170,6 +160,13 @@ function Waiting({ d, person }: { d: DeliverableView; person: string }) {
 		);
 	return null;
 }
+
+/** The agent's summary is written for the company; say its codes in words. */
+const plainWords = (text: string) =>
+	text
+		.replace(/\bADVANCE\b/g, "moving forward")
+		.replace(/\bMAYBE\b/g, "not sure")
+		.replace(/\bPASS\b/g, "not a fit");
 
 const WITHDRAWN = /^withdrawn by the recruiter/i;
 
@@ -240,12 +237,13 @@ function CheckMark({ check }: { check: CallDetail["questions"][number]["check"] 
 }
 
 /** The agent's review: its verdict per criterion (profiles) or its summary (calls), and the reason when rejected. */
-function Review({ d, w }: { d: DeliverableView; w: GigWorkView | null }) {
+function Review({ d, w }: { d: DeliverableView; w: GigWorkView }) {
 	const review = d.review?.candidateReview ?? null;
 	const reasons = d.review?.reasons ?? [];
-	const raw = w?.rejectText ?? (d.status === "REJECTED" ? reasons[0] : null);
-	const rejectText = raw && WITHDRAWN.test(raw) ? "You withdrew this. It doesn't count against you." : raw;
-	const summary = !review ? w?.call?.summary : null;
+	const raw = w.rejectText ?? (d.status === "REJECTED" ? reasons[0] : null);
+	const rejectText =
+		raw && WITHDRAWN.test(raw) ? "You withdrew this. It doesn't count against you." : raw && plainWords(raw);
+	const summary = !review && w.call?.summary ? plainWords(w.call.summary) : null;
 	const others = !review && !rejectText ? reasons : [];
 	if (!review && !rejectText && !summary && !others.length) {
 		if (d.status !== "ACCEPTED") return null;
@@ -266,7 +264,7 @@ function Review({ d, w }: { d: DeliverableView; w: GigWorkView | null }) {
 						<ScoreChip review={review} />
 					</div>
 					{review.summary && <p className="text-muted-foreground">{review.summary}</p>}
-					{w?.criteria && <WhyThisScore review={review} criteria={w.criteria} />}
+					{w.criteria && <WhyThisScore review={review} criteria={w.criteria} />}
 				</div>
 			)}
 			{summary && <p className="text-muted-foreground">{summary}</p>}

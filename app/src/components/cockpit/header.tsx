@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { usePayments } from "@/lib/gigs/candidates";
 import type { RoleStatus } from "@/lib/gigs/status";
+import { inCents } from "@/lib/payout";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
@@ -96,19 +97,23 @@ function Ledger({ roleId }: { roleId: string }) {
 	if (!ledger.data?.length) return null;
 	return (
 		<ul className="max-h-56 space-y-1.5 overflow-y-auto border-t pt-3 type-label">
-			{ledger.data.map((p) => (
-				<li key={p.deliverableId} className="flex items-baseline justify-between gap-3">
-					<span className="min-w-0 truncate">
-						{p.recruiter} <span className="text-muted-foreground">· {p.kind.replace("_", " ")}</span>
-					</span>
-					<span className="shrink-0 tabular text-muted-foreground">
-						{formatMoney(p.amount)}
-						{BigInt(p.held) > 0n &&
-							` + ${formatMoney(p.held)} ${p.heldStatus === "HELD" ? "held" : p.heldStatus.toLowerCase()}`}
-						{p.signature && <Receipt signature={p.signature} />}
-					</span>
-				</li>
-			))}
+			{ledger.data.map((p) => {
+				// Whole cents that add up: the held part rounds down, "paid" takes the rest.
+				const c = inCents(p.amount, p.held);
+				return (
+					<li key={p.deliverableId} className="flex items-baseline justify-between gap-3">
+						<span className="min-w-0 truncate">
+							{p.recruiter} <span className="text-muted-foreground">· {p.kind.replace("_", " ")}</span>
+						</span>
+						<span className="shrink-0 tabular text-muted-foreground">
+							{formatMoney(c.now)}
+							{BigInt(p.held) > 0n &&
+								` + ${formatMoney(c.later)} ${p.heldStatus === "HELD" ? "held" : p.heldStatus.toLowerCase()}`}
+							{p.signature && <Receipt signature={p.signature} />}
+						</span>
+					</li>
+				);
+			})}
 		</ul>
 	);
 }

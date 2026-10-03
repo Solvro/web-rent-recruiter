@@ -835,7 +835,9 @@ function Checking({
 				<>
 					<Loader2 className="size-6 animate-spin text-primary" />
 					<h1 className="type-display">The agent is checking your work</h1>
-					<p className="text-muted-foreground">Usually a few seconds.</p>
+					<p className="text-muted-foreground">
+						Usually within a minute. Until it starts, you can still edit or withdraw it from your work.
+					</p>
 				</>
 			) : status === "ACCEPTED" ? (
 				<>

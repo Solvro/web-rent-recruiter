@@ -299,6 +299,7 @@ async function fingerprint(roleId: string) {
 			status: schema.submissions.status,
 			reviewed: schema.submissions.agentReview,
 			updatedAt: schema.submissions.updatedAt,
+			submittedAt: schema.submissions.submittedAt,
 		})
 		.from(schema.submissions)
 		.where(and(eq(schema.submissions.roleId, roleId), eq(schema.submissions.confirmed, true)));
@@ -317,6 +318,9 @@ async function fingerprint(roleId: string) {
 		role?.remaining.toString(),
 		gigs.map((g) => `${g.id}:${g.status}:${g.accepted}`).sort(),
 		subs.map((s) => `${s.id}:${s.status}:${s.reviewed ? 1 : 0}:${s.updatedAt?.getTime() ?? 0}`).sort(),
+		// A delivery leaving its edit/withdraw grace period is a change the agent must look at.
+		subs.filter((s) => Date.now() - (s.updatedAt ?? s.submittedAt).getTime() < env.reviewGraceSeconds * 1000)
+			.length,
 		JSON.stringify(role?.criteria ?? null).length,
 	]);
 }
