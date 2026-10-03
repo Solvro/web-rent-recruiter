@@ -88,3 +88,24 @@ describe("screening quality rules", () => {
 		);
 	});
 });
+
+describe("summaryForCompany", () => {
+	it("is one plain sentence of facts, without recommendation tokens or scores", async () => {
+		const { readFileSync } = await import("node:fs");
+		const { Criteria } = await import("@scout/shared");
+		process.env.LLM_PROVIDER = "offline";
+		process.env.REVIEW_ENGINE = "offline";
+		const { reviewCall } = await import("./call-review.ts");
+		const { screeningScript: makeScript } = await import("./scripts.ts");
+		const fx = (f: string) => JSON.parse(readFileSync(new URL(`../fixtures/${f}`, import.meta.url), "utf-8"));
+		const criteria = Criteria.parse(fx("demo-role-senior-backend-ts.json").criteria);
+		const s = await makeScript({ criteria, candidate: fx("demo-candidate-1-strong-karolina.json") });
+		const good = await reviewCall({ script: s, ...fx("screening-karolina-good.json") });
+		expect(good.summaryForCompany).toBe(
+			"6 years of Rust in production; shipped the lending pool and liquidation programs to mainnet in 2024; 1 month notice on B2B.",
+		);
+		const lazy = await reviewCall({ script: s, ...fx("screening-lazy.json") });
+		expect(lazy.summaryForCompany).toBe("Sent back to the recruiter: 8 of 8 answers weren't usable.");
+		for (const r of [good, lazy]) expect(r.summaryForCompany).not.toMatch(/ADVANCE|MAYBE|PASS|\/100/);
+	});
+});

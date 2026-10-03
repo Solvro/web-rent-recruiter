@@ -444,7 +444,11 @@ const KIND_LABEL = {
 /** The first clause of an answer, at most ~12 words: "6 years of Rust in production". */
 export function answerClause(answer: string, maxWords = 12): string {
 	const first = answer.trim().split(/(?<=[.!?])\s+/)[0] ?? "";
-	const cut = (first.split(/[;:]|\s\(|\s[—–-]\s/)[0] ?? first).replace(/[.,]+$/, "").trim();
+	let cut = (first.split(/;|\s\(|\s[—–-]\s/)[0] ?? first).trim();
+	// "6 years of Rust in production: 3 on payments…" → cut at the colon, but keep "Lending pool: she wrote it…".
+	const colon = cut.indexOf(":");
+	if (colon > 0 && cut.slice(0, colon).split(/\s+/).length >= 5) cut = cut.slice(0, colon);
+	cut = cut.replace(/[.,]+$/, "").trim();
 	const words = cut.split(/\s+/).filter(Boolean);
 	return words.length > maxWords ? `${words.slice(0, maxWords).join(" ")}…` : cut;
 }
@@ -461,10 +465,20 @@ const SUMMARY_IDS: Record<CallDeliverable["script"]["kind"], string[]> = {
  * live in their own fields): the strongest facts, no recommendation tokens, no numbers of ours.
  */
 export function templateSummary(d: CallDeliverable, answers: Map<string, string>, review: Decided) {
-	if (review.verdict === "REJECT")
-		return `Sent back to the recruiter: ${(review.reasons[0] ?? "the answers weren't usable").replace(/\.$/, "")}.`;
+	if (review.verdict === "REJECT") {
+		const total = review.checks.length;
+		const unusable = review.checks.filter((c) => c.missing || c.generic).length;
+		const why =
+			unusable > 0
+				? `${unusable} of ${total} answers weren't usable`
+				: (review.reasons[0] ?? "the answers weren't usable").replace(/\.$/, "");
+		return `Sent back to the recruiter: ${why}.`;
+	}
 	if (review.language) {
-		const [lang, required] = [review.language.required.split(" ")[0], review.language.required.split(" ").at(-1)];
+		const [lang, required] = [
+			review.language.required.split(" ")[0],
+			review.language.required.split(" ").at(-1),
+		];
 		return `${lang} ${review.language.cefrLevel}, ${review.language.meetsLevel ? "meets" : "below"} the required ${required}.`;
 	}
 	const usable = review.checks.filter((c) => !c.missing && !c.generic && answers.get(c.questionId));
@@ -473,13 +487,31 @@ export function templateSummary(d: CallDeliverable, answers: Map<string, string>
 	const pinned = SUMMARY_IDS[d.script.kind].filter((id) => usable.some((c) => c.questionId === id));
 	const lead =
 		d.script.kind === "screening"
-			? byFit.filter((c) => criterionIds.has(c.questionId)).slice(0, 2).map((c) => c.questionId)
+			? byFit
+					.filter((c) => criterionIds.has(c.questionId))
+					.slice(0, 2)
+					.map((c) => c.questionId)
 			: [];
-	const ids = [...new Set([...lead, ...pinned, ...byFit.map((c) => c.questionId)])].slice(0, 3);
-	const parts = ids.map((id) => answerClause(answers.get(id) ?? "")).filter(Boolean);
+	const ids = [...new Set([...lead, ...pinned, ...byFit.map((c) => c.questionId)])].slice(
+		0,
+		d.script.kind === "reference" ? 2 : 3,
+	);
+	const clauseFor = (id: string) => {
+		const a = answers.get(id) ?? "";
+		if (id === "ref-rehire")
+			return /^\s*(yes|definitely|absolutely)\b/i.test(a) ? "the referee would hire again" : answerClause(a);
+		return answerClause(a);
+	};
+	// Lowercase a part's first letter unless it starts a name or an acronym ("Rust", "SDK").
+	const soften = (part: string, i: number) =>
+		i === 0 || /^[A-Z][A-Z0-9]|^[A-Z]\w*\s[A-Z]/.test(part) || /^(I|Rust|English|Anchor|Solana)\b/.test(part)
+			? part
+			: part.charAt(0).toLowerCase() + part.slice(1);
+	const parts = ids.map(clauseFor).filter(Boolean).map(soften);
 	if (!parts.length) return "The call notes need a closer look; see the answers.";
 	const sentence = parts.join("; ");
-	return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+	const capped = `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`;
+	return /[.…]$/.test(capped) ? capped : `${capped}.`;
 }
 
 const RECOMMENDATION_WORDS = {
@@ -675,8 +707,7 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 				qa: [
 					...(decided.language ? [`Assessed level: ${decided.reasons[0]}`] : []),
 					...d.script.questions.map(
-						(q) =>
-							`Q: ${q.question}\nA: ${untrusted("recruiter_notes", answers.get(q.id) || "(no answer)")}`,
+						(q) => `Q: ${q.question}\nA: ${untrusted("recruiter_notes", answers.get(q.id) || "(no answer)")}`,
 					),
 				].join("\n\n"),
 			}),
