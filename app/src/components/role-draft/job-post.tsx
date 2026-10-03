@@ -34,6 +34,7 @@ export type JobPostReveal = {
 
 export type JobPostEdit = {
 	onTitle: (title: string) => void;
+	onCompany?: (company: string) => void;
 	onCriteria: (patch: Partial<Pick<Criteria, "mustHave" | "niceToHave" | "dealBreakers">>) => void;
 };
 
@@ -252,7 +253,15 @@ export function JobPost({
 	return (
 		<article className={cn("space-y-8", className)}>
 			<header className="space-y-3">
-				{data.company && <p className="text-muted-foreground">{data.company}</p>}
+				{(data.company || edit?.onCompany) && (
+					<p className="text-muted-foreground">
+						{edit?.onCompany ? (
+							<EditableText value={data.company ?? ""} label="Company" onCommit={edit.onCompany} />
+						) : (
+							data.company
+						)}
+					</p>
+				)}
 				{visible("title") && (
 					<h2 className="type-display">
 						<Field k="title" reveal={reveal} placeholder="w-[min(22rem,90%)] h-[1em]">

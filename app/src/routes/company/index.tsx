@@ -51,7 +51,9 @@ function Roles() {
 							</span>
 							{r.pendingCount > 0 && <Chip tone="warn">{r.pendingCount} to review</Chip>}
 							<span className="text-right type-label text-muted-foreground tabular">
-								{formatMoney(r.budget.paid)} of {formatMoney(r.budget.deposited)} spent
+								{r.status === "DRAFT"
+									? `${formatMoney(r.intendedDeposit ?? "0")} budget not added`
+									: `${formatMoney(r.budget.spent ?? BigInt(r.budget.paid) + BigInt(r.budget.heldBack))} of ${formatMoney(r.budget.deposited)} spent`}
 							</span>
 						</Link>
 					</li>

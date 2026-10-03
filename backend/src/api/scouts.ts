@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { db, schema } from "../db/index.ts";
 import { HttpError, notFound } from "../http.ts";
-import { recruiterProfile, reputationScores } from "../lib/recruiter-profile.ts";
+import { recruiterProfile, recruiterStats, reputationScores } from "../lib/recruiter-profile.ts";
 import { loadDeployment, scoutChainInfo } from "../solana/chain.ts";
 import { isScoutRegistered, registerScoutIx } from "../solana/scout.ts";
 import { buildUnsignedTx } from "../solana/tx.ts";
@@ -28,6 +28,7 @@ export async function scoutProfile(by: z.output<typeof ScoutProfileRequest>): Pr
 
 	const info = loadDeployment() ? await scoutChainInfo(address(wallet)).catch(() => null) : null;
 	const onchain = info?.profile ?? null;
+	const realCounts = (await recruiterStats(acc.wallet).catch(() => null))?.real ?? null;
 	const recent = await db
 		.select({
 			id: schema.submissions.id,
@@ -54,12 +55,16 @@ export async function scoutProfile(by: z.output<typeof ScoutProfileRequest>): Pr
 		wallet,
 		slug: acc.slug ?? wallet,
 		displayName: acc.displayName,
+		bio: acc.bio,
 		avatarUrl: acc.avatarUrl,
 		reputation: onchain
 			? {
 					submitted: Number(onchain.submitted),
-					accepted: Number(onchain.accepted),
-					rejected: Number(onchain.rejected),
+					// Counts from the same real-work source as score.acceptedByType (on-chain totalEarned stays the proof).
+					accepted: realCounts
+						? Object.values(realCounts.accepted).reduce((n, x) => n + x, 0)
+						: Number(onchain.accepted),
+					rejected: realCounts ? realCounts.rejected : Number(onchain.rejected),
 					totalEarned: onchain.totalEarned.toString(),
 					advanced: Number(onchain.advanced),
 					flagged: Number(onchain.flagged),
@@ -72,7 +77,12 @@ export async function scoutProfile(by: z.output<typeof ScoutProfileRequest>): Pr
 			return rec
 				? {
 						skills: rec.details.skills,
-						score: { ...reputationScores(rec.details.stats), seededHistory: rec.details.seeded },
+						score: {
+							...reputationScores(rec.details.stats),
+							seededHistory: rec.details.seeded,
+							acceptedByType: rec.details.real.accepted,
+							seededAccepted: rec.details.real.seededAccepted,
+						},
 					}
 				: {};
 		})()),

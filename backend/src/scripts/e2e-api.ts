@@ -97,7 +97,11 @@ const makeClient = (token: string | null) =>
 				false: httpBatchLink({
 					url: API,
 					transformer: superjson,
-					headers: () => (token ? { authorization: `Bearer ${token}` } : {}),
+					// Signed-out calls play the candidate's phone (a different device than the recruiters').
+					headers: () =>
+						token
+							? { authorization: `Bearer ${token}` }
+							: { "user-agent": "Mozilla/5.0 (iPhone; candidate)" },
 				}),
 			}),
 		],
@@ -316,6 +320,16 @@ if (process.env.E2E_ONLY === "loop") {
 		"NOT_A_RAISE",
 		"never lowers or repeats a price",
 	);
+	const pipe = (await asCompany.roles.status.query({ roleId })).pipeline;
+	check(
+		pipe.sourcingSlots === sourcing.maxDeliverables,
+		`a raise keeps the slot count (${pipe.sourcingSlots})`,
+	);
+	const line = (await asCompany.roles.activity.query({ roleId })).items.find((i) => i.kind === "REPRICED");
+	check(
+		Boolean(line?.message.includes("more from your uncommitted budget")),
+		`the raise says what it costs: "${line?.message}"`,
+	);
 
 	const k = await deliver(
 		asSourcer,
@@ -337,6 +351,63 @@ if (process.env.E2E_ONLY === "loop") {
 	check(
 		(await asCompany.candidate.resendConfirmation.mutate({ deliverableId: k })).url === null,
 		"the company can trigger a new link but never sees it",
+	);
+	// The recruiter answers her own link from her own device: not paid automatically, the company decides.
+	const third = await asSourcer.candidate.resendConfirmation.mutate({ deliverableId: k });
+	await asSourcer.candidate.confirm.mutate({ token: third.url?.split("/c/")[1] ?? "", interested: true });
+	const held = await waitFor("a same-device yes goes to the company", async () => {
+		const st = await asCompany.roles.status.query({ roleId });
+		return st.waitingOn.find((w) => w.deliverableId === k && w.who === "company") ?? null;
+	});
+	check(
+		(await asSourcer.gigs.work.query({ deliverableId: k })).work.status === "PENDING",
+		`not paid: "${held.what}"`,
+	);
+	const ok = await asCompany.deliverables.decide.mutate({
+		id: k,
+		decision: "accept",
+		reasonText: "I called her myself.",
+	});
+	if (ok.unsignedTx) await signAndSubmit([company], ok.unsignedTx);
+	await waitFor(
+		"paid once the company accepted",
+		async () => (await asSourcer.gigs.work.query({ deliverableId: k })).work.status === "ACCEPTED",
+	);
+
+	// A question to the agent never spends; a proposed change waits for Yes / No.
+	const spentBefore = (await asCompany.roles.status.query({ roleId })).budget.committed;
+	const { proposeChange } = await import("../api/proposals.ts");
+	const yes = await proposeChange(roleId, {
+		kind: "extra_sourcing",
+		summary: "Open 5 more profile slots at $32 each ($160 from the reserve)?",
+		input: { count: 5 },
+	});
+	const no = await proposeChange(roleId, {
+		kind: "pause_gigs",
+		summary: "Pause the screening calls?",
+		input: { taskTypes: ["SCREENING_CALL"] },
+	});
+	const inbox = (await asCompany.roles.status.query({ roleId })).waitingOn.filter((w) =>
+		w.actions?.some((a) => a.id === "approve_proposal"),
+	);
+	check(
+		inbox.length === 2 && (await asCompany.roles.status.query({ roleId })).budget.committed === spentBefore,
+		"the agent's proposals wait in the inbox; nothing is spent yet",
+	);
+	await asCompany.roles.decideProposal.mutate({ roleId, proposalId: no.proposalId, approve: false });
+	const r = await asCompany.roles.decideProposal.mutate({
+		roleId,
+		proposalId: yes.proposalId,
+		approve: true,
+	});
+	check(
+		BigInt((await asCompany.roles.status.query({ roleId })).budget.committed) > BigInt(spentBefore),
+		`Yes ran it ("${r.message}"), No changed nothing`,
+	);
+	await expectAppError(
+		asCompany.roles.decideProposal.mutate({ roleId, proposalId: yes.proposalId, approve: true }),
+		"ALREADY_DECIDED",
+		"a proposal is answered once",
 	);
 
 	const before = (await asCompany.roles.byId.query({ id: roleId })).criteria;
@@ -448,7 +519,12 @@ await anon.candidate.confirm.mutate({
 	interested: true,
 	availability: "Tue/Thu afternoons",
 	timeZone: "Europe/Warsaw",
+	contactEmail: "karolina.e2e@example.com",
 });
+check(
+	(await anon.candidate.view.query({ token })).recruiterSlug !== undefined,
+	"the candidate page links the recruiter's public profile",
+);
 await expectAppError(
 	anon.candidate.confirm.mutate({ token, interested: false }),
 	"ALREADY_ANSWERED",
@@ -650,10 +726,16 @@ await expectAppError(
 	"INCOMPLETE_ANSWERS",
 	"incomplete script is refused",
 );
+check(
+	claimantView.candidate?.contact?.email === "karolina.e2e@example.com" &&
+		(await asReferee.gigs.byId.query({ id: screening.id })).candidate?.contact == null,
+	"the screener gets Karolina's contact from her confirmation; others don't",
+);
 const screeningId = await deliver(asScreener, screener, screening.id, {
 	type: "SCREENING_CALL",
 	answers: questions.map((q) => ({ questionId: q.id, answer: answerFrom(SCREENING)(q) })),
 	recommendation: "ADVANCE",
+	referee: { name: "Marek Nowicki", relation: "Her manager at Kelp Labs", contact: "marek@example.com" },
 });
 const screened = await waitFor("agent reviewed the screening notes", async () =>
 	(await asScreener.gigs.mine.query()).deliverables.find((d) => d.id === screeningId && d.review),
@@ -826,10 +908,18 @@ await asReferee.recall.invite.mutate({
 	gigId: reference.id,
 	meetingUrl: "https://meet.google.com/abc-defg-hij",
 });
-await waitFor("the notetaker joined the call", async () => {
+const joined = await waitFor("the notetaker joined the call", async () => {
 	const r = await asReferee.recall.status.query({ gigId: reference.id });
-	return r && ["in_call", "recording", "processing", "done"].includes(r.status);
+	return r && ["in_call", "recording", "processing", "done"].includes(r.status) ? r : null;
 });
+check(
+	joined.simulated === true && joined.statusText.startsWith("Demo recording (simulated)"),
+	`a simulated recording says so: "${joined.statusText}"`,
+);
+check(
+	(await asReferee.gigs.byId.query({ id: reference.id })).candidate?.referee?.name === "Marek Nowicki",
+	"the reference caller sees the referee Karolina named on her screening",
+);
 const ns = await asReferee.gigs.noShow.mutate({ gigId: reference.id });
 check(
 	ns.noShows === 1 && ns.status === "OPEN" && ns.showUpFee !== null,
@@ -882,6 +972,11 @@ const referenceId = await deliver(asReferee, referee, reference.id, {
 	})),
 	recommendation: "ADVANCE",
 });
+await expectAppError(
+	asReferee.gigs.noShow.mutate({ gigId: reference.id }),
+	"CALL_HAPPENED",
+	"after sending notes, the call can't be marked a no-show",
+);
 const referenced = await waitFor("agent reviewed the reference", async () =>
 	(await asReferee.gigs.mine.query()).deliverables.find((d) => d.id === referenceId && d.review),
 );
@@ -1009,12 +1104,46 @@ check(
 	"thread keeps the company message",
 );
 
+// A question never changes anything (I5): no new gigs, nothing committed, no proposal.
+{
+	const st0 = await asCompany.roles.status.query({ roleId });
+	const gigs0 = (await asCompany.gigs.list.query({ roleId, includeClosed: true })).length;
+	const finals0 = events.filter((e) => e.type === "agent.message" && e.final && e.roleId === roleId).length;
+	await asCompany.roles.message.mutate({
+		roleId,
+		text: "Why are you sending me Rust engineers? Isn't this a different kind of role?",
+	});
+	await waitFor(
+		"agent answered the question",
+		async () =>
+			events.filter((e) => e.type === "agent.message" && e.final && e.roleId === roleId).length > finals0,
+		180_000,
+	);
+	const st1 = await asCompany.roles.status.query({ roleId });
+	check(
+		st1.budget.committed === st0.budget.committed &&
+			(await asCompany.gigs.list.query({ roleId, includeClosed: true })).length === gigs0 &&
+			!st1.waitingOn.some((w) => w.actions?.some((a) => a.id === "approve_proposal")),
+		"a question to the agent spends nothing and changes no gigs",
+	);
+}
+
 // ---- 6. Company decision ---------------------------------------------------------------------
 
 const before = await Promise.all([asSourcer, asScreener, asReferee].map(balance));
 const invite = await asCompany.roles.decide.mutate({ roleId, candidateId: karolina, decision: "invite" });
 check(invite.unsignedTx === null, "invite is a decision only (nothing to sign)");
 const decided = await asCompany.roles.shortlist.query({ roleId });
+{
+	const st = await asCompany.roles.status.query({ roleId });
+	const item = st.waitingOn.find(
+		(w) => w.deliverableId === karolina && w.actions?.some((a) => a.id === "attended"),
+	);
+	check(
+		Boolean(item?.actions?.some((a) => a.id === "no_show")),
+		"after the invite: Came to the interview / Didn't come",
+	);
+}
 check(
 	decided.find((i) => i.candidateId === karolina)?.decision === "INVITED",
 	"Karolina invited to interview",
@@ -1099,10 +1228,64 @@ if (piotr) {
 		"DO_NOT_CONTACT",
 		"a reported fake candidate can't be submitted again",
 	);
+	const piotrView = (await asSourcer.gigs.mine.query()).deliverables.find((d) => d.id === piotr.id);
+	check(
+		piotrView?.deposit?.status === "KEPT" && BigInt(piotrView.deposit.amount) > 0n,
+		`Piotr's rejection kept the bond (${usd(piotrView?.deposit?.amount ?? "0")}) and the recruiter sees it`,
+	);
+	const { createBackendPorts } = await import("../agent-runner/backend-ports.ts");
+	const why = await createBackendPorts(roleId).getDecisionLog({ candidateName: "piotr", limit: 5 });
+	check(
+		why.some((d) => d.action === "reject" && d.candidateName?.startsWith("Piotr")),
+		`the agent can explain Piotr's rejection: "${why.find((d) => d.action === "reject")?.reason}"`,
+	);
 	// The fixtures are reused by every run: lift this run's do-not-contact flag again.
 	const { db, schema } = await import("../db/index.ts");
 	const { eq } = await import("drizzle-orm");
 	await db.delete(schema.candidateFlags).where(eq(schema.candidateFlags.roleId, roleId));
+}
+
+// Money: what the role spent adds up to the ledger; a recruiter can cash out; profiles count real work.
+{
+	const detail = await asCompany.roles.byId.query({ id: roleId });
+	const ledger = await asCompany.roles.payments.query({ roleId });
+	const sum = ledger.filter((l) => l.kind !== "appeal").reduce((n, l) => n + BigInt(l.bounty ?? "0"), 0n);
+	check(
+		BigInt(detail.budget.spent ?? "-1") === sum && BigInt(detail.budget.fees ?? "0") > 0n,
+		`spent ${usd(detail.budget.spent ?? "0")} = the ledger's plan prices (fees ${usd(detail.budget.fees ?? "0")})`,
+	);
+	const k = (await asSourcer.gigs.mine.query()).deliverables.find((d) => d.id === karolina);
+	check(k?.deposit?.status === "RETURNED", "Karolina's acceptance returned the sourcer's bond");
+	const was = await balance(asScreener);
+	await signAndSubmit(
+		[screener],
+		(await asScreener.me.cashOut.mutate({ to: referee.address, amount: toBaseUnits(1).toString() }))
+			.unsignedTx,
+	);
+	const now = await waitFor(
+		"cash out landed",
+		async () => {
+			const b = await balance(asScreener);
+			return b < was ? b : null;
+		},
+		30_000,
+	);
+	check(was - now === toBaseUnits(1), "the screener cashed out $1 to another account");
+	await expectAppError(
+		asScreener.me.cashOut.mutate({ to: referee.address, amount: toBaseUnits(1_000_000).toString() }),
+		"INSUFFICIENT_FUNDS",
+		"can't send more than the balance",
+	);
+	await asScreener.me.upsert.mutate({
+		kind: "scout",
+		displayName: "E2E recruiter B",
+		bio: "I screen Rust engineers.",
+	});
+	const prof = await anon.scouts.profile.query({ wallet: screener.address });
+	check(
+		prof.bio === "I screen Rust engineers." && (prof.score?.acceptedByType?.SCREENING_CALL ?? 0) >= 1,
+		`public profile: bio and real accepted calls (${prof.score?.acceptedByType?.SCREENING_CALL} screening, seeded ${prof.score?.seededAccepted})`,
+	);
 }
 
 const activity = await asCompany.roles.activity.query({ roleId });

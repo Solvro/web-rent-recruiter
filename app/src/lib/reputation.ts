@@ -16,7 +16,7 @@ export const TYPE_WORD = {
 /** "Verified by Kraków Recruiting Academy" / "5 earned" / nothing (self-declared and demo history stay quiet). */
 export function skillSource(s: { skill: string; source: string; verifiedBy: string | null; count?: number }) {
 	if (s.source === "operator" && s.verifiedBy) return `Verified by ${s.verifiedBy}`;
-	if (s.source === "earned") return `${s.count ?? 0} earned`;
+	if (s.source === "earned") return s.count ? `${s.count} accepted` : null;
 	return null;
 }
 
@@ -29,6 +29,10 @@ const EARNED: Record<string, string> = {
 };
 
 export function skillName(tag: string) {
+	const [kind, what] = tag.split(":");
+	// A recruiter's engineering tag means who they hire, not what they are.
+	if (kind === "engineer" && what)
+		return `Hires ${skillLabel(tag)?.replace(/ engineer$/, "") ?? what} engineers`;
 	return EARNED[tag] ?? skillLabel(tag) ?? tag;
 }
 

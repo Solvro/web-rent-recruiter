@@ -28,6 +28,8 @@ export const accounts = pgTable("accounts", {
 	companyName: text(),
 	/** IANA time zone for booking calls. */
 	timeZone: text(),
+	/** Recruiters: one line about themselves (public profile). */
+	bio: text(),
 	createdAt: createdAt(),
 });
 
@@ -64,6 +66,12 @@ export const roles = pgTable(
 		pendingCount: integer().notNull().default(0),
 		/** RoleVault.held_back_total */
 		heldBack: amount(),
+		/** The hiring company as recruiters and candidates see it (from the posting; null: the account's name). */
+		companyLabel: text(),
+		/** The budget the company meant to deposit (roles.fund rebuilds create_role from it). */
+		intendedDeposit: amount(),
+		/** What close_role returned to the company. */
+		refunded: amount(),
 		/** Forfeited recruiter bonds (counted on-chain in total_deposited; shown apart from the company's deposits). */
 		bondsForfeited: amount(),
 		/** RoleVault.pending_value + open_capacity: what pending deliverables and open gig slots may still cost. */
@@ -241,6 +249,11 @@ export const gigs = pgTable(
 		noShows: integer().notNull().default(0),
 		/** Someone reported the candidate as possibly fake; on hold until the company decides. */
 		reported: boolean().notNull().default(false),
+		/** What the claimant wrote when reporting the candidate. */
+		reportReason: text(),
+		/** Why the gig closed early (shown to its claimant). */
+		closedReason: text().$type<"REPORTED_FAKE" | "NO_SHOW">(),
+		closedAt: timestamp({ withTimezone: true, mode: "date" }),
 		/**
 		 * null: a real gig. "show_up_fee": a one-slot task that only pays a recruiter's show-up fee for the gig
 		 * `aboutGigId` (hidden from the board, the agent and stats).
@@ -303,7 +316,10 @@ export const shortlist = pgTable(
 		agentNote: text().notNull(),
 		screening: jsonb().$type<{ summary: string; recommendation: string; recruiter: string }>(),
 		reference: jsonb().$type<{ summary: string; recommendation: string; recruiter: string }>(),
-		decision: text().$type<"NONE" | "INVITED" | "PASSED" | "ATTENDED">().notNull().default("NONE"),
+		decision: text()
+			.$type<"NONE" | "INVITED" | "PASSED" | "ATTENDED" | "NO_SHOW">()
+			.notNull()
+			.default("NONE"),
 		decidedAt: timestamp({ withTimezone: true, mode: "date" }),
 		decisionTx: text(),
 		updatedAt: createdAt(),
@@ -448,4 +464,30 @@ export const companyNotes = pgTable(
 		createdAt: createdAt(),
 	},
 	(t) => [index("company_notes_candidate_idx").on(t.candidateId)],
+);
+
+/**
+ * Changes the agent proposed in chat (spend, criteria, pausing): nothing runs until the company clicks Yes
+ * (roles.decideProposal). `input` is exactly what the agent's action function takes.
+ */
+export const agentProposals = pgTable(
+	"agent_proposals",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		roleId: uuid()
+			.notNull()
+			.references(() => roles.id),
+		kind: text()
+			.$type<
+				"extra_sourcing" | "raise_price" | "adjust_criteria" | "pause_gigs" | "resume_gigs" | "close_slots"
+			>()
+			.notNull(),
+		summary: text().notNull(),
+		input: jsonb().$type<Record<string, unknown>>().notNull(),
+		status: text().$type<"PENDING" | "APPROVED" | "DECLINED" | "FAILED">().notNull().default("PENDING"),
+		result: text(),
+		decidedAt: timestamp({ withTimezone: true, mode: "date" }),
+		createdAt: createdAt(),
+	},
+	(t) => [index("agent_proposals_role_idx").on(t.roleId, t.status)],
 );

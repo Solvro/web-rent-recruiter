@@ -56,32 +56,59 @@ export async function extractAnswers(input: {
 	};
 }
 
+const STOP = new Set(
+	"a an and are as at be by can could did do does for from had has have how i in is it its me my of on or our so that the their them they this to was we were what when where which who why will with would you your about tell walk us give one".split(
+		" ",
+	),
+);
+const words = (t: string) =>
+	new Set(
+		t
+			.toLowerCase()
+			.split(/[^a-z0-9ąćęłńóśźż]+/)
+			.filter((w) => w.length > 2 && !STOP.has(w)),
+	);
+
 /**
- * No-model fallback: the recruiter speaks first; each recruiter turn followed by candidate turns is one Q/A pair,
- * assigned to the script questions in order (the script is followed in order on the call).
+ * No-model fallback: each interviewer turn and the other side's reply that follows is one Q/A pair. A script
+ * question gets the pair whose interviewer turn shares the most words with it (each pair used once); a question
+ * no turn matches stays empty for the recruiter, rather than taking a neighbour's answer.
  */
 export function offlineExtract(input: {
 	questions: ScriptQuestion[];
 	lines: TranscriptLine[];
 }): z.infer<typeof PrefillSchema> {
 	const interviewer = input.lines[0]?.speaker;
-	const pairs: string[] = [];
-	let current: string[] | null = null;
+	const pairs: { asked: string; answer: string[] }[] = [];
 	for (const line of input.lines) {
-		if (line.speaker === interviewer) {
-			if (current?.length) pairs.push(current.join(" "));
-			current = [];
-		} else current?.push(line.text);
+		if (line.speaker === interviewer) pairs.push({ asked: line.text, answer: [] });
+		else pairs.at(-1)?.answer.push(line.text);
 	}
-	if (current?.length) pairs.push(current.join(" "));
-	const substantive = pairs.filter((p) => p.split(/\s+/).length >= 6);
-	const answers = input.questions.flatMap((q, i) => {
-		const text = substantive[i];
+	const usable = pairs
+		.map((p) => ({ asked: words(p.asked), answer: p.answer.join(" ") }))
+		.filter((p) => p.answer.split(/\s+/).length >= 6);
+	// Best match first, so a strong match isn't taken by a weaker question earlier in the script.
+	const scored = input.questions.flatMap((q, qi) => {
+		const want = words(q.question);
+		return usable.map((p, pi) => ({ qi, pi, score: [...want].filter((w) => p.asked.has(w)).length }));
+	});
+	scored.sort((a, b) => b.score - a.score);
+	const byQuestion = new Map<number, number>();
+	const usedPair = new Set<number>();
+	for (const m of scored) {
+		if (m.score < 2 || byQuestion.has(m.qi) || usedPair.has(m.pi)) continue;
+		byQuestion.set(m.qi, m.pi);
+		usedPair.add(m.pi);
+	}
+	const answers = input.questions.flatMap((q, qi) => {
+		const pi = byQuestion.get(qi);
+		const text = pi === undefined ? undefined : usable[pi]?.answer;
 		return text ? [{ questionId: q.id, answer: text }] : [];
 	});
+	const answered = new Set(answers.map((a) => a.questionId));
 	return {
 		answers,
 		recommendation: answers.length >= Math.ceil(input.questions.length * 0.75) ? "ADVANCE" : "MAYBE",
-		missing: input.questions.slice(answers.length).map((q) => q.id),
+		missing: input.questions.filter((q) => !answered.has(q.id)).map((q) => q.id),
 	};
 }

@@ -34,6 +34,10 @@ export const GigCandidate = z.object({
 	name: z.string().nullable(),
 	profileUrl: z.string().nullable(),
 	card: CandidateInfo.nullable(),
+	/** How to reach the candidate (from /c), claimant and company only. */
+	contact: z.object({ email: z.string().nullable(), phone: z.string().nullable() }).nullable().optional(),
+	/** Reference checks: the referee the candidate named on the screening call, claimant and company only. */
+	referee: z.object({ name: z.string(), relation: z.string(), contact: z.string() }).nullable().optional(),
 	/** What the candidate told us on their confirmation page (claimant and company only; null when redacted). */
 	availability: z.string().nullable().optional(),
 	salaryExpectation: z.string().nullable().optional(),
@@ -134,6 +138,13 @@ export const GigView = z.object({
 		.optional(),
 	/** Someone reported the candidate as possibly fake: the gig is on hold until the company decides. */
 	reported: z.boolean().optional(),
+	/** The role's holdback window: the held part is paid within this, sooner if the candidate interviews. */
+	holdbackWindowSeconds: z.number().int().optional(),
+	/** Claimant only: why the gig closed early. */
+	closedReason: z.enum(["REPORTED_FAKE", "NO_SHOW"]).nullable().optional(),
+	closedAt: z.string().nullable().optional(),
+	/** Claimant only: what they wrote when reporting the candidate. */
+	reportReason: z.string().nullable().optional(),
 });
 export type GigView = z.infer<typeof GigView>;
 
@@ -163,6 +174,14 @@ export const ScreeningDeliverable = z.object({
 	evidence: z.enum(["recording", "self-reported"]).optional(),
 	/** Language checks: the level the recruiter assessed. */
 	assessedLevel: z.enum(["A1", "A2", "B1", "B2", "C1", "C2"]).optional(),
+	/** Screening: a referee the candidate named on the call (the reference check's claimant sees it). */
+	referee: z
+		.object({
+			name: z.string().min(1).max(200),
+			relation: z.string().min(1).max(200),
+			contact: z.string().min(1).max(200),
+		})
+		.optional(),
 });
 export const ReferenceDeliverable = z.object({
 	type: z.literal("REFERENCE_CHECK"),
@@ -263,6 +282,11 @@ export const DeliverableView = z.object({
 		.optional(),
 	/** The recruiter's appeal of a rejection, and the company's answer. */
 	appeal: AppealView.nullable().optional(),
+	/** The deliverable's bond: held while pending, returned on accept, kept by the role on rejection. */
+	deposit: z
+		.object({ amount: BaseUnits, status: z.enum(["HELD", "RETURNED", "KEPT"]) })
+		.nullable()
+		.optional(),
 });
 export type DeliverableView = z.infer<typeof DeliverableView>;
 
@@ -341,7 +365,8 @@ export const ShortlistItem = z.object({
 	screening: z.object({ summary: z.string(), recommendation: z.string(), recruiter: z.string() }).nullable(),
 	reference: z.object({ summary: z.string(), recommendation: z.string(), recruiter: z.string() }).nullable(),
 	/** INVITED = "Invite to interview"; ATTENDED = "Came to the interview" (releases the recruiters' holdbacks). */
-	decision: z.enum(["NONE", "INVITED", "PASSED", "ATTENDED"]),
+	/** NO_SHOW: invited but didn't come (held parts refunded to the company). */
+	decision: z.enum(["NONE", "INVITED", "PASSED", "ATTENDED", "NO_SHOW"]),
 	decidedAt: z.string().nullable(),
 });
 export type ShortlistItem = z.infer<typeof ShortlistItem>;
@@ -354,7 +379,11 @@ export const RoleDecideRequest = z.object({
 	 * invite: "Invite to interview" (recorded, nothing paid). pass: "Pass". attended: "Came to the interview" →
 	 * returns a tx attesting Advanced on the candidate's deliverables, which releases the recruiters' holdbacks.
 	 */
-	decision: z.enum(["invite", "pass", "attended"]),
+	/**
+	 * no_show: invited but didn't come. Recorded only: the candidate was real and confirmed, so the recruiters' held
+	 * parts are still paid at the holdback deadline (refunding them on-chain would flag the recruiters as fabricated).
+	 */
+	decision: z.enum(["invite", "pass", "attended", "no_show"]),
 });
 /** unsignedTx is null unless decision is "attended" (and something is still held). */
 /** roles.message: talk to the role's agent. The reply streams as `agent.message` / `agent.tool` events. */
@@ -385,6 +414,9 @@ export const CandidateView = z.object({
 	salaryLabel: z.string().nullable(),
 	status: z.enum(["PENDING", "YES", "NO", "EXPIRED"]),
 	expiresAt: z.string(),
+	/** The recruiter's public profile and photo, so the candidate can check who sent the link. */
+	recruiterSlug: z.string().nullable().optional(),
+	recruiterAvatarUrl: z.string().nullable().optional(),
 	/**
 	 * interest (default): "Are you interested in this role?". call: "Did you talk to <callWith> about this role?"
 	 * (a self-reported screening call; yes releases the recruiter's payment, no rejects it).
@@ -401,6 +433,11 @@ export const CandidateConfirmRequest = z.object({
 	salaryExpectation: z.string().max(200).optional(),
 	/** The candidate's IANA time zone (the page sends Intl's), so recruiters book calls in their time. */
 	timeZone: z.string().max(64).optional(),
+	/** Only kept on a yes: how to reach them. */
+	contactEmail: z.string().max(200).optional(),
+	contactPhone: z.string().max(40).optional(),
+	/** "Report this message": saved as no; the company sees it flagged on the recruiter's deliverable. */
+	reported: z.boolean().optional(),
 });
 export const CandidateConfirmResponse = z.object({ status: z.enum(["YES", "NO"]) });
 
@@ -412,6 +449,9 @@ export * from "./reputation.ts";
 export const BudgetSnapshot = z.object({
 	/** The company's deposits only (forfeited bonds apart). */
 	deposited: BaseUnits,
+	spent: BaseUnits.optional(),
+	fees: BaseUnits.optional(),
+	refunded: BaseUnits.optional(),
 	bondsForfeited: BaseUnits.optional(),
 	paid: BaseUnits,
 	heldBack: BaseUnits,
@@ -438,7 +478,13 @@ export const WaitingAction = z.object({
 		"dismiss_report",
 		/** The agent asked something that needs no form: "Got it" → roles.ackEscalation({roleId, activityId}). */
 		"acknowledge",
+		/** A change the agent proposed: roles.decideProposal({roleId, proposalId, approve: true | false}). */
+		"approve_proposal",
+		"decline_proposal",
+		/** Invited candidate didn't come: roles.decide no_show. */
+		"no_show",
 	]),
+	proposalId: z.string().optional(),
 	label: z.string(),
 	activityId: z.string().optional(),
 	/** invite / pass / attended / report_candidate / dismiss_report: the candidate (= their sourcing deliverable id). */
@@ -575,3 +621,21 @@ export const AckEscalationRequest = z.object({ roleId: z.string().uuid(), activi
 /** A fresh link for a pending candidate confirmation (the old link stops working). url: only for the sourcer. */
 export const ResendConfirmationRequest = z.object({ deliverableId: z.string().uuid() });
 export const ResendConfirmationResponse = z.object({ url: z.string().nullable(), expiresAt: z.string() });
+
+// ---- Agent proposals, draft roles, closing ----------------------------------------------------------
+
+/** Yes / No on a change the agent proposed (waitingOn actions approve_proposal / decline_proposal). */
+export const DecideProposalRequest = z.object({
+	roleId: z.string().uuid(),
+	proposalId: z.string().uuid(),
+	approve: z.boolean(),
+});
+export const DecideProposalResponse = z.object({ ok: z.boolean(), message: z.string() });
+/** roles.fund: a DRAFT role whose create_role never landed. alreadyFunded: the vault exists (resynced). */
+export const FundRoleResponse = z.object({ unsignedTx: UnsignedTx.nullable(), alreadyFunded: z.boolean() });
+/** roles.closePreview: what closing returns, and what's still in flight. */
+export const ClosePreview = z.object({
+	refund: BaseUnits,
+	openGigs: z.number().int(),
+	inProgress: z.array(z.object({ candidateId: z.string(), name: z.string() })),
+});

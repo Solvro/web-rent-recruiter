@@ -193,6 +193,24 @@ async function recordCompanyOverride(
 	} | null;
 	const byCompany = ix.accounts.authority === role.companyWallet;
 	const bySilence = ix.name === "settle_expired";
+	// The company's own decisions belong in its thread, once per deliverable and decision.
+	if (byCompany) {
+		const { logActivity } = await import("../api/gigs.ts");
+		const [gig] = sub.gigId ? await db.select().from(schema.gigs).where(eq(schema.gigs.id, sub.gigId)) : [];
+		const first = sub.candidateName.split(" ")[0];
+		const what =
+			sub.deliverableType === "SOURCING"
+				? sub.candidateName
+				: `${first}'s ${gig?.type === "REFERENCE_CHECK" ? "reference check" : gig?.variant === "language" ? "language check" : "screening"}`;
+		await logActivity(
+			role.id,
+			"DECISION",
+			action === "accept"
+				? `You accepted ${what}`
+				: `You rejected ${what}${sub.rejectText ? `: ${sub.rejectText.replace(/[.]$/, "")}` : ""}`,
+			{ deliverableId: sub.id, gigId: sub.gigId },
+		);
+	}
 	if (!stored?.decision || (!byCompany && !bySilence) || stored.decision.action === action) return;
 	const reason = bySilence
 		? "Accepted automatically: nobody reviewed it in time."

@@ -155,5 +155,10 @@ export function useDraftStream() {
 		setState(IDLE);
 	}, [stop]);
 
-	return { ...state, start, reset };
+	/** A draft saved before a reload: back to the finished post, no new run. */
+	const restore = useCallback((draft: DraftRoleResponse) => {
+		setState({ ...IDLE, phase: "done", status: "", partial: draft, result: draft });
+	}, []);
+
+	return { ...state, start, reset, restore };
 }

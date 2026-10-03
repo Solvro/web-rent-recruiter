@@ -32,7 +32,7 @@ import languageCheck from "../../../../backend/src/agent/fixtures/language-karol
 import referenceGood from "../../../../backend/src/agent/fixtures/reference-karolina.json";
 import screeningGood from "../../../../backend/src/agent/fixtures/screening-karolina-good.json";
 import { canClaimGig, gigRequirements, repriceRule } from "../../../../backend/src/agent/gigs/pure";
-import { formatMoney } from "../format";
+import { formatMoney, slugify } from "../format";
 import { planGigs, withLevel } from "../gigs/plan";
 import type { RoleActivityView, ShortlistItemView } from "../gigs/schemas";
 import type { GigWorkView } from "../gigs/work";
@@ -87,6 +87,8 @@ type MockGig = {
 	claimedAt?: string;
 	/** Times the candidate didn't join the call. */
 	noShows?: number;
+	/** Why the claimant's gig closed early (fake report or two no-shows), shown to them. */
+	closed?: { reason: "REPORTED_FAKE" | "NO_SHOW"; at: string; report: string | null };
 	/** Offered when the notetaker was in the call but the candidate never joined. */
 	showUpFee?: { amount: bigint; signature: string | null } | null;
 	/** Raises by the agent when nobody takes the gig, oldest first. */
@@ -135,7 +137,7 @@ type MockShortlist = {
 	agentNote: string;
 	screening: { summary: string; recommendation: string; recruiter: string } | null;
 	reference: { summary: string; recommendation: string; recruiter: string } | null;
-	decision: "NONE" | "INVITED" | "ATTENDED" | "PASSED";
+	decision: "NONE" | "INVITED" | "ATTENDED" | "PASSED" | "NO_SHOW";
 	decidedAt: string | null;
 };
 
@@ -178,14 +180,25 @@ const g = {
 	paused: new Set<string>(),
 	/** Who checks the work per role (default: the Scout agent). */
 	reviewers: new Map<string, Reviewer>(),
+	/** Changes the agent proposed in chat, waiting for the company's yes. */
+	proposals: new Map<string, Proposal>(),
 	/** Recruiters' requests to look again at a rejection, by deliverable. */
 	appeals: new Map<string, AppealView>(),
+};
+/** A change asked for in chat: nothing happens until the company says yes in "Needs you". */
+type Proposal = {
+	id: string;
+	roleId: string;
+	text: string;
+	at: string;
+	add?: { skill: string; slots: number };
+	remove?: { skill: string; slots: number };
 };
 type Reviewer = { mode: "scout" | "custom" | "self"; agentPubkey: string | null };
 const reviewerOf = (roleId: string): Reviewer =>
 	g.reviewers.get(roleId) ?? { mode: "scout", agentPubkey: null };
 
-const KEY = "scout.mock-gigs.v3";
+const KEY = "scout.mock-gigs.v4";
 const big = (_k: string, v: unknown) => (typeof v === "bigint" ? { $big: v.toString() } : v);
 const unbig = (_k: string, v: unknown) =>
 	v && typeof v === "object" && "$big" in v ? BigInt((v as { $big: string }).$big) : v;
@@ -205,6 +218,7 @@ function save() {
 					paused: [...g.paused],
 					reviewers: [...g.reviewers],
 					appeals: [...g.appeals],
+					proposals: [...g.proposals],
 				},
 				big,
 			),
@@ -229,6 +243,7 @@ function load() {
 		g.paused = new Set(d.paused);
 		g.reviewers = new Map(d.reviewers ?? []);
 		g.appeals = new Map(d.appeals ?? []);
+		g.proposals = new Map(d.proposals ?? []);
 		return true;
 	} catch {
 		return false;
@@ -251,12 +266,12 @@ const REVIEW_DELAY_MS = 4 * SECOND;
 /** A demo recruiter's own delivery waits this long before review (backend REVIEW_GRACE_SECONDS with DEMO_FAST). */
 const REVIEW_GRACE_MS = 30 * SECOND;
 /** How long a candidate has to confirm (48 h in production). */
-const CONFIRM_WINDOW_MS = 5 * 60 * SECOND;
+const CONFIRM_WINDOW_MS = 20 * 60 * SECOND;
 const first = (name: string) => name.split(" ")[0] ?? name;
 const iso = (ms = Date.now()) => new Date(ms).toISOString();
 const displayName = (wallet: string) => db.profiles.get(wallet)?.displayName ?? "A recruiter";
 
-function log(roleId: string, kind: Entry["kind"], message: string, extra: Partial<Entry> = {}) {
+export function log(roleId: string, kind: Entry["kind"], message: string, extra: Partial<Entry> = {}) {
 	const list = g.entries.get(roleId) ?? [];
 	list.push({
 		id: newId("act"),
@@ -816,6 +831,8 @@ function preAccept(d: MockDelivery) {
 	const salary = role.criteria.salaryRange;
 	d.confirmExpiresAt = Date.now() + CONFIRM_WINDOW_MS;
 	d.confirmToken = createConfirmation({
+		recruiterSlug: slugify(from),
+		recruiterAvatarUrl: avatarFor(from),
 		candidateFirstName: first(p.name),
 		recruiterName: from,
 		roleTitle: role.title,
@@ -889,6 +906,8 @@ function askAboutCall(d: MockDelivery, gig: MockGig) {
 	if (!role || !gig.candidate) return;
 	d.callToken = createConfirmation({
 		...publicFacts(role),
+		recruiterSlug: slugify(displayName(d.scout)),
+		recruiterAvatarUrl: avatarFor(displayName(d.scout)),
 		candidateFirstName: first(gig.candidate.name),
 		recruiterName: displayName(d.scout),
 		expiresAt: iso(Date.now() + CALL_CONFIRM_WINDOW_MS),
@@ -974,11 +993,60 @@ function acceptSourcing(d: MockDelivery) {
 }
 
 /** Scripted replies to the company's instructions; the backend runs the real agent. */
+/** The agent proposes; the company decides in "Needs you". */
+function propose(roleId: string, what: string, change: Pick<Proposal, "add" | "remove">) {
+	const p: Proposal = { id: newId("prop"), roleId, text: what, at: iso(), ...change };
+	g.proposals.set(p.id, p);
+	log(roleId, "AGENT_MESSAGE", `I can ${what}. Say yes in "Needs you" and I'll do it.`);
+}
+
+function applyProposal(p: Proposal) {
+	const role = db.roles.get(p.roleId);
+	const gig = [...g.gigs.values()].find((x) => x.roleId === p.roleId && x.type === "SOURCING");
+	if (!role) return;
+	if (p.add?.skill) {
+		role.criteria.niceToHave.push({
+			id: `extra-${p.add.skill.toLowerCase()}`,
+			label: p.add.skill,
+			weight: 3,
+		});
+		log(p.roleId, "CRITERIA_UPDATED", `Added ${p.add.skill} to the nice-to-haves`);
+	}
+	if (p.add?.slots && gig) {
+		gig.maxDeliverables += p.add.slots;
+		gig.status = "OPEN";
+		log(
+			p.roleId,
+			"GIG_POSTED",
+			`Opened ${p.add.slots} more profile slots · ${formatMoney(gig.bounty)} each`,
+			{ gigId: gig.id },
+		);
+	}
+	if (p.remove?.skill) {
+		role.criteria.niceToHave = role.criteria.niceToHave.filter((c) => c.label !== p.remove?.skill);
+		log(p.roleId, "CRITERIA_UPDATED", `Removed ${p.remove.skill} from the nice-to-haves`);
+	}
+	if (p.remove?.slots && gig) {
+		const floor =
+			gig.acceptedCount +
+			[...g.deliveries.values()].filter((d) => d.gigId === gig.id && d.status === "PENDING").length;
+		const next = Math.max(floor, gig.maxDeliverables - p.remove.slots);
+		const closed = gig.maxDeliverables - next;
+		gig.maxDeliverables = next;
+		if (next <= gig.acceptedCount) gig.status = "CLOSED";
+		log(
+			p.roleId,
+			"CRITERIA_UPDATED",
+			`Closed ${closed} profile slots · ${formatMoney(gig.bounty * BigInt(closed))} back in your budget`,
+		);
+	}
+}
+
 function reply(roleId: string, text: string) {
 	const role = db.roles.get(roleId);
 	if (!role) return;
 	const lower = text.toLowerCase();
-	if (/\b(pause|stop|hold)\b/.test(lower)) {
+	if (/\b(pause|stop|hold)\b/.test(lower) && !/\?\s*$/.test(text)) {
 		g.paused.add(roleId);
 		log(roleId, "PAUSED", "Paused new screening calls");
 		log(
@@ -988,7 +1056,7 @@ function reply(roleId: string, text: string) {
 		);
 		return;
 	}
-	if (/\b(resume|continue|go on|start again)\b/.test(lower)) {
+	if (/\b(resume|continue|go on|start again)\b/.test(lower) && !/\?\s*$/.test(text)) {
 		g.paused.delete(roleId);
 		log(roleId, "RESUMED", "Resumed screening calls");
 		log(roleId, "RESUMED", "Resumed");
@@ -1054,10 +1122,61 @@ function reply(roleId: string, text: string) {
 		);
 		return;
 	}
+	const skill = text.match(/\b(golang|go|rust|python|java|kotlin|kubernetes|aws|react)\b/i)?.[1];
+	const skillLabel = skill
+		? /^go(lang)?$/i.test(skill)
+			? "Go"
+			: skill[0].toUpperCase() + skill.slice(1)
+		: null;
+	const gig = [...g.gigs.values()].find((x) => x.roleId === roleId && x.type === "SOURCING");
+	// A question never changes anything: answer it.
+	if (/\?\s*$/.test(text) || /^(why|what|how|who|when|is|are|do|does|can|could)\b/.test(lower)) {
+		const extra = skillLabel && role.criteria.niceToHave.find((c) => c.label === skillLabel);
+		log(
+			roleId,
+			"AGENT_MESSAGE",
+			extra
+				? `${skillLabel} is a nice-to-have because you asked for it earlier. Say "remove ${skillLabel}" if you don't want it.`
+				: "Good question. I'm following the must-haves you set; ask me to change any of them and I'll propose the change first.",
+		);
+		return;
+	}
+	// Undo: remove a skill and the slots that came with it, as a proposal.
+	if (/\b(remove|drop|cancel|undo|don't want|do not want|take (it|that) back)\b/.test(lower)) {
+		const target =
+			skillLabel ?? role.criteria.niceToHave.find((c) => c.id.startsWith("extra-"))?.label ?? null;
+		const slots =
+			/slot|cancel/.test(lower) && gig
+				? Math.min(10, Math.max(0, gig.maxDeliverables - gig.acceptedCount))
+				: 0;
+		if (!target && !slots) {
+			log(roleId, "AGENT_MESSAGE", "What should I remove? Name the skill or say 'the extra slots'.");
+			return;
+		}
+		propose(
+			roleId,
+			[
+				target && `remove ${target} from the nice-to-haves`,
+				slots &&
+					`close ${slots} profile slots (${formatMoney((gig?.bounty ?? 0n) * BigInt(slots))} back to your budget)`,
+			]
+				.filter(Boolean)
+				.join(" and "),
+			{ remove: { skill: target ?? "", slots } },
+		);
+		return;
+	}
 	const asked = [...g.deliveries.values()].find(
 		(d) => d.roleId === roleId && d.escalated && d.status === "PENDING" && !d.confirmToken,
 	);
-	if (asked && asked.payload.type === "SOURCING" && /\b(yes|take|ok|go ahead|no|skip|pass)\b/.test(lower)) {
+	const short = lower.split(/\s+/).filter(Boolean).length <= 4;
+	const named = asked?.payload.type === "SOURCING" && lower.includes(first(asked.payload.name).toLowerCase());
+	if (
+		asked &&
+		asked.payload.type === "SOURCING" &&
+		(short || named) &&
+		/\b(yes|take|ok|go ahead|no|skip|pass)\b/.test(lower)
+	) {
 		const name = asked.payload.name;
 		asked.escalated = false;
 		if (/\b(no|skip|pass)\b/.test(lower)) {
@@ -1078,25 +1197,25 @@ function reply(roleId: string, text: string) {
 		}
 		return;
 	}
-	const skill = text.match(/\b(golang|go|rust|python|java|kotlin|kubernetes|aws|react)\b/i)?.[1];
-	if (skill || /\bmore\b/.test(lower)) {
-		const gig = [...g.gigs.values()].find((x) => x.roleId === roleId && x.type === "SOURCING");
-		if (skill) {
-			const label = /^go(lang)?$/i.test(skill) ? "Go" : skill[0].toUpperCase() + skill.slice(1);
-			role.criteria.niceToHave.push({ id: `extra-${label.toLowerCase()}`, label, weight: 3 });
-			log(roleId, "CRITERIA_UPDATED", `Added ${label} to the nice-to-haves`);
+	if (skillLabel || /\bmore\b/.test(lower)) {
+		if (
+			skillLabel &&
+			[...role.criteria.mustHave, ...role.criteria.niceToHave].some((c) => c.label === skillLabel)
+		) {
+			log(roleId, "AGENT_MESSAGE", `${skillLabel} is already on the list.`);
+			return;
 		}
-		if (gig) {
-			gig.maxDeliverables += 10;
-			gig.status = "OPEN";
-			log(roleId, "GIG_POSTED", `Opened 10 more profile slots · ${formatMoney(gig.bounty)} each`, {
-				gigId: gig.id,
-			});
-		}
-		log(
+		const slots = /\bmore\b/.test(lower) && gig ? 10 : 0;
+		propose(
 			roleId,
-			"AGENT_MESSAGE",
-			`Done. I'm asking recruiters for 10 more profiles${skill ? `, preferring people with ${skill}` : ""}.`,
+			[
+				skillLabel && `add ${skillLabel} to the nice-to-haves`,
+				slots &&
+					`open ${slots} more profile slots (${formatMoney((gig?.bounty ?? 0n) * BigInt(slots))} from your budget)`,
+			]
+				.filter(Boolean)
+				.join(" and "),
+			{ add: { skill: skillLabel ?? "", slots } },
 		);
 		return;
 	}
@@ -1159,7 +1278,9 @@ export async function tick() {
 				reject(
 					d,
 					answer === "NO"
-						? `${first(name)} isn't open to a move right now`
+						? confirmationOf(d.confirmToken)?.reported
+							? `${first(name)} reported the message`
+							: `${first(name)} isn't open to a move right now`
 						: `${first(name)} didn't confirm in time`,
 				);
 				log(d.roleId, "DELIVERY_REJECTED", `${name} didn't confirm`, {
@@ -1170,10 +1291,16 @@ export async function tick() {
 			} else continue;
 			changed = true;
 		}
-		// Someone started playing a recruiter after the role began: give them time to source Karolina.
+		// Someone plays a recruiter: give them time to source Karolina and to take the calls themselves, so the
+		// simulated recruiter doesn't snatch the work they are about to show.
 		if (recruiterUsed())
 			for (const a of g.agenda)
-				if (a.action === "sim-source" && a.ref === "karolina" && !a.delayed) {
+				if (
+					!a.delayed &&
+					(a.action === "sim-screening" ||
+						a.action === "sim-reference" ||
+						(a.action === "sim-source" && a.ref === "karolina"))
+				) {
 					a.at = Math.max(a.at, now + LATE_KAROLINA_MS - 120 * SECOND);
 					a.delayed = true;
 				}
@@ -1228,7 +1355,8 @@ export function ensureGigs() {
 			for (const [i, name] of ["Marek Zieliński", "Julia Kowalska"].entries()) {
 				const profileUrl = `https://linkedin.com/in/${name.toLowerCase().replace(/[^a-z]+/g, "-")}-fde-demo`;
 				const notes = SEEDED_NOTES[name] ?? "";
-				const d = addDelivery(src, PERSONAS.scout.mockAddress, {
+				// Julia comes from the simulated recruiter, so Ola (the demo recruiter) can take her screening call.
+				const d = addDelivery(src, name === "Julia Kowalska" ? ANDREEA : PERSONAS.scout.mockAddress, {
 					type: "SOURCING",
 					name,
 					profileUrl,
@@ -1348,6 +1476,10 @@ function gigView(gig: MockGig, wallet: string | null): GigView & CallState {
 		priceHistory: (gig.priceHistory ?? []).map((p) => ({ ...p, bounty: p.bounty.toString() })),
 		noShows: gig.noShows ?? 0,
 		claimedAt: gig.claimedAt ?? null,
+		holdbackWindowSeconds: HOLDBACK_WINDOW_MS / 1000,
+		...(gig.closed && wallet && gig.claimant === wallet
+			? { closedReason: gig.closed.reason, closedAt: gig.closed.at, reportReason: gig.closed.report }
+			: {}),
 		...(role ? { post: postOf(role) } : {}),
 		...(gig.type !== "SOURCING" && !redacted ? callFactsOf(gig, wallet) : {}),
 	};
@@ -1373,6 +1505,16 @@ function postOf(role: MockRole): NonNullable<GigView["post"]> {
 }
 
 /** For the recruiter holding the call: what the candidate told us on their confirmation page, and the show-up fee. */
+/** The referee the candidate named on their accepted screening call. */
+function refereeFor(candidateId: string) {
+	for (const d of g.deliveries.values()) {
+		const gig = g.gigs.get(d.gigId);
+		if (gig?.candidate?.id !== candidateId || d.status !== "ACCEPTED") continue;
+		if (d.payload.type === "SCREENING_CALL" && d.payload.referee) return d.payload.referee;
+	}
+	return null;
+}
+
 function callFactsOf(gig: MockGig, wallet: string | null) {
 	const source = gig.candidate ? g.deliveries.get(gig.candidate.id) : undefined;
 	const told = source?.confirmToken ? confirmationOf(source.confirmToken) : null;
@@ -1384,6 +1526,11 @@ function callFactsOf(gig: MockGig, wallet: string | null) {
 						...candidateFor(gig.candidate, false),
 						availability: csv(told?.availability),
 						salaryExpectation: csv(told?.salaryExpectation),
+						contact:
+							told?.contactEmail || told?.contactPhone
+								? { email: csv(told.contactEmail), phone: csv(told.contactPhone) }
+								: null,
+						referee: gig.type === "REFERENCE_CHECK" ? refereeFor(gig.candidate.id) : null,
 					},
 				}
 			: {}),
@@ -1486,7 +1633,21 @@ export function recruiterStanding(
 		REFERENCE_CHECK: of("REFERENCE_CHECK"),
 	};
 	const all = prof.stats.ALL ?? { accepted: 0, decided: 0 };
-	return { skills, score: { score: wilson(all.accepted, all.decided), byType, seededHistory: !!h } };
+	const acceptedOf = (type: GigType) => mine.filter((d) => d.type === type && d.status === "ACCEPTED").length;
+	return {
+		skills,
+		score: {
+			score: wilson(all.accepted, all.decided),
+			byType,
+			seededHistory: !!h,
+			acceptedByType: {
+				SOURCING: acceptedOf("SOURCING"),
+				SCREENING_CALL: acceptedOf("SCREENING_CALL"),
+				REFERENCE_CHECK: acceptedOf("REFERENCE_CHECK"),
+			},
+			seededAccepted: h?.accepted ?? 0,
+		},
+	};
 }
 
 /** 0–100: the lower bound of the acceptance rate (Wilson, 90% confidence), so a short lucky streak scores low. */
@@ -1606,6 +1767,22 @@ function deliverableView(d: MockDelivery): DeliverableView {
 		followUps: d.followUps ?? [],
 		...(d.type === "SOURCING" ? { callChecks: callChecksFor(d) } : {}),
 		gigVariant: gig?.variant ?? null,
+		deposit: depositOf(d),
+	};
+}
+
+/** Unvouched recruiters put down 10% per profile: held while pending, returned on accept, kept otherwise. */
+function depositOf(d: MockDelivery) {
+	const gig = g.gigs.get(d.gigId);
+	if (!gig || d.type !== "SOURCING" || d.scout === ANDREEA || db.profiles.get(d.scout)?.operator) return null;
+	return {
+		amount: (gig.bounty / 10n).toString(),
+		status:
+			d.status === "PENDING"
+				? ("HELD" as const)
+				: d.status === "ACCEPTED"
+					? ("RETURNED" as const)
+					: ("KEPT" as const),
 	};
 }
 
@@ -1818,6 +1995,14 @@ function roleStatus(roleId: string): RoleStatusView {
 				actions: [{ id: "resend_confirmation", label: "Resend link", deliverableId: d.id }],
 			});
 	}
+	for (const p of g.proposals.values())
+		if (p.roleId === roleId)
+			wait("company", `You to approve: ${p.text}`, p.at, {
+				actions: [
+					{ id: "approve_proposal", label: "Yes, do it", proposalId: p.id },
+					{ id: "decline_proposal", label: "No", proposalId: p.id },
+				],
+			});
 	for (const s of g.shortlist.values()) {
 		if (s.roleId !== roleId) continue;
 		const src = g.deliveries.get(s.sourceDeliveryId);
@@ -1831,9 +2016,12 @@ function roleStatus(roleId: string): RoleStatusView {
 				],
 			});
 		if (s.decision === "INVITED")
-			wait("company", `You to confirm ${first(who)} came to the interview`, s.decidedAt ?? iso(), {
+			wait("company", `You to tell me whether ${first(who)} came to the interview`, s.decidedAt ?? iso(), {
 				deliverableId: s.candidateId,
-				actions: [{ id: "attended", label: `Yes, ${first(who)} came`, candidateId: s.candidateId }],
+				actions: [
+					{ id: "attended", label: `Yes, ${first(who)} came`, candidateId: s.candidateId },
+					{ id: "no_show", label: `${first(who)} didn't come`, candidateId: s.candidateId },
+				],
 			});
 	}
 	for (const x of gigs) {
@@ -1899,16 +2087,24 @@ function roleStatus(roleId: string): RoleStatusView {
 	const held = role?.heldBack ?? 0n;
 	const available = balance - held - committed;
 	const busy = !!working(roleId);
+	const fees = dels.reduce((s, d) => s + (d.split ? d.split.platformFee + d.split.operatorFee : 0n), 0n);
+	const closed = role?.status === "CLOSED";
+	const asking = waitingOn.find((w) => w.who === "company");
 	return {
 		roleId,
 		now: {
-			text: working(roleId) ?? status(roleId),
+			// A decision waiting for the company always wins: never "sourcing" while Hanna is the blocker.
+			text: closed
+				? "Closed"
+				: asking
+					? `Waiting for you: ${asking.what.replace(/^You to /, "")}`
+					: (working(roleId) ?? status(roleId)),
 			since: entries.at(-1)?.createdAt ?? iso(),
 			startedAt: entries.at(-1)?.createdAt ?? iso(),
-			busy,
-			detail: busy ? working(roleId) : null,
+			busy: busy && !closed,
+			detail: busy && !closed ? working(roleId) : null,
 		},
-		waitingOn,
+		waitingOn: closed ? [] : waitingOn,
 		pipeline: {
 			sourcingAccepted: accepted("SOURCING"),
 			sourcingSlots: target("SOURCING"),
@@ -1924,8 +2120,11 @@ function roleStatus(roleId: string): RoleStatusView {
 			deposited: (role?.deposited ?? 0n).toString(),
 			paid: (role?.paid ?? 0n).toString(),
 			heldBack: held.toString(),
-			committed: committed.toString(),
-			available: (available > 0n ? available : 0n).toString(),
+			committed: (closed ? 0n : committed).toString(),
+			available: (closed || available <= 0n ? 0n : available).toString(),
+			spent: ((role?.paid ?? 0n) + held).toString(),
+			fees: fees.toString(),
+			refunded: role?.refunded !== undefined ? role.refunded.toString() : undefined,
 		},
 		nextCheckAt: due.length ? iso(Math.min(...due)) : null,
 	};
@@ -2270,6 +2469,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			log(gig.roleId, "NOTE", `${who} didn't join the call. Rescheduling once`, { gigId: gig.id });
 		} else {
 			gig.status = "CLOSED";
+			gig.closed = { reason: "NO_SHOW", at: iso(), report: null };
 			log(gig.roleId, "DELIVERY_REJECTED", `${who} missed the call twice. I stopped the screening`, {
 				gigId: gig.id,
 				detail: `${displayName(wallet)} is not penalised for it.`,
@@ -2351,6 +2551,24 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		save();
 		return { ok: true };
 	},
+	/** Send earnings from the recruiter's own account to another account. */
+	"me.cashOut": (ctx) => {
+		const wallet = need(ctx);
+		const p = db.profiles.get(wallet);
+		const to = String(ctx.input.to ?? "");
+		const amount = BigInt(String(ctx.input.amount ?? "0"));
+		if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(to))
+			throw new MockError(400, "INVALID_ADDRESS", "That address doesn't look right.");
+		if (to === wallet) throw new MockError(400, "SAME_ACCOUNT", "That's your own account.");
+		if (!p || amount <= 0n || amount > p.balance)
+			throw new MockError(400, "INSUFFICIENT_FUNDS", "Not enough balance for this amount.");
+		return {
+			unsignedTx: registerTx(`Send ${formatMoney(amount)}`, () => {
+				p.balance -= amount;
+				persist();
+			}),
+		};
+	},
 	/** Take it back before the agent decides: rejected as withdrawn, not counted against the recruiter. */
 	"gigs.withdraw": (ctx) => {
 		const wallet = need(ctx);
@@ -2370,7 +2588,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			signature: d.settlementTx,
 		});
 		save();
-		return { signature: d.settlementTx, bondKept: "0" };
+		return { signature: d.settlementTx, bondKept: depositOf(d)?.amount ?? "0" };
 	},
 	/** A recruiter (or the company) suspects the candidate isn't real. The agent stops and looks into it. */
 	"gigs.report": (ctx) => {
@@ -2382,6 +2600,8 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			detail: String(ctx.input.reason ?? ""),
 		});
 		gig.status = "CLOSED";
+		if (gig.claimant === wallet)
+			gig.closed = { reason: "REPORTED_FAKE", at: iso(), report: String(ctx.input.reason ?? "") || null };
 		save();
 		return { ok: true };
 	},
@@ -2472,6 +2692,17 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 		need(ctx);
 		return { ok: true };
 	},
+	"roles.decideProposal": (ctx) => {
+		need(ctx);
+		const p = g.proposals.get(String(ctx.input.proposalId));
+		if (!p) throw new MockError(404, "NOT_FOUND", "Already decided.");
+		g.proposals.delete(p.id);
+		if (ctx.input.approve) applyProposal(p);
+		const message = ctx.input.approve ? `Done: ${p.text}.` : "OK, I left everything as it was.";
+		log(p.roleId, "AGENT_MESSAGE", message);
+		save();
+		return { ok: true, message };
+	},
 	"gigs.answerFollowUp": (ctx) => {
 		const wallet = need(ctx);
 		const d = g.deliveries.get(String(ctx.input.id));
@@ -2549,6 +2780,39 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			return { unsignedTx: null };
 		}
 		// Showing up is a separate, later fact: only then does the held part go to the recruiters.
+		// Didn't come: what's held goes back to the company; nothing counts against the recruiters.
+		if (ctx.input.decision === "no_show") {
+			if (entry.decision !== "INVITED") throw new MockError(409, "NOT_INVITED", "Invite them first.");
+			return {
+				unsignedTx: registerTx(`${name} didn't come to the interview`, (signature) => {
+					entry.decision = "NO_SHOW";
+					entry.decidedAt = iso();
+					let back = 0n;
+					const role = db.roles.get(entry.roleId);
+					for (const d of g.deliveries.values()) {
+						const gig = g.gigs.get(d.gigId);
+						if (
+							(d.id === entry.sourceDeliveryId || gig?.candidate?.id === entry.candidateId) &&
+							d.laterStatus === "HELD"
+						) {
+							back += d.split?.later ?? 0n;
+							d.laterStatus = "REFUNDED";
+						}
+					}
+					if (role) role.heldBack -= back;
+					log(
+						entry.roleId,
+						"DECISION",
+						`${name} didn't come to the interview. ${formatMoney(back)} back in your budget`,
+						{
+							detail: "The recruiters keep what they were already paid; nothing counts against them.",
+							signature,
+						},
+					);
+					save();
+				}),
+			};
+		}
 		if (ctx.input.decision === "attended") {
 			if (entry.decision !== "INVITED") throw new MockError(409, "NOT_INVITED", "Invite them first.");
 			const owed = new Map<string, { amount: bigint; deliverables: number }>();
@@ -2619,7 +2883,7 @@ const callKind = (gig: MockGig | undefined) =>
 
 function candidateStage(d: MockDelivery): CandidateStage {
 	const entry = g.shortlist.get(d.id);
-	if (entry?.decision === "PASSED" || removed.has(d.id)) return "PASSED";
+	if (entry?.decision === "PASSED" || entry?.decision === "NO_SHOW" || removed.has(d.id)) return "PASSED";
 	if (entry?.decision === "ATTENDED") return "ATTENDED";
 	if (entry?.decision === "INVITED") return "INVITED";
 	if (entry) return "SHORTLISTED";
@@ -2794,6 +3058,7 @@ const candidateProcedures: Record<string, (ctx: Ctx) => unknown> = {
 				held: (x.split?.later ?? 0n).toString(),
 				heldStatus: x.laterStatus,
 				fees: ((x.split?.platformFee ?? 0n) + (x.split?.operatorFee ?? 0n)).toString(),
+				bounty: (g.gigs.get(x.gigId)?.bounty ?? 0n).toString(),
 				signature: x.settlementTx,
 				explorerUrl: null,
 				at: x.reviewedAt ?? x.submittedAt,
@@ -2871,4 +3136,39 @@ let clock: ReturnType<typeof setInterval> | null = null;
 export function startMockAgentClock() {
 	if (clock) return;
 	clock = setInterval(() => void tick(), 1000);
+}
+
+/** A closed role: its open gigs close, the agent stops, and the thread says what came back. */
+export function closeRoleWork(roleId: string, refund: bigint, signature: string) {
+	for (const x of g.gigs.values()) if (x.roleId === roleId && x.status === "OPEN") x.status = "CLOSED";
+	g.agenda = g.agenda.filter((a) => a.roleId !== roleId);
+	log(roleId, "BUDGET", `Closed the role · ${formatMoney(refund)} back to you`, { signature });
+	save();
+}
+
+/** What closing returns now, and what is still in flight. */
+export function closePreviewOf(roleId: string) {
+	const role = db.roles.get(roleId);
+	const openGigs = [...g.gigs.values()].filter((x) => x.roleId === roleId && x.status === "OPEN").length;
+	const inProgress = [...g.shortlist.values()]
+		.filter((s) => s.roleId === roleId && (s.decision === "NONE" || s.decision === "INVITED"))
+		.map((s) => {
+			const d = g.deliveries.get(s.sourceDeliveryId);
+			return {
+				candidateId: s.candidateId,
+				name: d?.payload.type === "SOURCING" ? d.payload.name : "A candidate",
+			};
+		});
+	return { refund: ((role?.balance ?? 0n) - (role?.heldBack ?? 0n)).toString(), openGigs, inProgress };
+}
+
+/** A funded role: the deposit is on record in the thread (lasting proof). */
+export function logDeposit(roleId: string, amount: bigint, signature: string, topUp = false) {
+	log(
+		roleId,
+		"BUDGET",
+		topUp ? `Added ${formatMoney(amount)} to the budget` : `Set aside ${formatMoney(amount)} for this role`,
+		{ signature },
+	);
+	save();
 }

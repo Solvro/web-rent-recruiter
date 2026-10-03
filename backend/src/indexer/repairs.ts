@@ -9,7 +9,28 @@ import { db, schema } from "../db/index.ts";
 import { loadDeployment } from "../solana/chain.ts";
 import { processSignature } from "./sync.ts";
 
+/** Demo personas created before bios existed get the same line the seed gives them (only when empty). */
+const PERSONA_BIOS: [string, string][] = [
+	[
+		"Ola Wiśniewska",
+		"Tech recruiter in Kraków; I screen Rust and backend engineers and write notes companies can act on.",
+	],
+	[
+		"Lucía Fernández",
+		"Sourcer in Valencia; I find senior engineers in the Solana and DeFi community before they hit the job boards.",
+	],
+	[
+		"Andreea Popescu",
+		"Recruiter in Bucharest for Java teams and DACH sales roles; fluent in German and English.",
+	],
+];
+
 export async function runRepairs(log: { info(m: string): void; warn(m: string): void }) {
+	for (const [name, bio] of PERSONA_BIOS)
+		await db
+			.update(schema.accounts)
+			.set({ bio })
+			.where(and(eq(schema.accounts.displayName, name), isNull(schema.accounts.bio)));
 	if (!loadDeployment()) return;
 	const rows = await db
 		.select({ tx: schema.submissions.settlementTx })
@@ -28,6 +49,8 @@ export async function runRepairs(log: { info(m: string): void; warn(m: string): 
 		)
 		.limit(200);
 	const txs = [...new Set(rows.map((r) => r.tx as string))];
+	// Replay even if the indexer marked them processed (that's how the zeros got stuck).
+	if (txs.length) await db.delete(schema.txLog).where(inArray(schema.txLog.signature, txs));
 	for (const tx of txs)
 		await processSignature(tx as never).catch((e) => log.warn(`[repair] ${tx}: ${(e as Error).message}`));
 	// Rejections without a bond (calls, vouched recruiters): mark them so they aren't replayed again.

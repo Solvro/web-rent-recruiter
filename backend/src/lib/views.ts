@@ -24,7 +24,7 @@ export function availableBudget(role: Pick<RoleRow, "remaining" | "heldBack" | "
 	return left > 0n ? left : 0n;
 }
 
-export function roleSummary(role: RoleRow, companyName: string): RoleSummary {
+export function roleSummary(role: RoleRow, companyName: string, extra: { fees?: bigint } = {}): RoleSummary {
 	const available = availableBudget(role);
 	return {
 		id: role.id,
@@ -32,7 +32,7 @@ export function roleSummary(role: RoleRow, companyName: string): RoleSummary {
 		roleVault: role.roleVault,
 		title: role.title,
 		summary: role.summary,
-		companyName,
+		companyName: role.companyLabel ?? companyName,
 		status: role.status,
 		taskType: role.taskType,
 		bounty: role.bounty.toString(),
@@ -50,7 +50,12 @@ export function roleSummary(role: RoleRow, companyName: string): RoleSummary {
 			remaining: role.remaining.toString(),
 			available: available.toString(),
 			heldBack: role.heldBack.toString(),
+			// Accepted work at its plan price: what was paid out (fees included) + what's still held for it.
+			spent: (role.paid + role.heldBack).toString(),
+			...(extra.fees !== undefined ? { fees: extra.fees.toString() } : {}),
+			...(role.status === "CLOSED" ? { refunded: role.refunded.toString() } : {}),
 		},
+		...(role.status === "DRAFT" ? { intendedDeposit: role.intendedDeposit.toString() } : {}),
 		createdAt: role.createdAt.toISOString(),
 	};
 }
@@ -94,7 +99,8 @@ export function submissionPayout(
 ): SubmissionPayout | null {
 	if (sub.status === "REJECTED") return null;
 	const projected = splitBounty(role.bounty, role.feeBps, sub.operatorFeeBps, role.holdbackBps);
-	const now = sub.payoutNow ?? projected.now;
+	// An accepted row never really paid 0: treat a stored 0 as unknown (older indexer bug) and use the split.
+	const now = sub.payoutNow && sub.payoutNow > 0n ? sub.payoutNow : projected.now;
 	const later = sub.payoutLater ?? projected.later;
 	return {
 		now: now.toString(),
@@ -107,9 +113,14 @@ export function submissionPayout(
 	};
 }
 
-export function roleDetail(role: RoleRow, companyName: string, submissions: SubmissionView[]): RoleDetail {
+export function roleDetail(
+	role: RoleRow,
+	companyName: string,
+	submissions: SubmissionView[],
+	extra: { fees?: bigint } = {},
+): RoleDetail {
 	return {
-		...roleSummary(role, companyName),
+		...roleSummary(role, companyName, extra),
 		jobDescription: role.jobDescription,
 		criteria: role.criteria,
 		submissions,

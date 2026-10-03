@@ -215,6 +215,54 @@ function checkFrom(q: ScriptQuestion, answer: string, p: Probs, mode: Mode): Que
 	return { questionId: q.id, missing, generic, contradiction, fit: missing ? 0 : p.fit, quality };
 }
 
+const stem = (w: string) => w.slice(0, 5);
+const keyWords = (t: string) =>
+	new Set(
+		t
+			.toLowerCase()
+			.normalize("NFKD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.split(/[^a-z0-9+#]+/)
+			.filter((w) => w.length > 3)
+			.map(stem),
+	);
+
+/**
+ * Answers that talk about another question instead of their own: no key word in common with
+ * their own question (and what a good answer looks like), but two or more with another one,
+ * and either several such answers (a shift) or one that clearly matches elsewhere.
+ * Words shared by most questions ("example", "candidate", "work") don't count.
+ */
+export function misplacedAnswers(
+	questions: Pick<ScriptQuestion, "id" | "question" | "whatGoodLooksLike">[],
+	answers: Map<string, string>,
+): Set<string> {
+	const qWords = new Map(questions.map((q) => [q.id, keyWords(`${q.question} ${q.whatGoodLooksLike}`)]));
+	const df = new Map<string, number>();
+	for (const ws of qWords.values()) for (const w of ws) df.set(w, (df.get(w) ?? 0) + 1);
+	const common = (w: string) => (df.get(w) ?? 0) >= Math.max(2, questions.length / 2);
+	const overlap = (a: Set<string>, b: Set<string>) => [...a].filter((w) => b.has(w) && !common(w)).length;
+	const out = new Set<string>();
+	const strength = new Map<string, number>();
+	for (const q of questions) {
+		const a = keyWords(answers.get(q.id) ?? "");
+		if (!a.size) continue;
+		const own = overlap(a, qWords.get(q.id) ?? new Set());
+		const other = Math.max(
+			0,
+			...questions.filter((o) => o.id !== q.id).map((o) => overlap(a, qWords.get(o.id) ?? new Set())),
+		);
+		if (own === 0 && other >= 2) {
+			out.add(q.id);
+			strength.set(q.id, other);
+		}
+	}
+	// One stray answer is usually just loosely worded; a shift moves several. A single one counts
+	// only when it clearly matches another question (3+ shared key words).
+	if (out.size === 1) for (const id of out) if ((strength.get(id) ?? 0) < 3) out.delete(id);
+	return out;
+}
+
 /** Pure: checks → verdict, score, reasons. Exported for tests. */
 export function decideCall(
 	deliverable: Pick<CallDeliverable, "recommendation">,
@@ -646,11 +694,23 @@ export async function reviewCall(input: CallDeliverableInput): Promise<CallRevie
 		}
 	}
 
+	// An answer that's about a different question (shifted notes, a mis-mapped transcript) counts as missing.
+	const misplaced = misplacedAnswers(d.script.questions, answers);
 	const checks = d.script.questions.map((q) => {
 		const answer = answers.get(q.id) ?? "";
-		return checkFrom(q, answer, probs?.get(q.id) ?? offlineProbs(q, answer), mode);
+		const p = probs?.get(q.id) ?? offlineProbs(q, answer);
+		return checkFrom(q, answer, misplaced.has(q.id) ? { ...p, addressed: 0 } : p, mode);
 	});
 	let decided = decideCall(d, checks, consistent, d.script.questions);
+	if (misplaced.size) {
+		decided = {
+			...decided,
+			reasons: [
+				...decided.reasons,
+				`${misplaced.size === 1 ? "One answer seems" : `${misplaced.size} answers seem`} to belong to a different question.`,
+			],
+		};
+	}
 	if (d.script.kind === "language" && d.script.language) {
 		const estimate =
 			d.transcript && cefr

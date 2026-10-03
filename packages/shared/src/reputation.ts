@@ -20,6 +20,16 @@ export const RecruiterReputation = z.object({
 	}),
 	/** Part of these numbers is seeded demo history (shown as such). */
 	seededHistory: z.boolean(),
+	/** Accepted deliverables per type, real work only (seeded demo history is in seededAccepted). */
+	acceptedByType: z
+		.object({
+			SOURCING: z.number().int(),
+			SCREENING_CALL: z.number().int(),
+			REFERENCE_CHECK: z.number().int(),
+		})
+		.optional(),
+	/** Seeded demo history ("earlier gigs before Scout"), shown apart from real work. */
+	seededAccepted: z.number().int().optional(),
 });
 export const SetSkillsRequest = z.object({ skills: z.array(z.string().min(2).max(40)).max(30) });
 /** An operator (signed in as its authority) verifies a skill of a recruiter it vouched for. */

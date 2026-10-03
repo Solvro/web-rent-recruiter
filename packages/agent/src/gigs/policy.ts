@@ -37,7 +37,17 @@ export type AgentAction = "accept" | "reject" | "escalate" | "follow_up";
 /** "now" for things that block work or need a human fast; everything else waits for the daily digest. */
 export type EscalationDelivery = "now" | "digest";
 export type DecisionInput =
-	| { kind: "sourcing"; review: AgentReview; flags?: string[]; followUps?: number; criteria?: Criteria }
+	| {
+			kind: "sourcing";
+			review: AgentReview;
+			flags?: string[];
+			followUps?: number;
+			criteria?: Criteria;
+			/** The recruiter's note: a follow-up never asks about something it already covers. */
+			notes?: string;
+			/** The review couldn't be done properly (e.g. the model was down): a person decides. */
+			degraded?: boolean;
+	  }
 	| { kind: "screening" | "reference" | "language"; review: CallReview; flags?: string[] };
 
 /**
@@ -77,30 +87,41 @@ export function agentDecision(input: DecisionInput): {
 type Decision = { action: AgentAction; reason: string; question?: string; delivery?: EscalationDelivery };
 
 function decideFromScores(input: DecisionInput): Decision {
+	if (input.kind === "sourcing" && input.degraded) {
+		return {
+			action: "escalate",
+			delivery: "digest",
+			reason: "I couldn't check this profile properly right now, so you decide.",
+		};
+	}
 	if (input.kind === "sourcing") {
 		const { score, recommendation } = input.review;
 		if (recommendation === "ADVANCE" && score >= POLICY.sourcingAcceptScore)
-			return { action: "accept", reason: `Scored ${score} (${recommendation}) against the criteria.` };
+			return { action: "accept", reason: `A strong match (${score}/100) against the must-haves.` };
 		if (score >= POLICY.sourcingFollowUpScore) {
-			if ((input.followUps ?? 0) < POLICY.maxFollowUps)
+			const question =
+				(input.followUps ?? 0) < POLICY.maxFollowUps
+					? followUpQuestion(input.review, input.criteria, input.notes)
+					: null;
+			if (question)
 				return {
 					action: "follow_up",
-					reason: `Scored ${score} (${recommendation}); one more fact decides it.`,
-					question: followUpQuestion(input.review, input.criteria),
+					reason: `A possible match (${score}/100); one more fact decides it.`,
+					question,
 				};
 			return {
 				action: "escalate",
 				delivery: "digest",
-				reason: `Scored ${score} (${recommendation}) after a follow-up; your call.`,
+				reason: `Still a possible match (${score}/100) after a follow-up; your call.`,
 			};
 		}
 		if (score >= POLICY.sourcingEscalateScore)
 			return {
 				action: "escalate",
 				delivery: "digest",
-				reason: `Scored ${score} (${recommendation}); borderline, your call.`,
+				reason: `Borderline (${score}/100); your call.`,
 			};
-		return { action: "reject", reason: `Scored ${score} (${recommendation}); doesn't meet the must-haves.` };
+		return { action: "reject", reason: `Not a match (${score}/100): doesn't meet the must-haves.` };
 	}
 	const { verdict, reasons, score, checks, language, noShow } = input.review;
 	if (noShow) return { action: "reject", reason: reasons[0] ?? "The candidate didn't show up." };
@@ -121,15 +142,46 @@ function decideFromScores(input: DecisionInput): Decision {
 }
 
 /** The question for the recruiter: the heaviest must-have the review couldn't confirm. */
-export function followUpQuestion(review: AgentReview, criteria?: Criteria): string {
-	const open = review.verdicts.filter((v) => v.verdict === "UNKNOWN" || v.verdict === "PARTIAL");
-	const must = criteria?.mustHave ?? [];
-	const pick =
-		[...must].sort((a, b) => b.weight - a.weight).find((c) => open.some((v) => v.criterionId === c.id)) ??
-		null;
-	if (pick)
-		return `Can you add one concrete fact about "${pick.label}" for this candidate (a project, a number, a link)?`;
-	return "Can you add one concrete fact that shows how this candidate meets the must-haves?";
+const STOP = new Set(
+	"with from that this have your their years year experience strong solid good great deep proven working work skills plus least using level production".split(
+		" ",
+	),
+);
+const fold = (t: string) =>
+	t
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/ł/g, "l")
+		.toLowerCase();
+const words = (t: string) =>
+	fold(t)
+		.split(/[^a-z0-9+#]+/)
+		.filter((w) => w.length > 2 && !STOP.has(w));
+
+/** True when the note already talks about the criterion (most of its key words appear). */
+export function noteCovers(notes: string, label: string): boolean {
+	const key = words(label);
+	if (!key.length) return false;
+	const text = fold(notes);
+	const hits = key.filter((w) => text.includes(w.slice(0, Math.max(4, w.length - 2)))).length;
+	return hits / key.length >= 0.5;
+}
+
+/**
+ * The follow-up for the recruiter: the heaviest must-have the review couldn't confirm AND the
+ * note doesn't already talk about (UNKNOWN before PARTIAL). null when there's nothing to ask.
+ */
+export function followUpQuestion(review: AgentReview, criteria?: Criteria, notes = ""): string | null {
+	const verdictOf = new Map(review.verdicts.map((v) => [v.criterionId, v]));
+	const must = [...(criteria?.mustHave ?? [])].sort((a, b) => b.weight - a.weight);
+	const askable = (verdict: string) =>
+		must.find((c) => {
+			const v = verdictOf.get(c.id);
+			return v?.verdict === verdict && !noteCovers(notes, c.label) && !noteCovers(v.reasoning ?? "", c.label);
+		});
+	const pick = askable("UNKNOWN") ?? askable("PARTIAL");
+	if (!pick) return null;
+	return `The note doesn't say much about “${pick.label}”. Can you add one concrete fact (a project, a number or a link)?`;
 }
 
 /** Which accepted sourced candidates get a screening call next: ADVANCE-level (≥ 75), best first. */

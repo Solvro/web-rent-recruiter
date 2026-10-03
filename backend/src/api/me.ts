@@ -1,13 +1,26 @@
 /** Account use-cases (tRPC + deprecated REST). */
-import type { Me, UpsertMeRequest } from "@scout/shared";
-import { type Address, address } from "@solana/kit";
+import type { Me, UnsignedTx, UpsertMeRequest } from "@scout/shared";
+import { type Address, address, createNoopSigner } from "@solana/kit";
+import {
+	getCreateAssociatedTokenIdempotentInstruction,
+	getTransferCheckedInstruction,
+} from "@solana-program/token";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { db, schema } from "../db/index.ts";
 import { HttpError, notFound } from "../http.ts";
 import { recruiterProfile, reputationScores } from "../lib/recruiter-profile.ts";
 import { uniqueSlug } from "../lib/slug.ts";
-import { loadDeployment, scoutChainInfo, usdcBalanceOf } from "../solana/chain.ts";
+import {
+	findAta,
+	loadDeployment,
+	relayer,
+	requireDeployment,
+	scoutChainInfo,
+	tokenProgram,
+	usdcBalanceOf,
+} from "../solana/chain.ts";
+import { buildUnsignedTx } from "../solana/tx.ts";
 
 /** The caller's account, or null if they haven't created a profile yet. */
 export async function findMe(wallet: Address): Promise<Me | null> {
@@ -38,6 +51,7 @@ export async function upsertMe(wallet: Address, input: z.output<typeof UpsertMeR
 		companyName: input.kind === "company" ? (input.companyName ?? input.displayName) : null,
 		// Keep the stored zone when the client doesn't send one.
 		...(input.timeZone && validTimeZone(input.timeZone) ? { timeZone: input.timeZone } : {}),
+		...(input.bio !== undefined ? { bio: input.bio.trim() || null } : {}),
 	};
 	const [existing] = await db.select().from(schema.accounts).where(eq(schema.accounts.wallet, wallet));
 	// Keep a slug once given (shared links stay valid); create one for new accounts.
@@ -64,7 +78,12 @@ async function toMe(acc: typeof schema.accounts.$inferSelect) {
 		...(rec
 			? {
 					skills: rec.details.skills,
-					reputation: { ...reputationScores(rec.details.stats), seededHistory: rec.details.seeded },
+					reputation: {
+						...reputationScores(rec.details.stats),
+						seededHistory: rec.details.seeded,
+						acceptedByType: rec.details.real.accepted,
+						seededAccepted: rec.details.real.seededAccepted,
+					},
 				}
 			: {}),
 		scoutRegistered: Boolean(info?.profile),
@@ -83,6 +102,7 @@ const profileFields = (acc: typeof schema.accounts.$inferSelect) => ({
 	avatarUrl: acc.avatarUrl,
 	companyName: acc.companyName,
 	timeZone: acc.timeZone,
+	bio: acc.bio,
 });
 
 /** Self-declared skills (replaces the recruiter's own list; operator-verified and earned ones stay). */
@@ -118,4 +138,56 @@ export async function verifySkill(caller: Address, input: { wallet: string; skil
 		})
 		.onConflictDoNothing();
 	return { ok: true, verifiedBy: info.operator.name };
+}
+
+/** Cash out: a plain USDC transfer from the recruiter's own account, signed by them (the relayer pays the fee). */
+export async function cashOut(
+	wallet: Address,
+	input: { to: string; amount: string },
+): Promise<{ unsignedTx: UnsignedTx }> {
+	let to: Address;
+	try {
+		to = address(input.to);
+	} catch {
+		throw new HttpError(400, "INVALID_ADDRESS", "That isn't a Solana address.");
+	}
+	if (to === wallet) throw new HttpError(400, "SAME_ACCOUNT", "That's your own account.");
+	const amount = BigInt(input.amount);
+	if (amount <= 0n) throw new HttpError(400, "INVALID_AMOUNT", "Enter an amount above zero.");
+	const balance = await usdcBalanceOf(wallet);
+	if (amount > balance)
+		throw new HttpError(
+			409,
+			"INSUFFICIENT_FUNDS",
+			`You have $${(Number(balance) / 1e6).toFixed(2)} available.`,
+		);
+	const mint = address(requireDeployment().usdcMint);
+	const programAddress = tokenProgram();
+	const destination = await findAta(to, mint);
+	const ixs = [
+		getCreateAssociatedTokenIdempotentInstruction({
+			payer: await relayer(),
+			ata: destination,
+			owner: to,
+			mint,
+			tokenProgram: programAddress,
+		}),
+		getTransferCheckedInstruction(
+			{
+				source: await findAta(wallet, mint),
+				mint,
+				destination,
+				authority: createNoopSigner(wallet),
+				amount,
+				decimals: 6,
+			},
+			{ programAddress },
+		),
+	];
+	return {
+		unsignedTx: await buildUnsignedTx(
+			ixs,
+			`Send $${(Number(amount) / 1e6).toFixed(2).replace(/\.00$/, "")} to ${to.slice(0, 4)}…${to.slice(-4)}`,
+		),
+	};
 }

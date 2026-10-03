@@ -26,6 +26,7 @@ export const MEMO_PROGRAM_ADDRESS = address("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXg
 const MARGIN_MS = 30_000;
 
 import { normalizeProfileUrl } from "../lib/candidate-hash.ts";
+import { usedBy } from "../lib/devices.ts";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -122,6 +123,8 @@ export async function candidateView(token: string) {
 	return {
 		candidateFirstName: sub.candidateName.split(" ")[0] ?? sub.candidateName,
 		recruiterName: scout?.displayName ?? "Your recruiter",
+		recruiterSlug: scout?.slug ?? null,
+		recruiterAvatarUrl: scout?.avatarUrl ?? null,
 		roleTitle: role.title,
 		companyDescriptor: company?.companyName ?? "A hiring company",
 		summary: role.summary,
@@ -158,21 +161,44 @@ export async function candidateRespond(input: {
 	availability?: string;
 	salaryExpectation?: string;
 	timeZone?: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	reported?: boolean;
+	device?: { ip: string | null; ua: string | null };
 }) {
 	const c = await byToken(input.token);
+	// Expired first: a stale link says so, whatever happened to it.
+	if (c.status === "EXPIRED" || (c.status === "PENDING" && c.expiresAt < new Date()))
+		throw new HttpError(409, "LINK_EXPIRED", "This link has expired.");
 	if (c.status !== "PENDING")
 		throw new HttpError(409, "ALREADY_ANSWERED", "You already answered. Thank you!");
-	if (c.expiresAt < new Date()) throw new HttpError(409, "LINK_EXPIRED", "This link has expired.");
 	const respondedAt = new Date();
+	const yes = input.interested && !input.reported;
+	// Personal details are kept only on a yes; a "no" (or a report) keeps nothing but the answer.
 	const answers = {
-		...(c.kind === "call" ? { callHappened: input.interested } : {}),
-		interested: input.interested,
-		...(input.availability ? { availability: input.availability } : {}),
-		...(input.salaryExpectation ? { salaryExpectation: input.salaryExpectation } : {}),
-		...(validTimeZone(input.timeZone) ? { timeZone: input.timeZone } : {}),
+		...(c.kind === "call" ? { callHappened: yes } : {}),
+		interested: yes,
+		...(input.reported ? { reported: true } : {}),
+		...(yes && input.availability ? { availability: input.availability } : {}),
+		...(yes && input.salaryExpectation ? { salaryExpectation: input.salaryExpectation } : {}),
+		...(yes && input.contactEmail ? { contactEmail: input.contactEmail } : {}),
+		...(yes && input.contactPhone ? { contactPhone: input.contactPhone } : {}),
+		...(yes && validTimeZone(input.timeZone) ? { timeZone: input.timeZone } : {}),
 	};
 	const proofHash = sha(`${input.token}|${respondedAt.toISOString()}|${JSON.stringify(answers)}`);
-	const status = input.interested ? ("YES" as const) : ("NO" as const);
+	const status = yes ? ("YES" as const) : ("NO" as const);
+	// Answered from the device of the recruiter who holds the link (or who claims the call)? Don't pay on it.
+	const { sub: about } = await load(c.submissionId);
+	const holders = [about.scoutWallet];
+	if (c.kind === "call" && about.aboutCandidateId) {
+		const [src] = await db
+			.select({ w: schema.submissions.scoutWallet })
+			.from(schema.submissions)
+			.where(eq(schema.submissions.id, about.aboutCandidateId));
+		if (src) holders.push(src.w);
+	}
+	const sameDevice = yes && Boolean(input.device) && usedBy(holders, input.device?.ip, input.device?.ua);
+	if (sameDevice) Object.assign(answers, { sameDevice: true });
 	const updated = await db
 		.update(schema.candidateConfirmations)
 		.set({ status, answers, proofHash, respondedAt })
@@ -184,7 +210,46 @@ export async function candidateRespond(input: {
 		)
 		.returning();
 	if (!updated.length) throw new HttpError(409, "ALREADY_ANSWERED", "You already answered. Thank you!");
-	if (input.interested) {
+	if (input.reported) {
+		const [who] = await db
+			.select()
+			.from(schema.accounts)
+			.where(eq(schema.accounts.wallet, about.scoutWallet));
+		await logActivity(
+			about.roleId,
+			"ESCALATED",
+			`${about.candidateName.split(" ")[0]} reported the message from ${who?.displayName ?? "the recruiter"}`,
+			{ gigId: about.gigId, deliverableId: about.id, data: { inbox: true } },
+		);
+		await rejectUnconfirmed(c.submissionId, "The candidate reported the message", REJECT_REASONS.OTHER);
+		return { status };
+	}
+	if (sameDevice) {
+		// Not paid automatically: the company decides (deliverables.decide → accept pays with this proof).
+		const stored = (about.agentReview ?? {}) as Record<string, unknown>;
+		const reason = "The confirmation came from the recruiter's own device";
+		await db
+			.update(schema.submissions)
+			.set({
+				agentReview: {
+					...stored,
+					decision: { action: "escalate", reason },
+					escalatedAt: new Date().toISOString(),
+				} as never,
+			})
+			.where(eq(schema.submissions.id, about.id));
+		await logActivity(
+			about.roleId,
+			"ESCALATED",
+			`${about.candidateName}: ${reason.toLowerCase()}. Your call`,
+			{
+				gigId: about.gigId,
+				deliverableId: about.id,
+			},
+		);
+		return { status };
+	}
+	if (yes) {
 		if (c.kind === "interest")
 			await db
 				.update(schema.submissions)

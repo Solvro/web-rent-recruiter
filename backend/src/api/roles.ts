@@ -21,6 +21,7 @@ import { draftRole as agentDraftRole, publishTask, suggestBudget } from "../agen
 import { db, schema } from "../db/index.ts";
 import { env } from "../env.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../http.ts";
+import { refreshRole } from "../indexer/sync.ts";
 import { newRoleSalt } from "../lib/candidate-hash.ts";
 import { withJdLanguages } from "../lib/jd-languages.ts";
 import { roleDetail, roleSummary, submissionView, taskView } from "../lib/views.ts";
@@ -34,7 +35,7 @@ import {
 	rpc,
 } from "../solana/chain.ts";
 import { reviewerMode } from "../solana/gatekeeper.ts";
-import { closeRoleIx, createRoleIx, topUpIx } from "../solana/scout.ts";
+import { closeRoleIx, closeTaskIx, createRoleIx, topUpIx } from "../solana/scout.ts";
 import { buildUnsignedTx } from "../solana/tx.ts";
 
 const usdc = (base: bigint) =>
@@ -51,7 +52,7 @@ export async function loadRole(id: string) {
 		.innerJoin(schema.accounts, eq(schema.accounts.wallet, schema.roles.companyWallet))
 		.where(eq(schema.roles.id, id));
 	if (!row) throw notFound("role");
-	return { role: row.role, companyName: row.companyName ?? row.displayName };
+	return { role: row.role, companyName: row.role.companyLabel ?? row.companyName ?? row.displayName };
 }
 
 async function requireCompany(wallet: Address) {
@@ -170,6 +171,10 @@ export async function createRole(
 		})
 		.returning();
 
+	await db
+		.update(schema.roles)
+		.set({ intendedDeposit: deposit, companyLabel: b.company?.trim() || null })
+		.where(eq(schema.roles.id, role.id));
 	const { ix, roleVault } = await createRoleIx({
 		company: wallet,
 		roleId: BigInt(role.onchainRoleId),
@@ -213,11 +218,15 @@ export async function getRole(id: string): Promise<RoleDetail> {
 		.orderBy(desc(schema.submissions.submittedAt));
 	const reviews = await reviewsFor(rows.map((r) => r.sub.id));
 	const pipelineSummary = await currentPipelineSummary(role);
+	const fees = rows
+		.filter((r) => r.sub.status === "ACCEPTED")
+		.reduce((n, r) => n + (r.sub.platformFee ?? 0n) + (r.sub.operatorFee ?? 0n), 0n);
 	return {
 		...roleDetail(
 			role,
 			companyName,
 			rows.map((r) => submissionView(r.sub, r.scout, reviews.get(r.sub.id) ?? null, role)),
+			{ fees },
 		),
 		pipelineSummary,
 		reviewer: { mode: await reviewerMode(role), agentPubkey: role.agentPubkey },
@@ -239,6 +248,75 @@ export async function topUp(
 	return { unsignedTx: await buildUnsignedTx([ix], `Add ${usdc(amount)} to the "${role.title}" budget`) };
 }
 
+/** A DRAFT role whose create_role never landed: build it again (or notice it did land and resync). */
+export async function fundRole(
+	wallet: Address,
+	id: string,
+): Promise<{ unsignedTx: UnsignedTx | null; alreadyFunded: boolean }> {
+	const { role } = await loadRole(id);
+	if (role.companyWallet !== wallet) throw forbidden("only the role's company can fund it");
+	if (role.status !== "DRAFT") return { unsignedTx: null, alreadyFunded: true };
+	if (role.roleVault && (await fetchProgramAccount("RoleVault", address(role.roleVault)))) {
+		await refreshRole(address(role.roleVault));
+		return { unsignedTx: null, alreadyFunded: true };
+	}
+	const deposit = role.intendedDeposit;
+	if (deposit <= 0n) throw new HttpError(409, "NO_BUDGET", "Set the budget again: create a new role.");
+	const { ix, roleVault } = await createRoleIx({
+		company: wallet,
+		roleId: BigInt(role.onchainRoleId),
+		agent: role.agentPubkey ? address(role.agentPubkey) : null,
+		reviewWindowSeconds: role.reviewWindowSeconds,
+		claimTimeoutSeconds: env.claimTimeoutSeconds,
+		holdbackWindowSeconds: role.holdbackWindowSeconds,
+		initialDeposit: deposit,
+		agentMaxBounty: env.agentMaxBounty,
+		agentMaxCommitment: deposit,
+	});
+	await db.update(schema.roles).set({ roleVault }).where(eq(schema.roles.id, role.id));
+	return {
+		unsignedTx: await buildUnsignedTx([ix], `Give your agent a ${usdc(deposit)} budget for "${role.title}"`),
+		alreadyFunded: false,
+	};
+}
+
+/** Delete a DRAFT role that never got its budget on-chain. */
+export async function discardDraft(wallet: Address, id: string) {
+	const { role } = await loadRole(id);
+	if (role.companyWallet !== wallet) throw forbidden("only the role's company can discard it");
+	if (role.status !== "DRAFT")
+		throw new HttpError(409, "NOT_DRAFT", "Only a role without a budget can be discarded.");
+	if (role.roleVault && (await fetchProgramAccount("RoleVault", address(role.roleVault))))
+		throw new HttpError(409, "ALREADY_FUNDED", "The budget landed on-chain: close the role instead.");
+	await db.delete(schema.agentActivity).where(eq(schema.agentActivity.roleId, role.id));
+	await db.delete(schema.roles).where(eq(schema.roles.id, role.id));
+	return { ok: true };
+}
+
+/** What closing returns, and what's still in flight (blocks closing). */
+export async function closePreview(wallet: Address, id: string) {
+	const { role } = await loadRole(id);
+	if (role.companyWallet !== wallet) throw forbidden("only the role's company can close it");
+	const gigs = await db.select().from(schema.gigs).where(eq(schema.gigs.roleId, role.id));
+	const blocked = await db
+		.select()
+		.from(schema.submissions)
+		.where(
+			and(
+				eq(schema.submissions.roleId, role.id),
+				eq(schema.submissions.confirmed, true),
+				sql`(${schema.submissions.status} = 'PENDING' or ${schema.submissions.laterStatus} = 'HELD')`,
+			),
+		);
+	const byCandidate = new Map<string, string>();
+	for (const s of blocked) byCandidate.set(s.aboutCandidateId ?? s.id, s.candidateName);
+	return {
+		refund: role.remaining.toString(),
+		openGigs: gigs.filter((g) => g.status === "OPEN" || g.status === "PAUSED").length,
+		inProgress: [...byCandidate].map(([candidateId, name]) => ({ candidateId, name })),
+	};
+}
+
 export async function closeRole(wallet: Address, id: string): Promise<{ unsignedTx: UnsignedTx }> {
 	const { role } = await loadRole(id);
 	if (role.companyWallet !== wallet) throw forbidden("only the role's company can close it");
@@ -254,9 +332,22 @@ export async function closeRole(wallet: Address, id: string): Promise<{ unsigned
 			"some recruiter payouts are still held back: confirm or report those candidates, or wait for release",
 		);
 	}
+	// close_role needs every task closed: close the open gigs in the same transaction (company-signed).
+	const open = await db
+		.select()
+		.from(schema.gigs)
+		.where(and(eq(schema.gigs.roleId, role.id), inArray(schema.gigs.status, ["OPEN", "PAUSED"])));
+	const closeTasks = await Promise.all(
+		open
+			.filter((g) => g.taskAddress)
+			.map((g) => closeTaskIx(wallet, address(role.roleVault as string), address(g.taskAddress as string))),
+	);
 	const ix = await closeRoleIx(wallet, address(role.roleVault));
 	return {
-		unsignedTx: await buildUnsignedTx([ix], `Close "${role.title}" and withdraw ${usdc(role.remaining)}`),
+		unsignedTx: await buildUnsignedTx(
+			[...closeTasks, ix],
+			`Close "${role.title}" and withdraw ${usdc(role.remaining)}`,
+		),
 	};
 }
 

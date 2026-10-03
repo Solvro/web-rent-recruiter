@@ -44,8 +44,11 @@ export function requirementChips(req: GigView["requirements"]): string[] {
 }
 
 /** "You qualify" or what is missing, for the signed-in recruiter. */
-export function eligibilityLine(e: NonNullable<GigView["eligibility"]>): string {
-	if (e.allowed) return e.needsBond ? "You qualify · small deposit, returned when accepted" : "You qualify";
+export function eligibilityLine(e: NonNullable<GigView["eligibility"]>, deposit?: string): string {
+	if (e.allowed)
+		return e.needsBond
+			? `You qualify · ${deposit ? `${deposit} ` : ""}deposit per profile, back when accepted`
+			: "You qualify";
 	const r = e.reason;
 	const count = r.match(/Needs (\d+) accepted (screening calls|gigs) in \d+ days \(has (\d+)\)/);
 	if (count)

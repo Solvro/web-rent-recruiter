@@ -28,7 +28,8 @@ export const recallEnv = {
 	mock: process.env.RECALL_MOCK === "1",
 	pollMs: Number(process.env.RECALL_POLL_MS ?? 5000),
 	/** Mock timeline step (ms between joining → in_call → recording → processing → done). */
-	mockStepMs: Number(process.env.RECALL_MOCK_STEP_MS ?? 3000),
+	/** RECALL_MOCK: each simulated step (joining → in call → recording → processing → done) takes this long: ~40 s in all. */
+	mockStepMs: Number(process.env.RECALL_MOCK_STEP_MS ?? 10_000),
 };
 
 /** Own table, created idempotently (kept out of the main Drizzle schema so this module stays self-contained). */
@@ -418,12 +419,16 @@ function toView(row: Row): RecordingView {
 		gigId: row.gigId,
 		status: row.status,
 		meetingUrl: row.meetingUrl,
-		statusText: STATUS_TEXT[row.status],
+		// Never pretend a real meeting happened: simulated recordings say so in every status line.
+		statusText: row.mock
+			? `Demo recording (simulated): ${STATUS_TEXT[row.status].replace(/^./, (c) => c.toLowerCase())}`
+			: STATUS_TEXT[row.status],
 		failureReason: row.failureReason,
 		transcript: row.transcript,
 		lines: row.lines,
 		transcriptHash: row.transcriptHash,
 		prefill: row.prefill,
+		simulated: row.mock,
 		updatedAt: row.updatedAt.toISOString(),
 	};
 }

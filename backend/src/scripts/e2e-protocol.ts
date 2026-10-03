@@ -77,7 +77,9 @@ const makeClient = (token: string | null) =>
 			httpBatchLink({
 				url: API,
 				transformer: superjson,
-				headers: () => (token ? { authorization: `Bearer ${token}` } : {}),
+				// Signed-out calls play the candidate's phone (a different device than the recruiters').
+				headers: () =>
+					token ? { authorization: `Bearer ${token}` } : { "user-agent": "Mozilla/5.0 (iPhone; candidate)" },
 			}),
 		],
 	});
@@ -570,6 +572,72 @@ await expectAppError(
 	asRecruiter.submissions.settle.mutate({ id: silentId }),
 	["NOT_CONFIRMED"],
 	"an unconfirmed sourced candidate is never paid by silence",
+);
+
+// ---- 7. Draft, fund, close ------------------------------------------------------------------------
+
+const draftOnly = await asCompany.roles.create.mutate({
+	title: "Never funded",
+	summary: "x",
+	jobDescription: "x",
+	criteria: JSON.parse(
+		readFileSync(new URL("../agent/fixtures/criteria-senior-rust.json", import.meta.url), "utf8"),
+	),
+	taskType: "SOURCING",
+	reviewWindowSeconds: 600,
+	deposit: toBaseUnits(7).toString(),
+	reviewer: { mode: "self" },
+});
+const listed = (await asCompany.roles.list.query()).find((x) => x.id === draftOnly.roleId);
+check(
+	listed?.status === "DRAFT" && listed.intendedDeposit === toBaseUnits(7).toString(),
+	"an unsigned role stays a draft with its intended $7",
+);
+const fund = await asCompany.roles.fund.mutate({ id: draftOnly.roleId });
+check(Boolean(fund.unsignedTx) && !fund.alreadyFunded, "roles.fund builds the budget transaction again");
+await asCompany.roles.discardDraft.mutate({ id: draftOnly.roleId });
+check(
+	!(await asCompany.roles.list.query()).some((x) => x.id === draftOnly.roleId),
+	"and a draft can be discarded",
+);
+
+const small = await asCompany.roles.create.mutate({
+	title: "Close me",
+	summary: "x",
+	jobDescription: "x",
+	criteria: JSON.parse(
+		readFileSync(new URL("../agent/fixtures/criteria-senior-rust.json", import.meta.url), "utf8"),
+	),
+	taskType: "SOURCING",
+	reviewWindowSeconds: 600,
+	deposit: toBaseUnits(6).toString(),
+	reviewer: { mode: "self" },
+	company: "Acme Payments",
+});
+await submit(asCompany, [company], small.unsignedTx);
+const funded = await waitFor("the small role is funded", async () => {
+	const r = await asCompany.roles.byId.query({ id: small.roleId });
+	return r.status === "OPEN" ? r : null;
+});
+check(funded.companyName === "Acme Payments", "the company line comes from the role, not the account");
+const preview = await asCompany.roles.closePreview.query({ id: small.roleId });
+check(
+	preview.refund === toBaseUnits(6).toString() && preview.inProgress.length === 0,
+	`closing returns ${Number(preview.refund) / 1e6}`,
+);
+await submit(asCompany, [company], (await asCompany.roles.close.mutate({ id: small.roleId })).unsignedTx);
+const closed = await waitFor("closed", async () => {
+	const st = await asCompany.roles.status.query({ roleId: small.roleId });
+	return st.now.text === "Closed" ? st : null;
+});
+const thread = (await asCompany.roles.activity.query({ roleId: small.roleId })).items;
+check(
+	closed.waitingOn.length === 0 &&
+		thread.some((i) => i.kind === "BUDGET" && i.message.startsWith("Set aside $6") && i.signature) &&
+		thread.some(
+			(i) => i.kind === "BUDGET" && i.message.startsWith("Closed the role · $6 back") && i.signature,
+		),
+	"the thread proves the deposit and the refund (with signatures)",
 );
 
 console.log("\nprotocol e2e passed");

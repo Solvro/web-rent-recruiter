@@ -394,6 +394,8 @@ async function keeper() {
 				eq(schema.submissions.confirmed, true),
 				eq(schema.submissions.status, "PENDING"),
 				eq(schema.candidateConfirmations.status, "YES"),
+				// A yes from the recruiter's own device waits for the company, never for the clock.
+				sql`${schema.candidateConfirmations.answers}->>'sameDevice' is null`,
 				lt(schema.submissions.reviewDeadline, now),
 			),
 		)

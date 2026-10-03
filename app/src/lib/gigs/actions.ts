@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { errorMessage } from "../errors";
 import { formatMoney } from "../format";
-import { typedClient } from "../trpc";
+import { typedClient, untypedClient } from "../trpc";
 import { useTransact } from "../use-transact";
 
 const REJECTING = /reject|no\b|pass|don.t/i;
@@ -46,8 +46,17 @@ export function useWaitingAction(roleId: string) {
 					if (unsignedTx) await transact(unsignedTx, { pending: "Saving…", success: "Done." });
 					return;
 				}
+				case "approve_proposal":
+				case "decline_proposal":
+					// Not in the typed router yet (Stream B is adding it).
+					return untypedClient.mutation("roles.decideProposal", {
+						roleId,
+						proposalId: action.proposalId ?? "",
+						approve: action.id === "approve_proposal",
+					});
 				case "invite":
 				case "pass":
+				case "no_show":
 				case "attended": {
 					const candidateId = action.candidateId ?? action.deliverableId ?? "";
 					const { unsignedTx, releases } = await api.roles.decide.mutate({
@@ -60,8 +69,17 @@ export function useWaitingAction(roleId: string) {
 						: null;
 					if (unsignedTx)
 						await transact(unsignedTx, {
-							pending: action.id === "attended" ? "Releasing the held parts…" : "Saving…",
-							success: released ? `Released: ${released}` : "Done.",
+							pending:
+								action.id === "attended"
+									? "Releasing the held parts…"
+									: action.id === "no_show"
+										? "Returning the held parts to your budget…"
+										: "Saving…",
+							success: released
+								? `Released: ${released}`
+								: action.id === "no_show"
+									? "Noted. The held parts went back to your budget."
+									: "Done.",
 							receipt: action.id === "attended",
 						});
 					else toast(action.id === "invite" ? "Invited. Tell me when they come to the interview." : "Done.");

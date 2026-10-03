@@ -154,9 +154,31 @@ const call = (verdict: CallReview["verdict"], candidateFit = 80): CallReview => 
 describe("agentDecision", () => {
 	it("pre-accepts ADVANCE, follows up on 60-74 once, digests 55-59, rejects below", () => {
 		expect(agentDecision({ kind: "sourcing", review: sourcing(96, "ADVANCE") }).action).toBe("accept");
-		const maybe = agentDecision({ kind: "sourcing", review: sourcing(74, "MAYBE") });
+		const unclear = {
+			...sourcing(74, "MAYBE"),
+			verdicts: [{ criterionId: "rt", verdict: "UNKNOWN" as const, reasoning: "Not mentioned." }],
+		};
+		const maybe = agentDecision({
+			kind: "sourcing",
+			review: unclear,
+			criteria,
+			notes: "Backend dev, 6 years.",
+		});
 		expect(maybe.action).toBe("follow_up");
-		expect(maybe.question).toMatch(/concrete fact/);
+		expect(maybe.question).toMatch(/Real-time systems/);
+		// The note already covers it: no follow-up, the company decides in the digest.
+		expect(
+			agentDecision({
+				kind: "sourcing",
+				review: unclear,
+				criteria,
+				notes: "Built real-time systems at Uber.",
+			}),
+		).toMatchObject({ action: "escalate", delivery: "digest" });
+		// The review couldn't be done properly: a person decides, never keyword guesses.
+		expect(agentDecision({ kind: "sourcing", review: sourcing(96, "ADVANCE"), degraded: true }).action).toBe(
+			"escalate",
+		);
 		expect(agentDecision({ kind: "sourcing", review: sourcing(74, "MAYBE"), followUps: 1 })).toMatchObject({
 			action: "escalate",
 			delivery: "digest",

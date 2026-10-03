@@ -205,6 +205,8 @@ export const PaymentLedgerItem = z.object({
 	recruiter: z.string(),
 	gigTitle: z.string(),
 	kind: z.enum(["sourcing", "screening", "language", "reference", "show_up_fee", "appeal"]),
+	/** The line's plan price (bounty): amount + held + fees. */
+	bounty: BaseUnits.optional(),
 	/** Paid to the recruiter now (after fees). */
 	amount: BaseUnits,
 	/** Held back until the candidate is confirmed / attends; released or refunded later. */

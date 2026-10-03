@@ -1,0 +1,20 @@
+QuickNode - Senior Solutions Engineer (Remote - United States, Portugal)
+
+QuickNode is the leading blockchain infrastructure platform, powering thousands of developers and companies. We are a fully remote team.
+
+Location: Remote - United States, Portugal
+
+What you'll do
+- Partner with Sales to run technical discovery and product demos
+- Help customers design and scale their infrastructure on our platform
+- Build sample apps, integrations and technical content
+
+What you'll bring
+- 4+ years in a Solutions Engineer, Sales Engineer or customer-facing engineering role
+- Hands-on experience with JavaScript/TypeScript or Python
+- Familiarity with APIs, RPC and distributed systems
+- Strong communication and technical leadership skills
+- Comfortable working across time zones
+
+Nice to have
+- Experience with web3 or developer tooling companies

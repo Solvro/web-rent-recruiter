@@ -252,7 +252,7 @@ export async function settle(id: string): Promise<z.output<typeof SettleResponse
 			);
 		}
 		const c = await confirmationOf(sub.id);
-		if (c?.status !== "YES" || !c.proofHash) {
+		if (c?.status !== "YES" || !c.proofHash || (c.answers as { sameDevice?: boolean } | null)?.sameDevice) {
 			throw new HttpError(
 				409,
 				"NOT_CONFIRMED",
@@ -264,7 +264,7 @@ export async function settle(id: string): Promise<z.output<typeof SettleResponse
 	} else if (confirmationKind(sub, gig) === "call") {
 		// An unrecorded call pays only once the candidate confirmed it happened, even by timeout.
 		const c = await confirmationOf(sub.id);
-		if (c?.status !== "YES" || !c.proofHash) {
+		if (c?.status !== "YES" || !c.proofHash || (c.answers as { sameDevice?: boolean } | null)?.sameDevice) {
 			throw new HttpError(
 				409,
 				"NOT_CONFIRMED",

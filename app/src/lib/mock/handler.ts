@@ -25,7 +25,12 @@ import { slugify } from "../format";
 import { draftRole } from "./agent";
 import demo from "./demo-data.json";
 import {
+	closePreviewOf,
+	closeRoleWork,
 	ensureGigs,
+	gigProcedures,
+	logDeposit,
+	MockError,
 	recentWorkOf,
 	recruiterProfile,
 	recruiterStanding,
@@ -67,6 +72,46 @@ const fail = (status: number, error: string, message: string, extra: object = {}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const s = (n: bigint) => n.toString();
 
+/** The role's first deposit: on signing, the role opens and the agent takes over. Used by create and roles.fund. */
+function fundTx(role: MockRole, company: NonNullable<ReturnType<typeof db.profiles.get>>) {
+	const deposit = role.intendedDeposit ?? 0n;
+	return registerTx(`Publish ${role.title} with a ${Number(deposit) / 1e6} budget`, (signature) => {
+		company.balance -= deposit;
+		role.deposited = deposit;
+		role.balance = deposit;
+		role.status = "OPEN";
+		mockEvents.emit({ type: "RoleCreated", roleId: role.id });
+		// Funded: the agent takes over (mock/gigs.ts).
+		void ensureGigs().then(() => {
+			logDeposit(role.id, deposit, signature);
+			startAgent(role.id);
+		});
+	});
+}
+
+/** roles.fund / discardDraft / closePreview, in the shared shapes. */
+Object.assign(gigProcedures, {
+	"roles.fund": ({ wallet, input }: { wallet: string | null; input: Record<string, unknown> }) => {
+		const role = db.roles.get(String(input.id));
+		const company = wallet ? db.profiles.get(wallet) : null;
+		if (!role || !company || role.companyWallet !== wallet)
+			throw new MockError(404, "NOT_FOUND", "Role not found");
+		if (role.status !== "DRAFT") return { unsignedTx: null, alreadyFunded: true };
+		if ((role.intendedDeposit ?? 0n) > company.balance)
+			throw new MockError(400, "INSUFFICIENT_FUNDS", "Not enough balance for this amount");
+		return { unsignedTx: fundTx(role, company), alreadyFunded: false };
+	},
+	"roles.discardDraft": ({ wallet, input }: { wallet: string | null; input: Record<string, unknown> }) => {
+		const role = db.roles.get(String(input.id));
+		if (!role || role.companyWallet !== wallet || role.status !== "DRAFT")
+			throw new MockError(409, "NOT_DRAFT", "Only a role that never started can be discarded.");
+		db.roles.delete(role.id);
+		persist();
+		return { ok: true };
+	},
+	"roles.closePreview": ({ input }: { input: Record<string, unknown> }) => closePreviewOf(String(input.id)),
+});
+
 function roleSummary(r: MockRole): RoleSummary {
 	const pending = pendingCount(r.id);
 	const reserved = r.bounty * BigInt(pending) + r.heldBack;
@@ -90,10 +135,13 @@ function roleSummary(r: MockRole): RoleSummary {
 		budget: {
 			deposited: s(r.deposited),
 			paid: s(r.paid),
+			spent: s(r.paid + r.heldBack),
+			refunded: r.refunded !== undefined ? s(r.refunded) : undefined,
 			remaining: s(r.balance),
 			available: s(r.balance > reserved ? r.balance - reserved : 0n),
 			heldBack: s(r.heldBack),
 		},
+		intendedDeposit: r.intendedDeposit !== undefined ? s(r.intendedDeposit) : undefined,
 		createdAt: r.createdAt,
 	};
 }
@@ -159,6 +207,33 @@ function pipelineSummary(r: MockRole) {
 	return `${subs.length} submitted, ${accepted} accepted, ${pending} waiting for your review. Average agent score ${avg}. ${advice}`;
 }
 
+/** Recruiters' one-line bios (me.upsert bio), kept per tab like the rest of the mock; demo people have one. */
+const BIO_KEY = "scout.mock-bios.v1";
+const SEEDED_BIOS: Record<string, string> = {
+	"Ola Wiśniewska":
+		"Tech recruiter in Kraków. Eight years hiring backend and protocol engineers for startups.",
+	"Lucía Fernández": "Sourcer in Madrid, new to Scout. I find engineers in Spain and Latin America.",
+	"Andreea Popescu": "Bucharest-based recruiter for engineering teams across Europe.",
+};
+function bios(): Record<string, string> {
+	try {
+		return JSON.parse(sessionStorage.getItem(BIO_KEY) ?? "{}") as Record<string, string>;
+	} catch {
+		return {};
+	}
+}
+function setBio(wallet: string, bio: string) {
+	try {
+		sessionStorage.setItem(BIO_KEY, JSON.stringify({ ...bios(), [wallet]: bio.trim() }));
+	} catch {
+		// private mode
+	}
+}
+function bioOf(wallet: string, name: string) {
+	const own = bios()[wallet];
+	return own !== undefined ? own || null : (SEEDED_BIOS[name] ?? null);
+}
+
 function me(wallet: string) {
 	const p = db.profiles.get(wallet);
 	if (!p) return null;
@@ -172,6 +247,8 @@ function me(wallet: string) {
 		operator: p.operator,
 		slug: slugify(p.displayName),
 		usdcBalance: s(p.balance),
+		earned: s(p.earned),
+		bio: bioOf(p.wallet, p.displayName),
 		...(recruiterStanding(p.wallet)
 			? { skills: recruiterStanding(p.wallet)?.skills, reputation: recruiterStanding(p.wallet)?.score }
 			: {}),
@@ -207,6 +284,7 @@ const routes: Route[] = [
 		({ wallet, body }) => {
 			if (!wallet) return fail(401, "UNAUTHORIZED", "Log in first");
 			const req = UpsertMeRequest.parse(body);
+			if (req.bio !== undefined) setBio(wallet, req.bio);
 			const existing = db.profiles.get(wallet);
 			db.profiles.set(wallet, {
 				wallet,
@@ -278,18 +356,10 @@ const routes: Route[] = [
 				balance: 0n,
 				salt: fakeBase58(16),
 				createdAt: new Date().toISOString(),
+				intendedDeposit: deposit,
 			};
 			db.roles.set(id, role);
-			const unsignedTx = registerTx(`Publish ${req.title} with a $${Number(deposit) / 1e6} budget`, () => {
-				company.balance -= deposit;
-				role.deposited = deposit;
-				role.balance = deposit;
-				role.status = "OPEN";
-				mockEvents.emit({ type: "RoleCreated", roleId: id });
-				// Funded: the agent takes over (mock/gigs.ts).
-				void ensureGigs().then(() => startAgent(id));
-			});
-			return ok({ roleId: id, unsignedTx });
+			return ok({ roleId: id, unsignedTx: fundTx(role, company) });
 		},
 	],
 	[
@@ -298,7 +368,7 @@ const routes: Route[] = [
 		({ wallet }) =>
 			ok(
 				[...db.roles.values()]
-					.filter((r) => r.companyWallet === wallet && r.status !== "DRAFT")
+					.filter((r) => r.companyWallet === wallet)
 					.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 					.map(roleSummary),
 			),
@@ -333,10 +403,11 @@ const routes: Route[] = [
 			if (amount > company.balance)
 				return fail(400, "INSUFFICIENT_FUNDS", "Not enough balance for this amount");
 			return ok({
-				unsignedTx: registerTx(`Add $${Number(amount) / 1e6} to ${r.title}`, () => {
+				unsignedTx: registerTx(`Add ${Number(amount) / 1e6} to ${r.title}`, (signature) => {
 					company.balance -= amount;
 					r.deposited += amount;
 					r.balance += amount;
+					logDeposit(r.id, amount, signature, true);
 					mockEvents.emit({ type: "RoleToppedUp", roleId: r.id });
 				}),
 			});
@@ -356,12 +427,19 @@ const routes: Route[] = [
 					"Accept or reject the pending candidates before closing this role.",
 				);
 			return ok({
-				unsignedTx: registerTx(`Close ${r.title} and return $${Number(r.balance) / 1e6}`, () => {
-					company.balance += r.balance;
-					r.balance = 0n;
-					r.status = "CLOSED";
-					mockEvents.emit({ type: "RoleClosed", roleId: r.id });
-				}),
+				unsignedTx: registerTx(
+					`Close ${r.title} and return ${Number(r.balance - r.heldBack) / 1e6}`,
+					(signature) => {
+						// Held parts stay until the interview outcome; everything else comes back.
+						const refund = r.balance - r.heldBack;
+						company.balance += refund;
+						r.balance -= refund;
+						r.refunded = refund;
+						r.status = "CLOSED";
+						closeRoleWork(r.id, refund, signature);
+						mockEvents.emit({ type: "RoleClosed", roleId: r.id });
+					},
+				),
 			});
 		},
 	],
@@ -620,6 +698,7 @@ const routes: Route[] = [
 				operator: p.operator,
 				skills: recruiterStanding(p.wallet)?.skills,
 				score: recruiterStanding(p.wallet)?.score,
+				bio: bioOf(p.wallet, p.displayName),
 				recent: [
 					...recentWorkOf(p.wallet),
 					...subs.slice(0, 8).map((x) => ({

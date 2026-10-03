@@ -70,6 +70,8 @@ export const UpsertMeRequest = z.object({
 	companyName: z.string().optional(),
 	/** IANA time zone, e.g. "Europe/Warsaw" (shown next to the candidate's when booking calls). */
 	timeZone: z.string().max(64).optional(),
+	/** Recruiters: one line about themselves on their public profile. */
+	bio: z.string().max(280).optional(),
 });
 export const Me = z.object({
 	wallet: Pubkey,
@@ -80,6 +82,7 @@ export const Me = z.object({
 	avatarUrl: z.string().nullable(),
 	companyName: z.string().nullable(),
 	timeZone: z.string().nullable().optional(),
+	bio: z.string().nullable().optional(),
 	/**
 	 * Scouts: everything paid to them so far (paid now + released holdbacks, show-up fees included), from their
 	 * on-chain ScoutProfile: the same number as the public profile's reputation.totalEarned.
@@ -101,6 +104,10 @@ export type Me = z.infer<typeof Me>;
 export const DraftRoleRequest = z.object({ jobDescription: z.string().min(50) });
 export const DraftRoleResponse = z.object({
 	title: z.string(),
+	/** The hiring company named in the posting (null when it doesn't say). */
+	company: z.string().nullable().optional(),
+	/** Requirements from the posting the draft left out (shown as "Left out: …" so the company can add them back). */
+	dropped: z.array(z.string()).optional(),
 	summary: z.string(),
 	criteria: Criteria,
 	suggestedBounty: BaseUnits,
@@ -111,6 +118,8 @@ export type DraftRoleResponse = z.infer<typeof DraftRoleResponse>;
 
 export const CreateRoleRequest = z.object({
 	title: z.string(),
+	/** The hiring company as the recruiters and candidates see it (default: the account's company name). */
+	company: z.string().max(120).optional(),
 	summary: z.string(),
 	jobDescription: z.string(),
 	criteria: Criteria,
@@ -150,6 +159,12 @@ export const TopUpResponse = z.object({ unsignedTx: UnsignedTx });
 export const Budget = z.object({
 	/** What the company deposited (forfeited recruiter bonds are counted apart, in bondsForfeited). */
 	deposited: BaseUnits,
+	/** Accepted work at its plan price: paid now + held back (fees included). spent + committed + available = deposited. */
+	spent: BaseUnits.optional(),
+	/** Platform + operator fees inside `spent`. */
+	fees: BaseUnits.optional(),
+	/** A closed role: what went back to the company. */
+	refunded: BaseUnits.optional(),
 	/** Bonds of rejected deliverables that stayed in the role's budget (part of `remaining`). */
 	bondsForfeited: BaseUnits.optional(),
 	paid: BaseUnits,
@@ -180,6 +195,8 @@ export const RoleSummary = z.object({
 	holdbackBps: z.number().int(),
 	holdbackWindowSeconds: z.number().int(),
 	budget: Budget,
+	/** DRAFT roles: the budget the company meant to deposit (roles.fund builds that transaction again). */
+	intendedDeposit: BaseUnits.optional(),
 	createdAt: z.string(),
 });
 export type RoleSummary = z.infer<typeof RoleSummary>;
@@ -343,6 +360,7 @@ export const ScoutPublicProfile = z.object({
 	}),
 	profileAddress: Pubkey.nullable(),
 	operator: OperatorInfo.nullable(),
+	bio: z.string().nullable().optional(),
 	skills: z.array(RecruiterSkill).optional(),
 	score: RecruiterReputation.optional(),
 	recent: z.array(

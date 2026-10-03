@@ -17,6 +17,7 @@ import type {
 	ActivityKind,
 	AgentEvent,
 	CandidateView,
+	ChangeProposal,
 	DecisionRecord,
 	Deliverable,
 	GigView,
@@ -47,6 +48,7 @@ export interface MemoryState {
 	activity: { at: string; kind: ActivityKind; message: string }[];
 	escalations: { deliverableId?: string; candidateId?: string; question: string }[];
 	shortlist: ShortlistEntry[];
+	proposals: (ChangeProposal & { proposalId: string })[];
 	txCount: number;
 }
 
@@ -73,6 +75,7 @@ export function createMemoryPorts(init: {
 		activity: [],
 		escalations: [],
 		shortlist: [],
+		proposals: [],
 		txCount: 0,
 	};
 	const now = () => new Date().toISOString();
@@ -166,6 +169,24 @@ export function createMemoryPorts(init: {
 				? [...new Set([...state.pausedTaskTypes, ...types])]
 				: state.pausedTaskTypes.filter((t) => !types.includes(t));
 			record({ action: paused ? "paused" : "resumed", reason: types.join(", ") });
+		},
+		async proposeChange(proposal) {
+			const proposalId = `proposal-${state.proposals.length + 1}`;
+			state.proposals.push({ ...proposal, proposalId });
+			return { proposalId };
+		},
+		async closeGig(gigId) {
+			const gig = state.gigs.find((g) => g.gigId === gigId);
+			if (gig) gig.status = "CLOSED";
+			return { signature: tx() };
+		},
+		async getWaitingOn() {
+			return [
+				...state.escalations.map((e) => ({ who: "you", what: e.question, since: now() })),
+				...state.gigs
+					.filter((g) => g.status === "OPEN" && g.acceptedCount < g.maxDeliverables)
+					.map((g) => ({ who: "recruiters", what: g.title, since: now() })),
+			];
 		},
 		async listSourcingReviews() {
 			return [...state.reviews.values()].flatMap((r) => (r.sourcing ? [r.sourcing] : []));

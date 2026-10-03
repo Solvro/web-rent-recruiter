@@ -93,7 +93,7 @@ From `programs/scout/src/instructions`. On every instruction the payer is our re
 | `register_operator` | operator authority | Registers a recruiter school or agency and its fee |
 | `register_scout` | recruiter, plus the operator to vouch | Creates the recruiter's on-chain profile |
 | `submit_deliverable` | recruiter, with the gatekeeper (agent or company) | Delivers work. Posts the bond if unvouched. Rejects self-dealing and self-review |
-| `accept_submission` | company or agent (sourcing: the confirmation attestor or company) | Pays out per `math::split`, refunds the bond, records `review_hash` |
+| `accept_submission` | company or agent | Pays out per `math::split`, refunds the bond, records `review_hash`. The program doesn't check a candidate confirmation here: our agent accepts a sourced candidate only after the candidate confirms (backend policy, `confirmations.ts`) |
 | `reject_submission` | company or agent | No payout; the bond stays in the company's budget; `reason_hash` on-chain; rent returned to the payer |
 | `settle_expired` | anyone (non-sourcing); attestor or company (sourcing) | After the review window, pays as if accepted |
 | `attest_outcome` | company or agent | `Advanced` releases the holdback. `Fabricated` refunds it and flags the recruiter |
@@ -103,6 +103,7 @@ From `programs/scout/src/instructions`. On every instruction the payer is our re
 Full interface: [docs/program-interface.md](docs/program-interface.md). Everything in this table is live on devnet, v3.3, [upgrade tx](https://solscan.io/tx/Jbbm8wdm9xixPncFTcbqcVceffA8vwioPRPW2pZtydeHkg7e9A8UcPA5HvFpN5ruDEpPVCQjKwC5DiGLCcr7eMq?cluster=devnet). What depends on whom: [docs/security.md](docs/security.md) §0.
 
 **Sourcing liveness trade-off (honest):**
+- What the program enforces for sourcing is only on the *silent* path below. An explicit `accept_submission` by the agent or the company needs no attestor: "the candidate confirmed first" is our agent's policy, not a program rule, so a different agent implementation could accept without it.
 - A silent *sourcing* deliverable is **not** paid by anyone after the window. Only the task's `confirmation_attestor` (any key, by default the role's agent) or the company can settle it, because the payment depends on the candidate's confirmation.
 - So if the attestor disappears, a sourcing payout waits for the company. That is a liveness dependency, not custody: the money stays reserved in the vault, and the company can always settle or close.
 - Non-sourcing deliverables (screening, language, reference) remain permissionlessly settleable after the review window. The flip side: an *unrecorded* (self-reported) call that the candidate never confirmed could be settled by anyone if our agent is down past the window, even though our backend refuses to settle it (`NOT_CONFIRMED`). Giving call tasks the same attestor rule as sourcing would close this; it's on the roadmap. See `docs/jury-qa.md` §10.

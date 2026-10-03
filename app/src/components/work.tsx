@@ -2,10 +2,11 @@
  * A recruiter's own work (My work list and its detail page): the type label, the one-line status, the links the
  * candidate has to click, and where the money went.
  */
-import { type DeliverableView, explorerTxUrl } from "@scout/shared";
+import { type AgentReview, type Criteria, type DeliverableView, explorerTxUrl } from "@scout/shared";
 import { Loader2 } from "lucide-react";
 import { Chip } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
+import { API_MOCK } from "@/lib/env";
 import { firstName, formatMoney, personInTitle } from "@/lib/format";
 import { GIG_TYPES, type GigKind } from "@/lib/gig-types";
 import { kindOfWork, type WorkKind } from "@/lib/gigs/work";
@@ -62,7 +63,7 @@ export function WorkStatus({ d, person }: { d: DeliverableView; person: string }
 		);
 	if (d.status === "REJECTED")
 		return (
-			<Chip>{d.review?.reasons[0] === "Withdrawn by the recruiter." ? "Withdrawn" : "Not accepted"}</Chip>
+			<Chip>{d.review?.reasons[0] === "Withdrawn by the recruiter." ? "Taken back" : "Not accepted"}</Chip>
 		);
 	return (
 		<span className="flex flex-wrap items-center justify-end gap-2">
@@ -136,14 +137,16 @@ export function PayoutBreakdown({
 		...(BigInt(p.later) > 0n
 			? [
 					{
-						label: `After ${firstName(person)}'s interview`,
+						label: "Held back",
 						amount: p.later,
 						note:
 							p.laterStatus === "RELEASED"
 								? "paid"
 								: p.laterStatus === "REFUNDED"
 									? "returned to the company"
-									: "waiting",
+									: p.laterReleasesAt
+										? `paid by ${new Date(p.laterReleasesAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}, sooner if ${firstName(person)} is interviewed`
+										: `paid when ${firstName(person)} is interviewed`,
 					},
 				]
 			: []),
@@ -165,7 +168,10 @@ export function PayoutBreakdown({
 					</div>
 				))}
 			</dl>
-			{d.settlementTx && (
+			{d.settlementTx && API_MOCK && (
+				<p className="type-label text-muted-foreground/80">Demo data: no real payment to show.</p>
+			)}
+			{d.settlementTx && !API_MOCK && (
 				<a
 					href={explorerTxUrl(d.settlementTx)}
 					target="_blank"
@@ -177,4 +183,59 @@ export function PayoutBreakdown({
 			)}
 		</div>
 	);
+}
+
+/** The agent accepts a profile on its own from this score (packages/agent POLICY.sourcingAcceptScore). */
+export const ACCEPT_SCORE = 75;
+
+/** What the profile missed: must-haves not met, and deal-breakers it triggered. */
+export function missedOf(review: AgentReview, criteria: Criteria) {
+	const must = new Map(criteria.mustHave.map((c) => [c.id, c.label]));
+	const deal = new Map(criteria.dealBreakers.map((c) => [c.id, c.label]));
+	return review.verdicts.flatMap((v) => {
+		if (must.has(v.criterionId) && v.verdict === "NOT_MET")
+			return [{ label: must.get(v.criterionId) ?? "", deal: false }];
+		if (deal.has(v.criterionId) && v.verdict === "MET")
+			return [{ label: deal.get(v.criterionId) ?? "", deal: true }];
+		return [];
+	});
+}
+
+/** "Score 43 / 100. The agent accepts from 75." plus the must-haves it couldn't find. */
+export function WhyNotAccepted({ review, criteria }: { review: AgentReview; criteria: Criteria | null }) {
+	const missed = criteria ? missedOf(review, criteria) : [];
+	return (
+		<div className="space-y-3 text-left">
+			<p className="text-muted-foreground">
+				Score <span className="tabular text-foreground">{review.score} / 100</span>. The agent accepts from{" "}
+				<span className="tabular">{ACCEPT_SCORE}</span>.
+			</p>
+			{missed.length > 0 && (
+				<div className="space-y-1.5">
+					<p className="type-label text-muted-foreground">What the note didn't show</p>
+					<ul className="space-y-1">
+						{missed.slice(0, 5).map((m) => (
+							<li key={m.label} className="flex gap-2">
+								<span className="mt-2.5 size-1 shrink-0 rounded-full bg-destructive/70" aria-hidden />
+								{m.deal ? `Not a fit: ${m.label}` : m.label}
+							</li>
+						))}
+					</ul>
+					{missed.length > 5 && (
+						<p className="type-label text-muted-foreground">and {missed.length - 5} more</p>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+/** Where the deposit stands, in one line ("Your $2.50 deposit stays with the company"). */
+export function depositStatusLine(d: DeliverableView) {
+	const dep = d.deposit;
+	if (!dep || BigInt(dep.amount) === 0n) return null;
+	const amount = formatMoney(dep.amount);
+	if (dep.status === "KEPT") return `Your ${amount} deposit stays with the company.`;
+	if (dep.status === "RETURNED") return `Your ${amount} deposit was returned.`;
+	return `Your ${amount} deposit comes back when the agent accepts.`;
 }

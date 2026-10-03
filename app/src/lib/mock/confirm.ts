@@ -15,6 +15,10 @@ type Stored = Omit<CandidateConfirmView, "status"> & {
 	availability?: string;
 	salaryExpectation?: string;
 	timeZone?: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	/** The candidate used "Report this message". */
+	reported?: boolean;
 };
 
 function all(): Record<string, Stored> {
@@ -63,6 +67,9 @@ const view = ({
 	availability: _a,
 	salaryExpectation: _s,
 	timeZone: _z,
+	contactEmail: _e,
+	contactPhone: _p,
+	reported: _rep,
 	...card
 }: Stored) => card;
 
@@ -78,8 +85,13 @@ export const confirmProcedures = {
 		const req = input as CandidateConfirmInput;
 		const entry = confirmationOf(String(req.token));
 		if (!entry) throw new MockError(404, "NOT_FOUND", "This link isn't valid.");
+		if (
+			entry.status === "EXPIRED" ||
+			(entry.status === "PENDING" && Date.parse(entry.expiresAt) <= Date.now())
+		)
+			throw new MockError(409, "LINK_EXPIRED", "This link has expired.");
 		if (entry.status !== "PENDING") throw new MockError(409, "ALREADY_ANSWERED", "You already answered.");
-		const status = req.interested ? "YES" : "NO";
+		const status = req.interested && !req.reported ? "YES" : "NO";
 		put({
 			...entry,
 			status,
@@ -87,6 +99,8 @@ export const confirmProcedures = {
 			availability: req.availability,
 			salaryExpectation: req.salaryExpectation,
 			timeZone: req.timeZone,
+			...(status === "YES" ? { contactEmail: req.contactEmail, contactPhone: req.contactPhone } : {}),
+			reported: !!req.reported,
 		});
 		return { status };
 	},

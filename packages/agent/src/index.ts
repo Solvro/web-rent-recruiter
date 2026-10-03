@@ -17,7 +17,13 @@ export { demoFast, providerLabel } from "./llm/index.ts";
 export type { ReviewDetails, ReviewEngine } from "./review.ts";
 export { defaultReviewEngine, reviewSubmissionDetailed } from "./review.ts";
 
-const DraftOutput = z.object({ title: z.string(), summary: z.string(), criteria: Criteria });
+const DraftOutput = z.object({
+	title: z.string(),
+	/** The hiring company's name as the posting states it; null when it doesn't say. */
+	company: z.string().nullable(),
+	summary: z.string(),
+	criteria: Criteria,
+});
 const RationaleOutput = z.object({ rationale: z.string() });
 const SummaryOutput = z.object({ summary: z.string() });
 
@@ -25,7 +31,7 @@ const usdc = (base: bigint) => fromBaseUnits(base).toLocaleString("en-US", { max
 
 export async function draftRole(
 	jobDescription: string,
-): Promise<{ title: string; summary: string; criteria: Criteria }> {
+): Promise<{ title: string; company?: string; summary: string; criteria: Criteria }> {
 	const draft = await complete({
 		system: prompt("system"),
 		prompt: prompt("draft-role", { jobDescription: untrusted("job_description", jobDescription) }),
@@ -34,7 +40,16 @@ export async function draftRole(
 		essential: true,
 		offline: () => offlineDraftRole(jobDescription),
 	});
-	return { ...draft, criteria: normalizeCriteria(draft.criteria) };
+	const { company, ...rest } = draft;
+	// The language check is for the required non-English language: list it first.
+	const languages = [...draft.criteria.languages].sort(
+		(a, b) => Number(/^english\b/i.test(a)) - Number(/^english\b/i.test(b)),
+	);
+	return {
+		...rest,
+		...(company?.trim() ? { company: company.trim() } : {}),
+		criteria: normalizeCriteria({ ...draft.criteria, languages }),
+	};
 }
 
 export async function suggestBudget(

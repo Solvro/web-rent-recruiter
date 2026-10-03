@@ -121,9 +121,24 @@ describe("transcript → script answers (offline)", () => {
 		"q-motivation",
 		"q-logistics",
 	];
-	const questions: ScriptQuestion[] = ids.map((id) => ({ id, question: id, whatGoodLooksLike: "" }));
+	// The script's wording differs from what the recruiter actually said; shared words are enough to match.
+	const TEXT: Record<string, string> = {
+		"q-rust-production": "How many years of production Rust have you written, and where?",
+		"q-solana-programs": "Which Solana programs have you shipped to mainnet?",
+		"q-defi-protocols": "What DeFi protocol work did you design yourself?",
+		"q-program-security": "How do you approach program security: fuzzing, tests, audits?",
+		"q-fluent-english": "How comfortable are you working in English every day?",
+		"q-only-remote": "Are you open to two days a week in the Warsaw office, or only fully remote?",
+		"q-motivation": "Why are you looking to move now?",
+		"q-logistics": "What's your notice period and compensation expectation, and are you in other processes?",
+	};
+	const questions: ScriptQuestion[] = ids.map((id) => ({
+		id,
+		question: TEXT[id] ?? id,
+		whatGoodLooksLike: "",
+	}));
 
-	it("pairs each recruiter question with the candidate's answer, in script order", () => {
+	it("pairs each script question with the answer to the recruiter's matching question", () => {
 		const lines = mockTranscript();
 		const out = offlineExtract({ questions, lines });
 		expect(out.answers.map((a) => a.questionId)).toEqual(ids);
@@ -139,8 +154,33 @@ describe("transcript → script answers (offline)", () => {
 
 	it("marks uncovered questions as missing", () => {
 		const out = offlineExtract({ questions, lines: mockTranscript().slice(0, 11) });
-		expect(out.answers).toHaveLength(3);
-		expect(out.missing).toHaveLength(5);
+		expect(out.answers.map((a) => a.questionId)).toEqual(ids.slice(0, out.answers.length));
+		expect(out.answers.length).toBeLessThanOrEqual(5);
+		expect(out.missing).toHaveLength(8 - out.answers.length);
 		expect(out.recommendation).toBe("MAYBE");
+	});
+});
+
+describe("transcript → script answers: no shifted answers", () => {
+	it("leaves a question empty rather than giving it a neighbour's answer", () => {
+		const lines = [
+			{ speaker: "Ola", text: "Hi! Quick intro first: how are you today, all good?", startSec: 0 },
+			{ speaker: "Karolina", text: "All good, thanks, happy to talk about the role today.", startSec: 5 },
+			{ speaker: "Ola", text: "How many years of production Rust have you written?", startSec: 10 },
+			{
+				speaker: "Karolina",
+				text: "Six years of production Rust, the last three on lending programs.",
+				startSec: 15,
+			},
+		];
+		const out = offlineExtract({
+			questions: [
+				{ id: "lang", question: "Is your English fluent enough for daily work?", whatGoodLooksLike: "" },
+				{ id: "rust", question: "Years of production Rust?", whatGoodLooksLike: "" },
+			],
+			lines,
+		});
+		expect(out.answers).toEqual([{ questionId: "rust", answer: expect.stringContaining("Six years") }]);
+		expect(out.missing).toEqual(["lang"]);
 	});
 });

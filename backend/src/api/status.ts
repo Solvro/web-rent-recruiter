@@ -10,6 +10,7 @@ import { env } from "../env.ts";
 import { publish } from "../events.ts";
 import { availableBudget } from "../lib/views.ts";
 import { currentWorkSince } from "./gigs.ts";
+import { pendingProposals } from "./proposals.ts";
 
 const name = (full: string) => full.split(" ")[0] ?? full;
 const HOUR = 3_600_000;
@@ -248,6 +249,20 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 				: [],
 		});
 	}
+	// Changes the agent proposed in chat: nothing runs until the company says yes.
+	for (const p of await pendingProposals(roleId))
+		waitingOn.push({
+			who: "company",
+			what: p.summary,
+			since: p.createdAt.toISOString(),
+			deadline: null,
+			gigId: null,
+			deliverableId: null,
+			actions: [
+				{ id: "approve_proposal", label: "Yes", proposalId: p.id },
+				{ id: "decline_proposal", label: "No", proposalId: p.id },
+			],
+		});
 	// The agent's inbox questions (replanning, concerns about paid work) until the company answers them.
 	const inbox = await db
 		.select()
@@ -283,7 +298,14 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 				deadline: sub.reviewDeadline.toISOString(),
 				gigId: sub.gigId,
 				deliverableId: sub.id,
-				actions: [{ id: "decide", label: "Decide", deliverableId: sub.id }],
+				actions: [
+					{
+						id: "decide",
+						label: "Decide",
+						deliverableId: sub.id,
+						bounty: (gigs.find((g) => g.id === sub.gigId)?.bounty ?? 0n).toString(),
+					},
+				],
 			});
 		}
 	}
@@ -322,6 +344,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 						deliverableId: x.candidateId,
 						candidateId: x.candidateId,
 					},
+					{ id: "no_show", label: "Didn't come", deliverableId: x.candidateId, candidateId: x.candidateId },
 				],
 			});
 	}
@@ -341,9 +364,42 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 					g.type === type &&
 					(type !== "SCREENING_CALL" || (variant === "language") === (g.variant === "language")),
 			)
-			.reduce((n, g) => n + g.maxDeliverables, 0);
+			.reduce((n, g) => n + (g.status === "CLOSED" ? g.acceptedCount : g.maxDeliverables), 0);
 
 	const busy = currentWorkSince(roleId);
+	if (role.status === "CLOSED") {
+		const at = (lastStatusChange.get(roleId) ?? role.createdAt).toISOString();
+		return {
+			roleId,
+			now: { text: "Closed", since: at, startedAt: at, busy: false, detail: null },
+			waitingOn: [],
+			pipeline: {
+				sourcingAccepted: accepted("SOURCING"),
+				sourcingSlots: slots("SOURCING"),
+				confirmed: confirmations.filter((c) => c.status === "YES").length,
+				screeningDone: accepted("SCREENING_CALL"),
+				screeningSlots: slots("SCREENING_CALL"),
+				languageDone: accepted("SCREENING_CALL", "language"),
+				referenceDone: accepted("REFERENCE_CHECK"),
+				shortlisted: shortlist.length,
+			},
+			budget: {
+				deposited: (role.deposited - role.bondsForfeited).toString(),
+				bondsForfeited: role.bondsForfeited.toString(),
+				paid: role.paid.toString(),
+				heldBack: role.heldBack.toString(),
+				committed: "0",
+				available: "0",
+				spent: (role.paid + role.heldBack).toString(),
+				refunded: role.refunded.toString(),
+			},
+			nextCheckAt: null,
+		};
+	}
+	// The company's own decision comes first in the header when one is waiting.
+	const yours = waitingOn
+		.filter((w) => w.who === "company")
+		.sort((a, b) => a.since.localeCompare(b.since))[0];
 	return {
 		roleId,
 		now: busy
@@ -356,7 +412,11 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 				}
 			: {
 					detail: null,
-					text: role.agentPaused ? "Paused" : (role.agentStatus ?? "Waiting for the budget to land"),
+					text: role.agentPaused
+						? "Paused"
+						: yours
+							? `Waiting for you: ${yours.what.replace(/^./, (c) => c.toLowerCase())}`
+							: (role.agentStatus ?? "Waiting for the budget to land"),
 					since: (lastStatusChange.get(roleId) ?? role.createdAt).toISOString(),
 					startedAt: (lastStatusChange.get(roleId) ?? role.createdAt).toISOString(),
 					busy: false,
@@ -379,6 +439,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 			heldBack: role.heldBack.toString(),
 			committed: role.committed.toString(),
 			available: availableBudget(role).toString(),
+			spent: (role.paid + role.heldBack).toString(),
 		},
 		nextCheckAt:
 			role.agentManaged && !role.agentPaused ? new Date(Date.now() + env.agentTickMs).toISOString() : null,

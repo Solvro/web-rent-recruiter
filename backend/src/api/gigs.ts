@@ -27,6 +27,7 @@ import { canClaimGig, gigRequirements } from "../agent/gigs/index.ts";
 import { confirmationOf } from "../agent-runner/confirmations.ts";
 import { humanize } from "../agent-runner/narrate.ts";
 import { db, schema } from "../db/index.ts";
+import { env } from "../env.ts";
 import { publish } from "../events.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../http.ts";
 import { refreshGig } from "../indexer/gigs.ts";
@@ -114,8 +115,15 @@ type GigContext = {
 	about: SubRow | null;
 	/** From the candidate's confirmation page (Intl time zone). */
 	candidateTimeZone: string | null;
-	/** The candidate's own answers on /c (availability, salary expectation). */
-	candidateAnswers: { availability?: string; salaryExpectation?: string } | null;
+	/** The candidate's own answers on /c (availability, salary expectation, contact). */
+	candidateAnswers: {
+		availability?: string;
+		salaryExpectation?: string;
+		contactEmail?: string;
+		contactPhone?: string;
+	} | null;
+	/** Reference checks: the referee the candidate named on their accepted screening call. */
+	referee: { name: string; relation: string; contact: string } | null;
 	/** The one-slot task paying the claimant's show-up fee, if any. */
 	feeGig: GigRow | null;
 };
@@ -192,6 +200,7 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 						role.criteria.seniority,
 					),
 					visible ? c.candidateAnswers : null,
+					visible ? c.referee : null,
 				)
 			: null,
 		bounty: gig.bounty.toString(),
@@ -237,6 +246,14 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 					candidateTimeZone: visible ? c.candidateTimeZone : null,
 					recruiterTimeZone: c.claimant?.timeZone ?? null,
 					reported: gig.reported,
+					holdbackWindowSeconds: role.holdbackWindowSeconds,
+					...(viewer && viewer === gig.claimantWallet
+						? {
+								closedReason: gig.closedReason ?? null,
+								closedAt: gig.closedAt?.toISOString() ?? null,
+								reportReason: gig.reportReason ?? null,
+							}
+						: {}),
 					showUpFee:
 						gig.showUpFee && viewer && viewer === gig.claimantWallet
 							? {
@@ -253,12 +270,19 @@ function gigView(c: GigContext, viewerInput: Viewer | string | null): GigView {
 /** Claimant / company: what the candidate told us on /c. Redacted viewers get nulls. */
 function withAnswers<T extends object>(
 	candidate: T,
-	answers: { availability?: string; salaryExpectation?: string } | null,
+	answers: GigContext["candidateAnswers"],
+	referee: GigContext["referee"] = null,
 ) {
+	const contact =
+		answers?.contactEmail || answers?.contactPhone
+			? { email: answers.contactEmail ?? null, phone: answers.contactPhone ?? null }
+			: null;
 	return {
 		...candidate,
 		availability: answers?.availability ?? null,
 		salaryExpectation: answers?.salaryExpectation ?? null,
+		contact,
+		referee,
 	};
 }
 
@@ -322,6 +346,18 @@ async function gigContexts(gigs: GigRow[]): Promise<GigContext[]> {
 				.from(schema.candidateConfirmations)
 				.where(inArray(schema.candidateConfirmations.submissionId, aboutIds))
 		: [];
+	const screenings = aboutIds.length
+		? await db
+				.select({ about: schema.submissions.aboutCandidateId, payload: schema.submissions.payload })
+				.from(schema.submissions)
+				.where(
+					and(
+						inArray(schema.submissions.aboutCandidateId, aboutIds),
+						eq(schema.submissions.deliverableType, "SCREENING_CALL"),
+						eq(schema.submissions.status, "ACCEPTED"),
+					),
+				)
+		: [];
 	const feeGigs = await db
 		.select()
 		.from(schema.gigs)
@@ -359,10 +395,17 @@ async function gigContexts(gigs: GigRow[]): Promise<GigContext[]> {
 						}
 					).timeZone ?? null,
 				candidateAnswers:
-					(confirmations.find((x) => x.submissionId === gig.aboutCandidateId)?.answers as {
-						availability?: string;
-						salaryExpectation?: string;
-					} | null) ?? null,
+					(confirmations.find((x) => x.submissionId === gig.aboutCandidateId && x.status === "YES")
+						?.answers as GigContext["candidateAnswers"]) ?? null,
+				referee:
+					gig.type === "REFERENCE_CHECK"
+						? ((
+								screenings.find(
+									(x) =>
+										x.about === gig.aboutCandidateId && (x.payload as { referee?: unknown } | null)?.referee,
+								)?.payload as { referee?: GigContext["referee"] } | undefined
+							)?.referee ?? null)
+						: null,
 				feeGig: feeGigs.find((f) => f.aboutGigId === gig.id) ?? null,
 			},
 		];
@@ -459,6 +502,26 @@ export function toDeliverableReview(
 	};
 }
 
+/** The deliverable's bond (unvouched sourcing): held while pending, returned on accept, kept on rejection. */
+function depositOf(sub: SubRow, gig: GigRow, role: RoleRow) {
+	if (gig.type !== "SOURCING" || sub.operatorFeeBps > 0) return null;
+	const bondBps = role.agentManaged ? env.sourcingBondBps : 0;
+	const amount =
+		sub.bondForfeited && sub.bondForfeited > 0n
+			? sub.bondForfeited
+			: (gig.bounty * BigInt(bondBps)) / 10_000n;
+	if (amount <= 0n) return null;
+	return {
+		amount: amount.toString(),
+		status:
+			sub.status === "PENDING"
+				? ("HELD" as const)
+				: sub.status === "ACCEPTED"
+					? ("RETURNED" as const)
+					: ("KEPT" as const),
+	};
+}
+
 export function deliverableView(
 	sub: SubRow,
 	gig: GigRow,
@@ -508,6 +571,7 @@ export function deliverableView(
 				}
 			: null,
 		...(sub.followUps.length ? { followUps: sub.followUps } : {}),
+		deposit: depositOf(sub, gig, role),
 		appeal: sub.appeal ?? null,
 	};
 }
@@ -854,6 +918,19 @@ function activityDetail(data: Record<string, unknown> | null): string | undefine
 	return parts.length ? [...new Set(parts)].join(" · ") : undefined;
 }
 
+/** Thread text for people: no verdict tokens, no internal ids or enums, sentence case. */
+function cleanLine(text: string) {
+	return humanize(
+		text
+			.replace(/\b(SOURCING|SCREENING_CALL|REFERENCE_CHECK)\b/g, (m) =>
+				m === "SOURCING" ? "sourcing" : m === "SCREENING_CALL" ? "screening calls" : "reference checks",
+			)
+			.replace(/\b(?:q|ref|lang)-[a-z0-9-]+\b/g, "a question")
+			.replace(/\bgig\(s\)/g, "gigs")
+			.replace(/\b(\w+) done$/, (_, w: string) => (/^[a-z]+[A-Z]/.test(w) ? "Done" : `${w} done`)),
+	);
+}
+
 /** Set by the agent runner while a step runs. */
 const working = new Map<string, { what: string; since: Date; detail?: string }>();
 export const setCurrentWork = (roleId: string, what: string | null) => {
@@ -883,21 +960,25 @@ export async function roleActivity(wallet: Address, roleId: string, limit = 200)
 		status:
 			role.agentStatus ??
 			(role.status === "DRAFT" ? "Waiting for the budget to land" : "Your agent is working"),
-		items: rows.map(
-			(r): AgentActivity => ({
-				id: r.id,
-				roleId: r.roleId,
-				kind: r.kind as AgentActivity["kind"],
-				message: r.message,
-				gigId: r.gigId,
-				deliverableId: r.deliverableId,
-				signature: r.signature,
-				explorerUrl: r.signature ? explorerTxUrl(r.signature) : null,
-				solscanUrl: r.signature ? solscanTxUrl(r.signature) : null,
-				...(activityDetail(r.data) ? { detail: activityDetail(r.data) } : {}),
-				createdAt: r.createdAt.toISOString(),
-			}),
-		),
+		// Older rows predate the plain-language thread: hide raw review rows, and clean the rest as they're read.
+		items: rows
+			.filter((r) => r.kind !== "REVIEWED")
+			.map(
+				(r): AgentActivity => ({
+					id: r.id,
+					roleId: r.roleId,
+					kind: r.kind as AgentActivity["kind"],
+					message:
+						r.kind === "COMPANY_MESSAGE" || r.kind === "AGENT_MESSAGE" ? r.message : cleanLine(r.message),
+					gigId: r.gigId,
+					deliverableId: r.deliverableId,
+					signature: r.signature,
+					explorerUrl: r.signature ? explorerTxUrl(r.signature) : null,
+					solscanUrl: r.signature ? solscanTxUrl(r.signature) : null,
+					...(activityDetail(r.data) ? { detail: activityDetail(r.data) } : {}),
+					createdAt: r.createdAt.toISOString(),
+				}),
+			),
 	};
 }
 
@@ -950,6 +1031,18 @@ export async function roleDecide(
 		.where(eq(schema.submissions.id, input.candidateId));
 	const name = candidate?.candidateName ?? "the candidate";
 
+	if (input.decision === "no_show") {
+		if (item.decision !== "INVITED")
+			throw new HttpError(409, "NOT_INVITED", "invite the candidate to interview first");
+		// Recorded only: the candidate was real and confirmed, so the recruiters' held parts are still paid at the
+		// holdback deadline (refunding them on-chain would flag the recruiters as fabricated).
+		await db.update(schema.shortlist).set({ decision: "NO_SHOW", decidedAt: new Date() }).where(where);
+		await logActivity(role.id, "DECISION", `${name} didn't come to the interview`, {
+			deliverableId: input.candidateId,
+		});
+		publish({ type: "shortlist.updated", roleId: role.id });
+		return { unsignedTx: null };
+	}
 	if (input.decision === "invite" || input.decision === "pass") {
 		if (item.decision !== "NONE")
 			throw new HttpError(409, "ALREADY_DECIDED", `already ${item.decision.toLowerCase()}`);

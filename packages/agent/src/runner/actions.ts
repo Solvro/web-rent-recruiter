@@ -12,9 +12,10 @@ import { planGigs } from "../gigs/plan.ts";
 import { agentDecision, POLICY, pickForScreening } from "../gigs/policy.ts";
 import { type PipelineState, type ReplanStepName, replanStep } from "../gigs/replan.ts";
 import { referenceScript, screeningScript } from "../gigs/scripts.ts";
-import { shortlist } from "../gigs/shortlist.ts";
+import { overallScore, shortlist } from "../gigs/shortlist.ts";
 import type { GigType } from "../gigs/types.ts";
-import { reviewSubmissionDetailed } from "../review.ts";
+import { demoFast } from "../llm/index.ts";
+import { defaultReviewEngine, reviewSubmissionDetailed } from "../review.ts";
 import type {
 	CandidateView,
 	Deliverable,
@@ -33,11 +34,49 @@ const price = (type: GigType, criteria: Criteria, variant?: "language") =>
 	BigInt(priceForRole(criteria, type, variant).usd) * BigInt(USDC_UNIT);
 const fail = (error: string): ActionResult => ({ ok: false, error });
 const open = (g: GigView) => g.status !== "CLOSED";
+const MATCH_WORDS = { ADVANCE: "strong match", MAYBE: "possible match", PASS: "not a match" } as const;
+const VERDICT_WORDS = { ACCEPT: "usable notes", REJECT: "sent back", ESCALATE: "needs your look" } as const;
+const CALL_WORDS = {
+	screening: "Screening notes",
+	reference: "Reference notes",
+	language: "Language check",
+} as const;
+
+/**
+ * The ONE fit score the company sees for a candidate (0-100): the sourcing match, blended with the
+ * screening, reference and language results as they come in. Call scores (quality of the
+ * recruiter's notes) are a different number and never shown as the candidate's fit.
+ */
+export function candidateFit(c: CandidateView): number | null {
+	if (!c.sourcing) return null;
+	return overallScore({
+		id: c.id,
+		name: c.name,
+		sourcing: c.sourcing,
+		...(c.screening ? { screening: c.screening } : {}),
+		...(c.reference ? { reference: c.reference } : {}),
+		...(c.language ? { language: c.language } : {}),
+	});
+}
+
+/** Gig types in the company's words (never the enum) for every logged message. */
+export const GIG_WORDS: Record<GigType, string> = {
+	SOURCING: "sourcing",
+	SCREENING_CALL: "screening calls",
+	REFERENCE_CHECK: "reference checks",
+};
+const foldName = (s: string) =>
+	s
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/ł/g, "l")
+		.toLowerCase()
+		.trim();
 const isLanguageGig = (g: GigView) => g.taskType === "SCREENING_CALL" && g.variant === "language";
 type Sourced = CandidateView & { sourcing: NonNullable<CandidateView["sourcing"]> };
 const hasSourcing = (c: CandidateView): c is Sourced => Boolean(c.sourcing);
 const pausedType = (role: RoleSnapshot, type: GigType) =>
-	role.pausedTaskTypes?.includes(type) ? fail(`The company paused ${type} gigs.`) : null;
+	role.pausedTaskTypes?.includes(type) ? fail(`The company paused the ${GIG_WORDS[type]}.`) : null;
 
 /** Compact, JSON-safe view of the role for the model (no bigints). */
 export function describeRole(role: RoleSnapshot) {
@@ -68,7 +107,7 @@ export function describeRole(role: RoleSnapshot) {
 			id: c.id,
 			name: c.name,
 			stage: c.stage,
-			sourcingScore: c.sourcing?.score,
+			fit: candidateFit(c),
 			screening: c.screening ? `${c.screening.verdict} (fit ${c.screening.candidateFit})` : undefined,
 			reference: c.reference ? `${c.reference.verdict} (fit ${c.reference.candidateFit})` : undefined,
 			language: c.language?.language
@@ -83,6 +122,8 @@ export async function postInitialGigs(ports: RoleAgentPorts): Promise<ActionResu
 	const role = await ports.getRole();
 	if (role.paused) return fail("The company paused the agent.");
 	if (role.gigs.length) return fail("Gigs are already posted.");
+	if (role.budget.available <= 0n)
+		return fail("The role has no budget yet; nothing is posted until it's funded.");
 	const plan = await planGigs({ criteria: role.criteria, title: role.title, budget: role.budget.available });
 	await ports.log({
 		kind: "plan",
@@ -90,7 +131,9 @@ export async function postInitialGigs(ports: RoleAgentPorts): Promise<ActionResu
 		data: { committed: usd(plan.committed), reserve: usd(plan.reserve) },
 	});
 	const posted: string[] = [];
-	for (const gig of plan.gigs.filter((g) => g.when === "now")) {
+	const now = plan.gigs.filter((g) => g.when === "now");
+	if (!now.length) return fail("The budget is too small for a first sourcing gig.");
+	for (const gig of now) {
 		const { gigId } = await ports.postGig(gig);
 		posted.push(gigId);
 		await ports.log({
@@ -126,7 +169,10 @@ export async function reviewDeliverable(ports: RoleAgentPorts, deliverableId: st
 	let stored: StoredReview;
 	let summary: string;
 	if (deliverable.kind === "sourcing") {
-		const { review, flags } = await reviewSubmissionDetailed(role.criteria, deliverable.candidate);
+		const details = await reviewSubmissionDetailed(role.criteria, deliverable.candidate);
+		const { review, flags } = details;
+		// Keyword heuristics are only a stand-in: when a model or Jev is configured but failed, a person decides.
+		const degraded = details.engine === "offline" && defaultReviewEngine() !== "offline";
 		stored = {
 			deliverableId,
 			kind: "sourcing",
@@ -137,10 +183,12 @@ export async function reviewDeliverable(ports: RoleAgentPorts, deliverableId: st
 				flags,
 				followUps: previous?.followUps ?? 0,
 				criteria: role.criteria,
+				notes: deliverable.candidate.notes,
+				degraded,
 			}),
 			followUps: previous?.followUps ?? 0,
 		};
-		summary = `${deliverable.candidate.name}: ${review.score}/100 ${review.recommendation}. ${review.summary}`;
+		summary = `${deliverable.candidate.name}: ${MATCH_WORDS[review.recommendation]} (${review.score}/100). ${review.summary}`;
 	} else {
 		const call = await reviewCall({
 			script: deliverable.script,
@@ -156,7 +204,7 @@ export async function reviewDeliverable(ports: RoleAgentPorts, deliverableId: st
 			call,
 			decision: agentDecision({ kind: deliverable.kind, review: call }),
 		};
-		summary = `${deliverable.kind} notes for ${deliverable.script.candidate.name}: ${call.verdict} ${call.score}/100. ${call.reasons.join(" ")}`;
+		summary = `${CALL_WORDS[deliverable.kind]} for ${deliverable.script.candidate.name}: ${VERDICT_WORDS[call.verdict]}. ${call.reasons.join(" ")}`;
 	}
 	stored = { ...stored, reviewedAt: new Date().toISOString() };
 	await ports.saveReview(stored);
@@ -217,7 +265,7 @@ export async function decide(
 		await ports.log({
 			kind: "accepted",
 			message: `${how}: ${reason}`,
-			data: { deliverableId, signature, payout: policy.payout },
+			data: { deliverableId, signature, payout: policy.payout, decision: { action: "accept", reason } },
 		});
 		return { ok: true, message: `${how}.`, data: { signature } };
 	}
@@ -226,7 +274,7 @@ export async function decide(
 		await ports.log({
 			kind: "rejected",
 			message: `Sent back: ${reason}`,
-			data: { deliverableId, signature },
+			data: { deliverableId, signature, decision: { action: "reject", reason } },
 		});
 		return { ok: true, message: "Rejected with the reason shown to the recruiter.", data: { signature } };
 	}
@@ -237,7 +285,7 @@ export async function decide(
 	await ports.log({
 		kind: "escalated",
 		message: delivery === "digest" ? `Added to today's digest: ${reason}` : `Asked the company: ${reason}`,
-		data: { deliverableId, delivery },
+		data: { deliverableId, delivery, decision: { action: "escalate", reason } },
 	});
 	return {
 		ok: true,
@@ -475,12 +523,12 @@ export async function setGigsPaused(
 	if (!ids.length && !types.length) return fail(`No ${paused ? "open" : "paused"} gigs match.`);
 	if (ids.length) await ports.setGigStatus(ids, paused ? "PAUSED" : "OPEN");
 	if (types.length) await ports.setTaskTypePaused?.(types, paused);
-	const what = [
-		ids.length ? `${ids.length} gig(s)` : null,
-		types.length ? `new ${types.join(", ")} gigs` : null,
-	]
-		.filter(Boolean)
-		.join(" and ");
+	const titles = role.gigs.filter((g) => ids.includes(g.gigId)).map((g) => g.title);
+	const what = types.length
+		? `the ${types.map((t) => GIG_WORDS[t]).join(" and ")}`
+		: titles.length === 1
+			? `“${titles[0]}”`
+			: `${titles.length} gigs`;
 	await ports.log({
 		kind: paused ? "gigs_paused" : "gigs_resumed",
 		message: `${paused ? "Paused" : "Resumed"} ${what}.`,
@@ -534,8 +582,30 @@ export async function explainDecision(
 	ports: RoleAgentPorts,
 	input: { candidateName?: string; deliverableId?: string },
 ): Promise<ActionResult> {
-	const records = await ports.getDecisionLog({ ...input, limit: 10 });
-	const review = input.deliverableId ? await ports.getReview(input.deliverableId) : null;
+	let records = await ports.getDecisionLog({ ...input, limit: 10 });
+	let deliverableId = input.deliverableId;
+	if (!records.length && input.candidateName) {
+		// "Piotr" → "Piotr Lewandowski": resolve a partial name against candidates and deliveries.
+		const needle = foldName(input.candidateName);
+		const role = await ports.getRole();
+		const pending = await ports.listPendingDeliverables();
+		const names = [
+			...role.candidates.map((c) => c.name),
+			...pending.map((d) => (d.kind === "sourcing" ? d.candidate.name : d.script.candidate.name)),
+		];
+		const full = names.find((n) => foldName(n).includes(needle) || needle.includes(foldName(n)));
+		if (full && full !== input.candidateName)
+			records = await ports.getDecisionLog({ candidateName: full, limit: 10 });
+		if (!records.length) {
+			const parts = needle.split(/\s+/).filter((p) => p.length > 2);
+			for (const p of parts) {
+				records = await ports.getDecisionLog({ candidateName: p, limit: 10 });
+				if (records.length) break;
+			}
+		}
+	}
+	deliverableId ??= records.find((r) => r.deliverableId)?.deliverableId;
+	const review = deliverableId ? await ports.getReview(deliverableId) : null;
 	if (!records.length && !review) return fail("No decisions found for that candidate or deliverable.");
 	return {
 		ok: true,
@@ -635,7 +705,8 @@ const DEFAULT_MAX_BOUNTY_MULTIPLIER = 2;
 
 /** Raises open gigs that aren't moving (repriceRule). Needs ports.repriceGig and gig.postedAt. */
 export async function repriceOpenGigs(ports: RoleAgentPorts, now = Date.now()): Promise<ActionResult[]> {
-	if (!ports.repriceGig) return [];
+	// Demo runs: raises are the company's button, never automatic (thresholds are in real hours).
+	if (!ports.repriceGig || demoFast()) return [];
 	const role = await ports.getRole();
 	if (role.paused) return [];
 	const results: ActionResult[] = [];
@@ -731,14 +802,6 @@ export async function replanIfDry(ports: RoleAgentPorts, now = Date.now()): Prom
 
 // ---- Read-only lookups for company chat ---------------------------------------------------
 
-const foldName = (s: string) =>
-	s
-		.normalize("NFKD")
-		.replace(/[\u0300-\u036f]/g, "")
-		.replace(/ł/g, "l")
-		.toLowerCase()
-		.trim();
-
 const callView = (r: CandidateView["screening"]) =>
 	r && {
 		verdict: r.verdict,
@@ -780,6 +843,7 @@ export async function getCandidate(
 			name: c.name,
 			profileUrl: c.profileUrl,
 			stage: c.stage,
+			fit: candidateFit(c),
 			notes: c.notes,
 			sourcing: c.sourcing && {
 				score: c.sourcing.score,

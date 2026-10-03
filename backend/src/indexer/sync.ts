@@ -91,7 +91,14 @@ async function applyEvent(ev: Ev, signature: string) {
 				})
 				.where(eq(schema.roles.roleVault, d.roleVault as string))
 				.returning({ id: schema.roles.id });
-			if (role) publish({ type: "role.updated", roleId: role.id, signature });
+			if (role) {
+				await budgetRow(
+					role.id,
+					`Set aside ${usd(BigInt(d.initialDeposit as bigint))} for this role`,
+					signature,
+				);
+				publish({ type: "role.updated", roleId: role.id, signature });
+			}
 			return;
 		}
 		case "RoleToppedUp": {
@@ -100,7 +107,10 @@ async function applyEvent(ev: Ev, signature: string) {
 				.set({ deposited: BigInt(d.totalDeposited as bigint) })
 				.where(eq(schema.roles.roleVault, d.roleVault as string))
 				.returning({ id: schema.roles.id });
-			if (role) publish({ type: "role.updated", roleId: role.id, signature });
+			if (role) {
+				await budgetRow(role.id, `Added ${usd(BigInt(d.amount as bigint))} to the budget`, signature);
+				publish({ type: "role.updated", roleId: role.id, signature });
+			}
 			return;
 		}
 		case "DeliverableSubmitted":
@@ -278,13 +288,33 @@ async function applyEvent(ev: Ev, signature: string) {
 		case "RoleClosed": {
 			const [role] = await db
 				.update(schema.roles)
-				.set({ status: "CLOSED" })
+				.set({ status: "CLOSED", refunded: BigInt(d.refunded as bigint) })
 				.where(eq(schema.roles.roleVault, d.roleVault as string))
 				.returning({ id: schema.roles.id });
-			if (role) publish({ type: "role.closed", roleId: role.id, signature });
+			if (role) {
+				await budgetRow(
+					role.id,
+					`Closed the role · ${usd(BigInt(d.refunded as bigint))} back to you`,
+					signature,
+				);
+				publish({ type: "role.closed", roleId: role.id, signature });
+			}
 			return;
 		}
 	}
+}
+
+const usd = (base: bigint) => `$${(Number(base) / 1e6).toFixed(2).replace(/\.00$/, "")}`;
+/** A lasting "proof of payment" row in the company's thread for money the company moved. Once per tx. */
+async function budgetRow(roleId: string, message: string, signature: string) {
+	const [seen] = await db
+		.select({ id: schema.agentActivity.id })
+		.from(schema.agentActivity)
+		.where(and(eq(schema.agentActivity.roleId, roleId), eq(schema.agentActivity.signature, signature)))
+		.limit(1);
+	if (seen) return;
+	const { logActivity } = await import("../api/gigs.ts");
+	await logActivity(roleId, "BUDGET", message, { signature });
 }
 
 /** Re-read RoleVault + vault balance into the roles cache. */

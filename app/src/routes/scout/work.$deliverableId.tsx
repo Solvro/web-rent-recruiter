@@ -12,9 +12,17 @@ import { FollowUps } from "@/components/follow-ups";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { CallChecks, PayoutBreakdown, personOf, WorkStatus, workInfo } from "@/components/work";
+import {
+	CallChecks,
+	depositStatusLine,
+	PayoutBreakdown,
+	personOf,
+	WhyNotAccepted,
+	WorkStatus,
+	workInfo,
+} from "@/components/work";
 import { appCodeOf, errorMessage, isNotFound } from "@/lib/errors";
-import { firstName } from "@/lib/format";
+import { firstName, formatMoney } from "@/lib/format";
 import { type GigWorkView, useEditWork, useWithdrawWork, useWork } from "@/lib/gigs/work";
 import { useTitle } from "@/lib/use-title";
 import { cn } from "@/lib/utils";
@@ -242,7 +250,12 @@ function Review({ d, w }: { d: DeliverableView; w: GigWorkView }) {
 	const reasons = d.review?.reasons ?? [];
 	const raw = w.rejectText ?? (d.status === "REJECTED" ? reasons[0] : null);
 	const rejectText =
-		raw && WITHDRAWN.test(raw) ? "You withdrew this. It doesn't count against you." : raw && plainWords(raw);
+		raw && WITHDRAWN.test(raw)
+			? "You took this back. It doesn't affect your record."
+			: review && d.status === "REJECTED"
+				? null
+				: raw && plainWords(raw);
+	const deposit = depositStatusLine(d);
 	const summary = !review && w.call?.summary ? plainWords(w.call.summary) : null;
 	const others = !review && !rejectText ? reasons : [];
 	if (!review && !rejectText && !summary && !others.length) {
@@ -261,6 +274,10 @@ function Review({ d, w }: { d: DeliverableView; w: GigWorkView }) {
 				<p>The agent asked the company to decide before paying. Nothing for you to do.</p>
 			)}
 			{rejectText && <p>{rejectText}</p>}
+			{review && d.status === "REJECTED" && !WITHDRAWN.test(raw ?? "") && (
+				<WhyNotAccepted review={review} criteria={w.criteria} />
+			)}
+			{deposit && d.status !== "PENDING" && <p className="type-label text-muted-foreground">{deposit}</p>}
 			{review && (
 				<div className="space-y-4">
 					<div className="flex flex-wrap items-center gap-3">
@@ -365,13 +382,15 @@ function Withdraw({ d, person }: { d: DeliverableView; person: string }) {
 				onClick={() => setOpen(true)}
 				className="block type-label text-muted-foreground underline-offset-4 hover:text-destructive hover:underline"
 			>
-				Withdraw
+				Take it back
 			</button>
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent className="gap-4 p-6">
-					<DialogTitle>Withdraw {what}?</DialogTitle>
+					<DialogTitle>Take back {what}?</DialogTitle>
 					<p className="text-muted-foreground">
-						The agent stops checking it and nothing is paid for it. It doesn't count against you.
+						The agent stops checking it and nothing is paid for it. It doesn't affect your record.
+						{d.deposit?.status === "HELD" &&
+							` Your ${formatMoney(d.deposit.amount)} deposit stays with the company.`}
 						{d.gigType !== "SOURCING" && " The gig goes back on the board."}
 					</p>
 					{withdraw.isError && <p className="type-label text-destructive">{errorMessage(withdraw.error)}</p>}
@@ -386,13 +405,13 @@ function Withdraw({ d, person }: { d: DeliverableView; person: string }) {
 								withdraw.mutate(undefined, {
 									onSuccess: () => {
 										setOpen(false);
-										toast.success("Withdrawn");
+										toast.success("Taken back");
 									},
 								})
 							}
 						>
 							{withdraw.isPending && <Loader2 className="animate-spin" />}
-							Withdraw
+							Take it back
 						</Button>
 					</DialogFooter>
 				</DialogContent>

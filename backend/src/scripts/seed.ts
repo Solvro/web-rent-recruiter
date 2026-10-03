@@ -368,6 +368,23 @@ for (const p of PERSONAS) {
 	);
 	await db.insert(schema.recruiterSeededStats).values(p.stats.map((x) => ({ wallet: p.wallet, ...x })));
 }
+// One line each on the public profile (editable by the recruiter).
+const BIOS: [Address, string][] = [
+	[
+		recruiterWallets.ola,
+		"Tech recruiter in Kraków; I screen Rust and backend engineers and write notes companies can act on.",
+	],
+	[
+		recruiterWallets.lucia,
+		"Sourcer in Valencia; I find senior engineers in the Solana and DeFi community before they hit the job boards.",
+	],
+	[
+		recruiterWallets.andreea,
+		"Recruiter in Bucharest for Java teams and DACH sales roles; fluent in German and English.",
+	],
+];
+for (const [wallet, bio] of BIOS)
+	await db.update(schema.accounts).set({ bio }).where(eq(schema.accounts.wallet, wallet));
 console.log(
 	`  personas: skills + seeded demo history (Ola: screening-eligible, verified by ${operatorName})`,
 );

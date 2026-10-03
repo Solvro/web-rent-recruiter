@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs";
 import { type Criteria, toBaseUnits } from "@scout/shared";
 import { beforeAll, describe, expect, it } from "vitest";
-import { advanceRole, bookScreening, decide, postExtraSourcing, setGigsPaused } from "./actions.ts";
+import {
+	advanceRole,
+	bookScreening,
+	decide,
+	explainDecision,
+	postExtraSourcing,
+	postInitialGigs,
+	setGigsPaused,
+} from "./actions.ts";
 import { createMemoryPorts } from "./memory-ports.ts";
 import { createRoleAgent } from "./role-agent.ts";
 
@@ -218,5 +226,87 @@ describe("company-chat lookups", () => {
 		expect(data?.deliverableId).toBe("del-3"); // the latest screening, not the rejected lazy one
 		expect(data?.answers[0]?.answer).toMatch(/Kelp Labs|Rust/);
 		expect((await getCandidate(mem.ports, { name: "nobody" })).ok).toBe(false);
+	});
+});
+
+describe("company chat never changes anything (proposals)", () => {
+	it("chat has only read and propose tools; the loop has the acting ones", async () => {
+		const { createRoleTools, AUTONOMOUS_ONLY_TOOLS, COMPANY_ONLY_TOOLS } = await import("./role-agent.ts");
+		const mem = setup();
+		const chat = Object.keys(createRoleTools(mem.ports, "company"));
+		const loop = Object.keys(createRoleTools(mem.ports, "autonomous"));
+		for (const name of AUTONOMOUS_ONLY_TOOLS) expect(chat).not.toContain(name);
+		for (const name of COMPANY_ONLY_TOOLS) expect(loop).not.toContain(name);
+		expect(chat).toEqual(
+			expect.arrayContaining(["getStatus", "getWaitingOn", "explainDecision", "postExtraGig"]),
+		);
+	});
+
+	it("'find more people' becomes an inbox proposal with its cost; Yes runs it", async () => {
+		const { createRoleTools } = await import("./role-agent.ts");
+		const { applyProposal } = await import("./proposals.ts");
+		const mem = setup();
+		await advanceRole(mem.ports);
+		const snapshot = () =>
+			mem.state.gigs.map((g) => `${g.gigId}:${g.maxDeliverables}:${g.status}:${g.bounty}`).join();
+		const before = snapshot();
+		const tools = createRoleTools(mem.ports, "company");
+		const out = (await tools.postExtraGig.execute?.({ count: 3, focus: "Go" }, {} as never)) as unknown as {
+			data: { message: string };
+		};
+		expect(out.data.message).toMatch(/inbox: Yes or No/);
+		expect(snapshot()).toBe(before); // nothing changed
+		const [proposal] = mem.state.proposals;
+		expect(proposal?.summary).toBe(
+			"Open 3 more profile slots focused on Go at $25 each ($75 from the reserve)?",
+		);
+		const applied = await applyProposal(mem.ports, proposal as never);
+		expect(applied.ok).toBe(true);
+		expect(mem.state.gigs).toHaveLength(2);
+	});
+
+	it("without the inbox port it only describes the change", async () => {
+		const { proposeExtraSourcing } = await import("./proposals.ts");
+		const mem = setup();
+		await advanceRole(mem.ports);
+		const ports = { ...mem.ports, proposeChange: undefined };
+		const r = await proposeExtraSourcing(ports, { count: 2 });
+		expect(r.ok && r.message).toMatch(/^Not changed\./);
+		expect(mem.state.gigs).toHaveLength(1);
+	});
+
+	it("'cancel the extra slots' proposes closing them and returns the money; paid work stays paid", async () => {
+		const { proposeCloseSlots, applyProposal } = await import("./proposals.ts");
+		const mem = setup();
+		await advanceRole(mem.ports);
+		const gig = mem.state.gigs[0];
+		const r = await proposeCloseSlots(mem.ports, { gigId: gig?.gigId ?? "" });
+		expect(r.ok && r.message).toMatch(/Close the 6 open slots .* return \$150 to your budget\?/);
+		const before = (await mem.ports.getRole()).budget.available;
+		await applyProposal(mem.ports, mem.state.proposals[0] as never);
+		expect((await mem.ports.getRole()).budget.available - before).toBe(toBaseUnits(150));
+	});
+
+	it("an unfunded role posts nothing and logs no $0 plan", async () => {
+		const mem = setup(0);
+		const r = await postInitialGigs(mem.ports);
+		expect(r.ok).toBe(false);
+		expect(mem.state.gigs).toHaveLength(0);
+		expect(mem.state.activity).toHaveLength(0);
+	});
+
+	it("explainDecision finds Piotr by first name; log messages carry no enums", async () => {
+		const mem = setup();
+		await advanceRole(mem.ports);
+		mem.deliver(gigId(mem, "SOURCING"), {
+			candidate: fixture<DemoCandidate>("demo-candidate-3-weak-piotr.json"),
+		});
+		await advanceRole(mem.ports);
+		const e = await explainDecision(mem.ports, { candidateName: "piotr" });
+		expect(e.ok).toBe(true);
+		const logged = mem.state.activity.map((a) => a.message).join("\n");
+		expect(logged).not.toMatch(
+			/\b(ADVANCE|MAYBE|PASS|REJECT|ACCEPT|SCREENING_CALL|SOURCING|REFERENCE_CHECK)\b/,
+		);
 	});
 });

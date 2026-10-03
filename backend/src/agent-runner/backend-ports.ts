@@ -32,7 +32,7 @@ import { applyConfirmedTx } from "../indexer/apply-tx.ts";
 import { availableBudget } from "../lib/views.ts";
 import { recordingMeta } from "../recall/service.ts";
 import { agentSigner, fetchProgramAccount, type RoleVaultAccount } from "../solana/chain.ts";
-import { acceptIx, createTaskIx, rejectIx } from "../solana/scout.ts";
+import { acceptIx, closeTaskIx, createTaskIx, rejectIx } from "../solana/scout.ts";
 import { sendAsRelayer } from "../solana/tx.ts";
 import { confirmationKind, preAccept } from "./confirmations.ts";
 import { decisionLine, humanize } from "./narrate.ts";
@@ -173,6 +173,17 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 					),
 				);
 			const shortlist = await db.select().from(schema.shortlist).where(eq(schema.shortlist.roleId, roleId));
+			const claimRows = gigs.length
+				? await db
+						.select({ gigId: schema.claims.gigId })
+						.from(schema.claims)
+						.where(
+							inArray(
+								schema.claims.gigId,
+								gigs.map((g) => g.id),
+							),
+						)
+				: [];
 			const available = availableBudget(role);
 
 			const stored = (s: SubRow) => s.agentReview as unknown as StoredReview | null;
@@ -246,6 +257,11 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 						pendingCount: g.pendingCount,
 						status: g.status as "OPEN" | "PAUSED" | "CLOSED",
 						...(g.aboutCandidateId ? { candidateId: g.aboutCandidateId } : {}),
+						// Repricing (real hours): when it was posted, who engaged, how much arrived.
+						postedAt: g.createdAt.toISOString(),
+						claims: claimRows.filter((c) => c.gigId === g.id).length,
+						deliveries: subs.filter((x) => x.gigId === g.id).length,
+						...(g.priceHistory.length ? { lastRepricedAt: g.priceHistory.at(-1)?.at } : {}),
 					})),
 				candidates,
 				paused: role.agentPaused,
@@ -503,6 +519,37 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 			});
 		},
 
+		/** Chat: a change the agent wants goes to the company's inbox; it runs only on their Yes. */
+		async proposeChange(p: { kind: string; summary: string; input: Record<string, unknown> }) {
+			const { proposeChange } = await import("../api/proposals.ts");
+			return proposeChange(roleId, p as never);
+		},
+
+		/** "What are you waiting for?": the cockpit's list, in plain words. */
+		async getWaitingOn() {
+			const { roleStatus } = await import("../api/status.ts");
+			const s = await roleStatus(roleId);
+			return s.waitingOn.map((w) => ({ who: w.who, what: w.what, since: w.since, slow: w.slow ?? false }));
+		},
+
+		/** close_task on an open gig: its unused slots go back to the budget. */
+		async closeGig(gigId: string, reason: string) {
+			const [gig] = await db.select().from(schema.gigs).where(eq(schema.gigs.id, gigId));
+			const role = await loadRole();
+			if (!gig?.taskAddress || !role.roleVault || gig.roleId !== roleId) throw new Error("gig not found");
+			if (gig.pendingCount > 0) throw new Error("a delivery is still in review");
+			const agent = await agentSigner();
+			const confirmed = await sendAsRelayer(
+				[await closeTaskIx(agent.address, address(role.roleVault), address(gig.taskAddress))],
+				[agent],
+			);
+			await db.update(schema.gigs).set({ status: "CLOSED" }).where(eq(schema.gigs.id, gigId));
+			await applyConfirmedTx(confirmed);
+			await logActivity(roleId, "NOTE", reason, { gigId, signature: confirmed.signature });
+			publish({ type: "gig.updated", roleId, gigId, signature: confirmed.signature });
+			return { signature: confirmed.signature };
+		},
+
 		/** close_task + create_task at the new price, in one agent-signed tx (api/loop.ts). */
 		async repriceGig(gigId, bounty, reason) {
 			const { signature } = await repriceGig(roleId, gigId, bounty, reason);
@@ -577,11 +624,21 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 				.where(eq(schema.agentActivity.roleId, roleId))
 				.orderBy(desc(schema.agentActivity.createdAt))
 				.limit(500);
-			const want = filter.candidateName?.toLowerCase();
+			// Names come from the deliverables the rows are about, so "Piotr" finds "Piotr Lewandowski".
+			const ids = [...new Set(rows.flatMap((r) => (r.deliverableId ? [r.deliverableId] : [])))];
+			const subs = ids.length
+				? await db
+						.select({ id: schema.submissions.id, name: schema.submissions.candidateName })
+						.from(schema.submissions)
+						.where(inArray(schema.submissions.id, ids))
+				: [];
+			const nameOf = new Map(subs.map((x) => [x.id, x.name]));
+			const want = filter.candidateName?.toLowerCase().trim();
 			const out: DecisionRecord[] = [];
 			for (const r of rows) {
 				const data = (r.data ?? {}) as Record<string, unknown>;
 				const decision = data.decision as { action?: DecisionRecord["action"]; reason?: string } | undefined;
+				const deliverableId = str(data.deliverableId) ?? r.deliverableId ?? undefined;
 				const action: DecisionRecord["action"] | undefined =
 					decision?.action ??
 					(
@@ -591,24 +648,24 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 							PAUSED: "paused",
 							RESUMED: "resumed",
 							SHORTLISTED: "shortlisted",
+							...(deliverableId
+								? { DELIVERY_ACCEPTED: "accept", DELIVERY_REJECTED: "reject", ESCALATED: "escalate" }
+								: {}),
 						} as Record<string, DecisionRecord["action"]>
 					)[r.kind];
 				if (!action) continue;
-				const deliverableId = str(data.deliverableId) ?? r.deliverableId ?? undefined;
 				if (filter.deliverableId && deliverableId !== filter.deliverableId) continue;
-				if (
-					want &&
-					!r.message.toLowerCase().includes(want) &&
-					str(data.candidateName)?.toLowerCase() !== want
-				)
+				const candidateName =
+					str(data.candidateName) ?? (deliverableId ? nameOf.get(deliverableId) : undefined);
+				if (want && !r.message.toLowerCase().includes(want) && !candidateName?.toLowerCase().includes(want))
 					continue;
 				out.push({
 					at: r.createdAt.toISOString(),
 					action,
-					reason: decision?.reason ?? r.message,
+					reason: decision?.reason ?? str(data.more) ?? r.message,
 					deliverableId,
 					candidateId: str(data.candidateId),
-					candidateName: str(data.candidateName),
+					candidateName,
 					gigId: str(data.gigId) ?? r.gigId ?? undefined,
 				});
 				if (out.length >= (filter.limit ?? 20)) break;

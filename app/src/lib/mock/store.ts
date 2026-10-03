@@ -49,6 +49,10 @@ export type MockRole = {
 	balance: bigint;
 	salt: string;
 	createdAt: string;
+	/** DRAFT roles: the budget the company meant to deposit (roles.fund signs it again). */
+	intendedDeposit?: bigint;
+	/** CLOSED roles: what went back to the company. */
+	refunded?: bigint;
 };
 
 export type MockSubmission = {
@@ -159,9 +163,17 @@ const MEASURED = new Map(
 		}),
 );
 
+const DEMO_CRITERIA = new Set(
+	(demo.roles.find((r) => r.demo)?.criteria.mustHave ?? []).map((c: { id: string }) => c.id),
+);
+/** The demo role, recognized by its must-have ids (titles get edited). */
+const isDemoRole = (criteria: Criteria) =>
+	criteria.mustHave.length > 0 && criteria.mustHave.filter((c) => DEMO_CRITERIA.has(c.id)).length >= 2;
+
 export function reviewFor(criteria: Criteria, c: DemoCandidate): AgentReview {
 	const review = reviewCandidate(criteria, { name: c.name, profileUrl: c.profileUrl, notes: c.notes });
-	const measured = MEASURED.get(normalizeProfileUrl(c.profileUrl));
+	// Scripted scores only on the scripted demo role: the same person on any other role is judged on that role.
+	const measured = isDemoRole(criteria) ? MEASURED.get(normalizeProfileUrl(c.profileUrl)) : undefined;
 	if (!measured) return review;
 	const recommendation = measured.rec as AgentReview["recommendation"];
 	const summary =
@@ -228,7 +240,7 @@ function profile(wallet: string, p: Omit<MockProfile, "wallet">) {
 	db.profiles.set(wallet, { wallet, ...p });
 }
 
-const STORAGE_KEY = "scout.mock-db.v5";
+const STORAGE_KEY = "scout.mock-db.v6";
 
 /** Survives page reloads and Vite HMR; reset from the account menu. */
 export function persist() {
@@ -272,7 +284,7 @@ function restore() {
 export function resetMockData() {
 	try {
 		localStorage.removeItem(STORAGE_KEY);
-		localStorage.removeItem("scout.mock-gigs.v3");
+		localStorage.removeItem("scout.mock-gigs.v4");
 		localStorage.removeItem("scout.mock-recall.v1");
 		localStorage.removeItem("scout.mock-confirm.v1");
 		localStorage.removeItem("scout.mock-recruiter-used");

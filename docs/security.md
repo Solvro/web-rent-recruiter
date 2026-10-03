@@ -16,8 +16,11 @@ Scout is a protocol. Our backend and AI agent are one implementation of the role
 | Accept or reject, with review or reason hashes | Company or `role.agent` | The company reviews. |
 | Pay a reviewed-silent non-sourcing deliverable | Anyone, after `review_deadline` | The scout or anyone calls `settle_expired`. |
 | Pay a silent sourcing deliverable | `task.confirmation_attestor` (any key, default the current `role.agent`) or the company | The company settles, or any independent confirmation service set as attestor at `create_task`. |
+| Accept a sourcing deliverable explicitly | `role.agent` or the company (`accept_submission`; the program checks no attestor) | Our agent accepts only after the candidate's own "yes" on the confirmation page. That is backend policy, not a program rule. |
 | Release a holdback after its window | Anyone | Unaffected |
 | Fee payer (relayer) | Anyone with SOL | Users or any relayer can pay their own fees; the program never checks who the payer is. |
+
+Known limitation: the candidate's "yes" is a bearer link. The recruiter who receives the link to forward could click it themselves. A cheap guard catches the obvious case: a "yes" from a device (IP + user agent) the link holder used while signed in in the last 24 hours isn't paid automatically; the company decides ("the confirmation came from the recruiter's own device"). It doesn't stop a recruiter using a second device or network, and the device list is in memory (a restart forgets it). Real candidate identity (email / LinkedIn sign-in on the confirmation page) is on the roadmap.
 
 Known limitation: an unrecorded ("self-reported") screening or language call is only paid after the candidate confirms the call happened. That rule lives off-chain: our agent pre-accepts and rejects unconfirmed calls before `review_deadline`. If no reviewer acts before the deadline, `settle_expired` still pays the call permissionlessly, because on-chain all non-sourcing tasks settle on silence. Closing this gap would need an attestor for call tasks too, the same way sourcing works.
 

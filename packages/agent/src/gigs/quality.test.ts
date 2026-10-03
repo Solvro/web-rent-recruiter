@@ -109,3 +109,48 @@ describe("summaryForCompany", () => {
 		for (const r of [good, lazy]) expect(r.summaryForCompany).not.toMatch(/ADVANCE|MAYBE|PASS|\/100/);
 	});
 });
+
+describe("answers under the wrong question", () => {
+	const load = async () => {
+		const { readFileSync } = await import("node:fs");
+		const { Criteria } = await import("@scout/shared");
+		process.env.LLM_PROVIDER = "offline";
+		process.env.REVIEW_ENGINE = "offline";
+		const fx = (f: string) => JSON.parse(readFileSync(new URL(`../fixtures/${f}`, import.meta.url), "utf-8"));
+		const { screeningScript: make, referenceScript } = await import("./scripts.ts");
+		const criteria = Criteria.parse(fx("demo-role-senior-backend-ts.json").criteria);
+		const candidate = fx("demo-candidate-1-strong-karolina.json");
+		return {
+			fx,
+			screening: await make({ criteria, candidate }),
+			reference: await referenceScript({ criteria, candidate }),
+		};
+	};
+
+	it("the real notes pass untouched", async () => {
+		const { misplacedAnswers } = await import("./call-review.ts");
+		const { fx, screening, reference } = await load();
+		for (const [script, file] of [
+			[screening, "screening-karolina-good.json"],
+			[reference, "reference-karolina.json"],
+		] as const) {
+			const answers = new Map<string, string>(
+				fx(file).answers.map((a: { questionId: string; answer: string }) => [a.questionId, a.answer]),
+			);
+			expect([...misplacedAnswers(script.questions, answers)]).toEqual([]);
+		}
+	});
+
+	it("shifted answers (each under the next question) are treated as missing and rejected", async () => {
+		const { reviewCall } = await import("./call-review.ts");
+		const { fx, screening } = await load();
+		const good: { questionId: string; answer: string }[] = fx("screening-karolina-good.json").answers;
+		const shifted = good.map((a, i) => ({
+			questionId: a.questionId,
+			answer: good[(i + 1) % good.length]?.answer ?? "",
+		}));
+		const review = await reviewCall({ script: screening, recommendation: "ADVANCE", answers: shifted });
+		expect(review.verdict).toBe("REJECT");
+		expect(review.reasons.join(" ")).toMatch(/belong to a different question/);
+	});
+});

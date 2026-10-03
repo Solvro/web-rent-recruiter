@@ -107,6 +107,7 @@ export function NoShow({ gig }: { gig: GigView }) {
 					? "Gig closed. Nothing counts against you."
 					: "Noted. You have 24 more hours to hold the call.",
 				{
+					id: `no-show-${gig.id}`,
 					description: res.showUpFee
 						? `You can claim a ${formatMoney(res.showUpFee.amount)} show-up fee.`
 						: undefined,
@@ -157,6 +158,7 @@ export function ReportFake({
 		mutationFn: () => onReport(reason.trim()),
 		onSuccess: () => {
 			setOpen(false);
+			toast.success("Report sent. The agent stopped work on this candidate.");
 			void qc.invalidateQueries();
 		},
 	});

@@ -1,0 +1,19 @@
+Senior Go Engineer - Payments Platform | Northwind Pay
+
+Northwind Pay is a European payments company processing card and bank payments for 4,000 online merchants. Our platform team is hiring in Berlin (hybrid, 2 days in the office).
+
+What you'll do
+- Design and run the services that authorise and settle payments
+- Lead design reviews and mentor two mid-level engineers
+- Improve observability and on-call for the platform
+
+Requirements
+- 5+ years building backend services in production
+- Strong Go experience
+- PostgreSQL schema design and query tuning
+- Experience with Kubernetes and cloud infrastructure (AWS or GCP)
+- Fluent English; German is a plus
+
+Nice to have
+- Payments or banking background
+- Kafka or other event streaming

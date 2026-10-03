@@ -24,6 +24,7 @@ import {
 	useCandidates,
 } from "@/lib/gigs/candidates";
 import { inCents } from "@/lib/payout";
+import { plain } from "@/lib/plain";
 import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,7 @@ export function CandidatesProvider({
 		<CandidatesContext.Provider value={value}>
 			{children}
 			<Dialog open={state.open} onOpenChange={(open) => setState((s) => ({ ...s, open }))}>
-				<DialogContent className="top-0 right-0 left-auto h-svh max-h-svh w-full max-w-[min(600px,100vw)] translate-x-0 translate-y-0 content-start overflow-y-auto rounded-none p-6 sm:max-w-[600px] sm:rounded-l-4xl">
+				<DialogContent className="top-0 right-0 left-auto h-svh max-h-svh w-full max-w-[min(600px,100vw)] translate-x-0 translate-y-0 grid-cols-[minmax(0,1fr)] content-start overflow-y-auto rounded-none p-6 sm:max-w-[600px] sm:rounded-l-4xl">
 					{state.id ? (
 						<Detail
 							roleId={roleId}
@@ -152,23 +153,26 @@ function List({
 							>
 								<Avatar name={c.name} src={c.avatarUrl} size="sm" />
 								<span className="min-w-0 flex-1">
-									<span className="block truncate">{c.name}</span>
-									<span className="block truncate type-label text-muted-foreground">
-										{[titleOf(c), `sourced by ${c.sourcedBy.displayName}`].filter(Boolean).join(" · ")}
+									<span className="flex items-baseline gap-2">
+										<span className="min-w-0 truncate">{c.name}</span>
+										{c.score !== null && (
+											<span className="shrink-0 type-label tabular text-muted-foreground">fit {c.score}</span>
+										)}
 									</span>
-								</span>
-								<span className="shrink-0 text-right">
 									<span
 										className={cn(
-											"block type-label",
+											"block truncate type-label",
 											c.stage === "PASSED" || c.stage === "REJECTED"
 												? "text-muted-foreground"
 												: "text-foreground",
 										)}
 									>
 										{STAGE_LABEL[c.stage]}
+										<span className="text-muted-foreground"> · sourced by {c.sourcedBy.displayName}</span>
 									</span>
-									<span className="block type-label tabular text-muted-foreground">{c.score ?? "–"}</span>
+									{titleOf(c) && (
+										<span className="block truncate type-label text-muted-foreground">{titleOf(c)}</span>
+									)}
 								</span>
 							</button>
 							<ProfileLink url={c.profileUrl} />
@@ -235,7 +239,7 @@ function Detail({
 			</Section>
 			{d.review && (
 				<Section title={`Why the agent scored ${d.review.score}`}>
-					<p>{d.review.summary}</p>
+					<p>{plain(d.review.summary)}</p>
 					<WhyThisScore review={d.review} criteria={criteria} />
 				</Section>
 			)}
@@ -366,7 +370,7 @@ function CallSection({ call }: { call: CallDetail }) {
 				)}
 				{evidence && <span className="text-muted-foreground"> · {evidence}</span>}
 			</p>
-			{call.summary && <p className="text-muted-foreground">{call.summary}</p>}
+			{call.summary && <p className="text-muted-foreground">{plain(call.summary)}</p>}
 			{call.referee && (
 				<p className="type-label text-muted-foreground">
 					Spoke with {call.referee.name} · {call.referee.relation}

@@ -301,7 +301,13 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 				</span>
 				<div className="min-w-0 flex-1 space-y-1.5">
 					<p className="type-label text-muted-foreground">{info.name}</p>
-					<p>{gig.exclusive ? gig.roleTitle : gig.title}</p>
+					<Link
+						to="/scout/gigs/$gigId"
+						params={{ gigId: gig.id }}
+						className="block underline-offset-4 hover:underline"
+					>
+						{gig.exclusive ? gig.roleTitle : gig.title}
+					</Link>
 					<CandidateLine gig={gig} />
 					<p className="type-label text-muted-foreground">
 						{[gig.companyName, place && !gig.companyName.includes(place) ? place : null, meta]
@@ -342,7 +348,7 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 						)}
 					>
 						{locked ? <Lock className="size-3.5" /> : <Check className="size-3.5" />}
-						{eligibilityLine(gig.eligibility)}
+						{eligibilityLine(gig.eligibility, formatMoney(BigInt(gig.bounty) / 10n))}
 					</span>
 				) : (
 					<span className="inline-flex items-center gap-1.5 type-label text-success">

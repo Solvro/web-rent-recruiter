@@ -27,6 +27,9 @@ const FRIENDLY: Record<string, string> = {
 	NOTHING_HELD_BACK: "Everything for this candidate is already paid.",
 	SCREENING_CALL: "Add your call notes.",
 	DUPLICATE_CANDIDATE: "Another recruiter already submitted this person.",
+	LINK_EXPIRED: "This link has expired.",
+	INVALID_ADDRESS: "That address doesn't look right.",
+	SAME_ACCOUNT: "That's your own account.",
 	TOO_MANY_REQUESTS: "We're a little busy. Please try again in a moment.",
 };
 const TECHNICAL =

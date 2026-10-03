@@ -47,6 +47,8 @@ export const RecordingView = z.object({
 	/** hex sha256 of `transcript`; the deliverable's on-chain evidence_hash. */
 	transcriptHash: z.string().nullable(),
 	prefill: RecordingPrefill.nullable(),
+	/** RECALL_MOCK: no real meeting was joined; show "Demo recording (simulated)". */
+	simulated: z.boolean().optional(),
 	updatedAt: z.string(),
 });
 export type RecordingView = z.infer<typeof RecordingView>;

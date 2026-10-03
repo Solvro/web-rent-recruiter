@@ -118,7 +118,9 @@ export async function repriceGig(roleId: string, gigId: string, bounty: bigint, 
 			.set({ status: gig.status === "PAUSED" ? "PAUSED" : "OPEN", createTx: confirmed.signature })
 			.where(eq(schema.gigs.id, next.id));
 		await applyConfirmedTx(confirmed);
-		await logActivity(roleId, "REPRICED", reason, { gigId: next.id, signature: confirmed.signature });
+		// Say what it costs: same open slots, the difference comes out of the uncommitted budget.
+		const line = `${reason.replace(/[.]$/, "")} · same ${slots} open slot${slots === 1 ? "" : "s"}, ${usd(extra)} more from your uncommitted budget`;
+		await logActivity(roleId, "REPRICED", line, { gigId: next.id, signature: confirmed.signature });
 		publish({ type: "gig.updated", roleId, gigId: next.id, signature: confirmed.signature });
 		return { gigId: next.id, signature: confirmed.signature };
 	} catch (err) {

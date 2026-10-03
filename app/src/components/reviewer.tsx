@@ -14,7 +14,7 @@ const OPTIONS: { mode: ReviewerModeValue; icon: typeof Bot; name: string; line: 
 		mode: "custom",
 		icon: KeyRound,
 		name: "Your own agent",
-		line: "Any agent you run. Paste its public key.",
+		line: "Any agent you run. Paste its ID.",
 	},
 	{
 		mode: "self",
@@ -75,12 +75,12 @@ export function ReviewerChoice({
 					<Input
 						value={agentKey}
 						onChange={(e) => onChange(mode, e.target.value)}
-						placeholder="Your agent's public key"
-						aria-label="Your agent's public key"
+						placeholder="Your agent's ID"
+						aria-label="Your agent's ID"
 						className="h-11"
 					/>
 					{agentKey && !KEY.test(agentKey.trim()) && (
-						<p className="type-label text-destructive">That doesn't look like a public key.</p>
+						<p className="type-label text-destructive">That doesn't look like an agent ID.</p>
 					)}
 				</div>
 			)}

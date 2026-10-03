@@ -8,16 +8,17 @@ import { ReviewCard } from "@/components/review-queue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
-import { firstName } from "@/lib/format";
+import { firstName, formatMoney } from "@/lib/format";
 import { useWaitingAction } from "@/lib/gigs/actions";
 import { gigApi } from "@/lib/gigs/api";
 import { callApi } from "@/lib/gigs/calls";
 import { useReviewQueue } from "@/lib/gigs/review";
 import type { ShortlistItemView as ShortlistItem, ThreadActivity } from "@/lib/gigs/schemas";
 import type { Waiting } from "@/lib/gigs/status";
+import { plain } from "@/lib/plain";
 import { useTransact } from "@/lib/use-transact";
+import { cn } from "@/lib/utils";
 import { useCandidatesPanel, WithCandidateLinks } from "./candidates";
-import { Meter } from "./decisions";
 
 /**
  * Everything that waits for the company, as cards. The cockpit pins only the first one above the composer (with
@@ -45,7 +46,7 @@ export function useAsks({
 	);
 	return [
 		...withActions.map((w) => ({
-			key: `act-${w.deliverableId ?? w.actions?.[0]?.activityId ?? w.gigId ?? ""}-${w.actions?.[0]?.id ?? ""}`,
+			key: `act-${w.deliverableId ?? w.actions?.[0]?.proposalId ?? w.actions?.[0]?.activityId ?? w.gigId ?? ""}-${w.actions?.[0]?.id ?? ""}`,
 			node: <ActionCard w={w} roleId={roleId} thread={thread} />,
 		})),
 		...(queue.data ?? [])
@@ -122,11 +123,11 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 				)
 			: undefined;
 	// "Your call on Karolina Mazurek: No usable answer to …" → a short title, and the reason underneath.
-	const raw = w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, "");
+	const raw = plain(w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, ""));
 	const [head, ...rest] = raw.split(/:\s+/);
 	const title = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
 	const reasonText = rest.length && title !== raw ? rest.join(": ") : null;
-	const detail = why?.detail && !raw.includes(why.detail.slice(0, 40)) ? why.detail : null;
+	const detail = why?.detail && !raw.includes(plain(why.detail).slice(0, 40)) ? plain(why.detail) : null;
 	const person = [...byName.keys()].find((n) => raw.includes(n));
 	const decides = (w.actions ?? []).filter((x) => x.id === "decide");
 	const generic = decides.length === 1 && !/accept|take|yes|reject|no\b|pass/i.test(decides[0]?.label ?? "");
@@ -139,6 +140,12 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 				<WithCandidateLinks text={title.charAt(0).toUpperCase() + title.slice(1)} />
 			</p>
 			{reasonText && <p className="type-label text-muted-foreground">{reasonText}</p>}
+			{w.actions?.some((x) => x.id === "attended") && (
+				<p className="type-label text-muted-foreground">
+					Set up the interview directly with them. Yes pays the recruiters what's still held; no returns it to
+					your budget.
+				</p>
+			)}
 			{detail && <p className="type-label text-muted-foreground">{detail}</p>}
 			{rejecting && (
 				<Input
@@ -154,7 +161,7 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 				{generic && decide && !rejecting && (
 					<Button onClick={() => run.mutate({ action: decide, decision: "accept" })} disabled={run.isPending}>
 						{run.isPending && run.variables?.decision === "accept" && <Loader2 className="animate-spin" />}
-						Accept and pay
+						Accept and pay{decide.bounty ? ` ${formatMoney(decide.bounty)}` : ""}
 					</Button>
 				)}
 				{generic && decide && (
@@ -250,35 +257,51 @@ function FinalistCard({ item, roleId }: { item: ShortlistItem; roleId: string })
 	);
 }
 
+/** After the invite: the one thing left to tell the agent. Yes pays what is held; no returns it to the budget. */
 function AttendedCard({ item, roleId }: { item: ShortlistItem; roleId: string }) {
-	const qc = useQueryClient();
-	const { transact, pending } = useTransact();
-	const attended = useMutation({
-		mutationFn: async () => {
-			const { unsignedTx } = await gigApi.decide(roleId, item.candidateId, "attended");
-			if (unsignedTx)
-				await transact(unsignedTx, {
-					pending: "Saving…",
-					success: `The recruiters who screened ${firstName(item.name)} got the rest of their payment.`,
-					receipt: true,
-				});
-			await qc.invalidateQueries();
-		},
-		onError: (e) => toast.error(errorMessage(e)),
-	});
+	const run = useWaitingAction(roleId);
+	const name = firstName(item.name);
+	const act = (id: "attended" | "no_show") =>
+		run.mutate({ action: { id, label: id, candidateId: item.candidateId } });
 	return (
 		<article className={card}>
 			<div className="flex items-center gap-3">
 				<Avatar name={item.name} src={item.card.avatarUrl} />
-				<p className="flex-1">Did {firstName(item.name)} come to the interview?</p>
+				<p className="flex-1">Did {name} come to the interview?</p>
 			</div>
 			<p className="type-label text-muted-foreground">
-				Saying yes pays the recruiters the part they are still owed.
+				You invited {name}; set up the interview directly with them. Tell me how it went: yes pays the
+				recruiters what's still held, no returns it to your budget.
 			</p>
-			<Button onClick={() => attended.mutate()} disabled={attended.isPending || pending}>
-				{attended.isPending && <Loader2 className="animate-spin" />}
-				Yes, they came
-			</Button>
+			<div className="flex flex-wrap gap-2">
+				<Button onClick={() => act("attended")} disabled={run.isPending}>
+					{run.isPending && run.variables?.action.id === "attended" && <Loader2 className="animate-spin" />}
+					Yes, {name} came
+				</Button>
+				<Button variant="ghost" onClick={() => act("no_show")} disabled={run.isPending}>
+					{run.isPending && run.variables?.action.id === "no_show" && <Loader2 className="animate-spin" />}
+					{name} didn't come
+				</Button>
+			</div>
 		</article>
+	);
+}
+
+/** Fit as five bars: green when strong, amber when borderline. */
+function Meter({ score }: { score: number }) {
+	const filled = Math.round(score / 20);
+	return (
+		<span className="flex items-end gap-0.5" role="img" aria-label={`Fit ${score} of 100`}>
+			{[0, 1, 2, 3, 4].map((i) => (
+				<span
+					key={i}
+					className={cn(
+						"w-1.5 rounded-full",
+						i < filled ? (score >= 75 ? "bg-success" : "bg-warning") : "bg-muted",
+					)}
+					style={{ height: 6 + i * 3 }}
+				/>
+			))}
+		</span>
 	);
 }

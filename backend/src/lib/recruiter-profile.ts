@@ -38,7 +38,16 @@ export function qualityScore(s: Stat) {
 }
 
 /** 90-day stats per gig type from deliverables (time-decayed weights), plus labelled seeded demo history. */
-export async function recruiterStats(wallet: string): Promise<{ stats: Stats; seeded: boolean }> {
+export type RealCounts = {
+	/** Real work only (no seeded history), all time, unweighted. */
+	accepted: Record<GigType, number>;
+	rejected: number;
+	seededAccepted: number;
+};
+
+export async function recruiterStats(
+	wallet: string,
+): Promise<{ stats: Stats; seeded: boolean; real: RealCounts }> {
 	const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000);
 	const rows = await db
 		.select({
@@ -78,6 +87,16 @@ export async function recruiterStats(wallet: string): Promise<{ stats: Stats; se
 				.where(inArray(schema.candidateFlags.kind, ["FABRICATED", "CALL_DENIED"]))
 		).map((f) => f.id),
 	);
+	const real: RealCounts = {
+		accepted: { SOURCING: 0, SCREENING_CALL: 0, REFERENCE_CHECK: 0 },
+		rejected: 0,
+		seededAccepted: 0,
+	};
+	for (const r of rows) {
+		if (r.status === "ACCEPTED" || r.appeal?.status === "OVERTURNED")
+			real.accepted[(r.type ?? "SOURCING") as GigType] += 1;
+		else if (r.status === "REJECTED") real.rejected += 1;
+	}
 	for (const r of rows) {
 		if (r.status === "PENDING") continue;
 		if (r.status === "REJECTED" && r.rejectReason && NOT_THE_RECRUITERS_FAULT.has(r.rejectReason)) continue;
@@ -96,6 +115,7 @@ export async function recruiterStats(wallet: string): Promise<{ stats: Stats; se
 		.from(schema.recruiterSeededStats)
 		.where(eq(schema.recruiterSeededStats.wallet, wallet));
 	for (const r of seeded) {
+		real.seededAccepted += r.accepted;
 		for (const key of ["ALL", r.gigType] as (GigType | "ALL")[]) {
 			stats[key].accepted += r.accepted;
 			stats[key].decided += r.decided;
@@ -106,24 +126,28 @@ export async function recruiterStats(wallet: string): Promise<{ stats: Stats; se
 		s.accepted = Math.round(s.accepted * 10) / 10;
 		s.decided = Math.round(s.decided * 10) / 10;
 	}
-	return { stats, seeded: seeded.length > 0 };
+	return { stats, seeded: seeded.length > 0, real };
 }
 
 /** Self-declared + operator-verified + seeded skills, and earned ones (accepted gigs per type). */
-export async function recruiterSkills(wallet: string, stats?: Stats): Promise<Skill[]> {
+export async function recruiterSkills(wallet: string, stats?: Stats, real?: RealCounts): Promise<Skill[]> {
 	const rows = await db
 		.select()
 		.from(schema.recruiterSkills)
 		.where(eq(schema.recruiterSkills.wallet, wallet));
 	const out: Skill[] = rows.map((r) => ({ skill: r.skill, source: r.source, verifiedBy: r.verifiedBy }));
-	const s = stats ?? (await recruiterStats(wallet)).stats;
-	const earned: [string, number][] = [
-		["gig:sourcing", s.SOURCING.accepted],
-		["gig:screening", s.SCREENING_CALL.accepted],
-		["gig:reference", s.REFERENCE_CHECK.accepted],
+	const got = stats && real ? { stats, real } : await recruiterStats(wallet);
+	const s = got.stats;
+	// "Earned" counts only real accepted work; seeded demo history is listed as seeded, never as earned.
+	const earned: [string, number, number][] = [
+		["gig:sourcing", got.real.accepted.SOURCING, s.SOURCING.accepted],
+		["gig:screening", got.real.accepted.SCREENING_CALL, s.SCREENING_CALL.accepted],
+		["gig:reference", got.real.accepted.REFERENCE_CHECK, s.REFERENCE_CHECK.accepted],
 	];
-	for (const [skill, n] of earned)
-		if (n >= 1) out.push({ skill, source: "earned", verifiedBy: null, count: Math.floor(n) });
+	for (const [skill, n, all] of earned) {
+		if (n >= 1) out.push({ skill, source: "earned", verifiedBy: null, count: n });
+		else if (all >= 1) out.push({ skill, source: "seeded", verifiedBy: null, count: Math.floor(all) });
+	}
 	if (s.SCREENING_CALL.accepted >= 3)
 		out.push({ skill: "tech-screener", source: "earned", verifiedBy: null });
 	return out;
@@ -131,8 +155,8 @@ export async function recruiterSkills(wallet: string, stats?: Stats): Promise<Sk
 
 /** The agent's RecruiterProfile shape (canClaimGig) + extras for the UI. */
 export async function recruiterProfile(wallet: string) {
-	const { stats, seeded } = await recruiterStats(wallet);
-	const skills = await recruiterSkills(wallet, stats);
+	const { stats, seeded, real } = await recruiterStats(wallet);
+	const skills = await recruiterSkills(wallet, stats, real);
 	const info = await scoutChainInfo(address(wallet) as Address).catch(() => null);
 	return {
 		wallet,
@@ -141,7 +165,7 @@ export async function recruiterProfile(wallet: string) {
 			Object.entries(stats).map(([k, v]) => [k, { accepted: v.accepted, decided: v.decided }]),
 		) as Record<GigType | "ALL", { accepted: number; decided: number }>,
 		vouched: Boolean(info?.operator),
-		details: { skills, stats, seeded, operator: info?.operator?.name ?? null },
+		details: { skills, stats, seeded, real, operator: info?.operator?.name ?? null },
 	};
 }
 

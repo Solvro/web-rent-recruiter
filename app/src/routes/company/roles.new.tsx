@@ -1,4 +1,4 @@
-import type { Criteria, Me } from "@scout/shared";
+import type { Criteria, DraftRoleResponse, Me } from "@scout/shared";
 import { DEMO_REVIEW_WINDOW_SECONDS, toBaseUnits } from "@scout/shared";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -45,9 +45,53 @@ function useReducedMotion() {
 	return reduced;
 }
 
+/** The draft in progress survives a reload (this tab only): the pasted text, the agent's draft, the edits. */
+const SAVED_KEY = "scout.new-role.v1";
+type Saved = {
+	jd: string;
+	result?: DraftRoleResponse | null;
+	title?: string | null;
+	company?: string | null;
+	edits?: Partial<Criteria>;
+	budgetUsd?: number;
+};
+function loadSaved(): Saved | null {
+	try {
+		return JSON.parse(sessionStorage.getItem(SAVED_KEY) ?? "null") as Saved | null;
+	} catch {
+		return null;
+	}
+}
+function save(patch: Partial<Saved>) {
+	try {
+		sessionStorage.setItem(SAVED_KEY, JSON.stringify({ ...(loadSaved() ?? { jd: "" }), ...patch }));
+	} catch {}
+}
+export const clearSavedDraft = () => {
+	try {
+		sessionStorage.removeItem(SAVED_KEY);
+	} catch {}
+};
+
 function NewRole({ me }: { me: Me }) {
-	const [jd, setJd] = useState("");
+	const saved = useMemo(loadSaved, []);
+	const [jd, setJdState] = useState(saved?.jd ?? "");
+	const setJd = (v: string) => {
+		setJdState(v);
+		save({ jd: v, result: null });
+	};
 	const stream = useDraftStream();
+	const restored = useRef(false);
+	useEffect(() => {
+		if (restored.current || !saved?.result || !saved.jd) return;
+		restored.current = true;
+		stream.restore(saved.result);
+	}, [saved, stream.restore]);
+	useEffect(() => {
+		if (stream.phase === "done" && stream.result) save({ result: stream.result });
+		if (stream.phase === "idle" && restored.current)
+			save({ result: null, title: null, company: null, edits: {} });
+	}, [stream.phase, stream.result]);
 
 	if (stream.phase === "idle") {
 		return (
@@ -83,7 +127,7 @@ function NewRole({ me }: { me: Me }) {
 		);
 	}
 
-	return <Drafting jd={jd} me={me} stream={stream} />;
+	return <Drafting jd={jd} me={me} stream={stream} saved={restored.current ? saved : null} />;
 }
 
 /** The text a field came from, to find its sentence in the job description. */
@@ -110,8 +154,19 @@ function fieldText(key: FieldKey, p: PartialDraft): string {
 	}
 }
 
-function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<typeof useDraftStream> }) {
-	const reduced = useReducedMotion();
+function Drafting({
+	jd,
+	me,
+	stream,
+	saved,
+}: {
+	jd: string;
+	me: Me;
+	stream: ReturnType<typeof useDraftStream>;
+	/** Restored after a reload: show the finished post right away, with the earlier edits. */
+	saved: Saved | null;
+}) {
+	const reduced = useReducedMotion() || !!saved;
 	const done = stream.phase === "done";
 	const result = stream.result;
 	const reveal = useReveal(result ?? stream.partial, done, reduced);
@@ -119,7 +174,7 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 	// One page throughout. The pasted text sits where the post will be; the agent turns it into the post line by
 	// line, the leftover text folds away, the plan lands under it, and the Start controls (already laid out with the
 	// plan) fade in. Nothing is swapped, so nothing moves when the agent finishes.
-	const [stage, setStage] = useState<"post" | "plan" | "edit">("post");
+	const [stage, setStage] = useState<"post" | "plan" | "edit">(saved ? "edit" : "post");
 	const instant = reveal.skipped || reduced;
 	useEffect(() => {
 		if (stage !== "post" || !reveal.complete || !result) return;
@@ -134,8 +189,10 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 	}, [stage, instant]);
 
 	// The company's edits on top of the agent's draft.
-	const [title, setTitle] = useState<string | null>(null);
-	const [edits, setEdits] = useState<Partial<Criteria>>({});
+	const [title, setTitle] = useState<string | null>(saved?.title ?? null);
+	const [company, setCompany] = useState<string | null>(saved?.company ?? null);
+	const [edits, setEdits] = useState<Partial<Criteria>>(saved?.edits ?? {});
+	useEffect(() => save({ title, company, edits }), [title, company, edits]);
 	const partial: PartialDraft = result
 		? { ...result, title: title ?? result.title, criteria: { ...result.criteria, ...edits } }
 		: stream.partial;
@@ -182,7 +239,8 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 	const client = useTRPCClient();
 	const navigate = useNavigate();
 	const { transact, pending } = useTransact();
-	const [budgetUsd, setBudgetUsd] = useState(DEFAULT_BUDGET_USD);
+	const [budgetUsd, setBudgetUsd] = useState(saved?.budgetUsd ?? DEFAULT_BUDGET_USD);
+	useEffect(() => save({ budgetUsd }), [budgetUsd]);
 	const [reviewer, setReviewer] = useState<{ mode: ReviewerModeValue; key: string }>({
 		mode: "scout",
 		key: "",
@@ -197,6 +255,7 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 			if (!result || !criteria) return;
 			const res = await client.roles.create.mutate({
 				title: title?.trim() || result.title,
+				company: (company ?? result.company ?? undefined)?.trim() || undefined,
 				summary: result.summary,
 				jobDescription: jd,
 				criteria,
@@ -204,12 +263,19 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 				reviewWindowSeconds: REVIEW_WINDOW,
 				deposit: budget.toString(),
 			});
+			// The role exists now (funded or not): the draft has done its job.
+			clearSavedDraft();
 			const ok = await transact(res.unsignedTx, {
 				pending: "Starting your agent…",
 				success: `Your agent is on it. ${formatMoney(budget)} set aside.`,
 				receipt: true,
 			});
-			if (!ok) return;
+			// Signing failed or was abandoned: the role exists unfunded. Its page explains it and offers to add the
+			// budget again, so there is never a dead draft.
+			if (!ok) {
+				navigate({ to: "/company/roles/$roleId", params: { roleId: res.roleId } });
+				return;
+			}
 			// Someone other than the Scout agent checks the work: record it on the role right away.
 			if (reviewer.mode !== "scout") {
 				const set = await reviewApi.setReviewer(res.roleId, reviewer.mode, reviewer.key.trim());
@@ -236,7 +302,8 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 	const c = partial.criteria;
 	const post: JobPostData = {
 		title: partial.title,
-		company: me.companyName ?? me.displayName,
+		// The posting's own company first; the account's name only when the posting doesn't say.
+		company: company ?? result?.company ?? me.companyName ?? me.displayName,
 		seniority: c?.seniority,
 		location: c?.location,
 		salary: c?.salaryRange,
@@ -305,6 +372,7 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 							editing
 								? {
 										onTitle: setTitle,
+										onCompany: setCompany,
 										onCriteria: (patch) => setEdits((e) => ({ ...e, ...patch })),
 									}
 								: undefined
@@ -312,6 +380,27 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 					/>
 				</div>
 			</div>
+			{editing && criteria && (result?.dropped?.length ?? 0) > 0 && (
+				<LeftOut
+					items={(result?.dropped ?? []).filter((d) => !criteria.niceToHave.some((c) => c.label === d))}
+					onAdd={(label) =>
+						setEdits((e) => ({
+							...e,
+							niceToHave: [
+								...(e.niceToHave ?? criteria.niceToHave),
+								{
+									id: `added-${label
+										.toLowerCase()
+										.replace(/[^a-z0-9]+/g, "-")
+										.slice(0, 40)}`,
+									label,
+									weight: 2,
+								},
+							],
+						}))
+					}
+				/>
+			)}
 
 			{stage !== "post" && plan && (
 				<section data-field="plan" className="space-y-4 pt-12">
@@ -363,9 +452,13 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 								{(start.isPending || pending) && <Loader2 className="animate-spin" />}
 								Start agent · {formatMoney(budget)}
 							</Button>
-							{tooMuch && (
+							{tooMuch ? (
 								<p className="type-label text-destructive">
-									That's more than your balance of {formatMoney(me.usdcBalance)}.
+									That's more than the {formatMoney(me.usdcBalance)} you have. Lower the budget.
+								</p>
+							) : (
+								<p className="type-label text-muted-foreground">
+									You have {formatMoney(me.usdcBalance)} available.
 								</p>
 							)}
 							{tooLittle && (
@@ -417,5 +510,30 @@ function EditJd({ onEdit }: { onEdit: () => void }) {
 		>
 			← Job description
 		</button>
+	);
+}
+
+/** Requirements from the posting the agent didn't keep: said out loud, one click to add back. */
+function LeftOut({ items, onAdd }: { items: string[]; onAdd: (label: string) => void }) {
+	if (!items.length) return null;
+	return (
+		<div className="mt-6 space-y-2 rounded-3xl bg-muted p-4">
+			<p className="type-label text-muted-foreground">
+				Left out of the requirements (too vague for the agent to check):
+			</p>
+			<ul className="flex flex-wrap gap-2">
+				{items.map((label) => (
+					<li key={label}>
+						<button
+							type="button"
+							onClick={() => onAdd(label)}
+							className="rounded-full bg-card px-3 py-1 type-label ring-1 ring-border hover:text-primary"
+						>
+							+ {label}
+						</button>
+					</li>
+				))}
+			</ul>
+		</div>
 	);
 }

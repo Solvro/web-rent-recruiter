@@ -32,3 +32,17 @@ describe("JD languages", () => {
 		expect(splitBudget(750, "SENIOR", criteria).languageChecks).toBeGreaterThan(0);
 	});
 });
+
+describe("real postings", () => {
+	const real = (f: string) =>
+		readFileSync(new URL(`../agent/fixtures/jd-real/${f}`, import.meta.url), "utf8");
+	it("the CSM posting keeps Polish (and adds no Rust or Solana language)", async () => {
+		const { offlineDraftRole } = await import("../agent/offline.ts");
+		const jd = real("customer-success-warsaw.txt");
+		const d = offlineDraftRole(jd);
+		const criteria = withJdLanguages(jd, d.criteria);
+		expect(criteria.languages.some((l) => /polish/i.test(l))).toBe(true);
+		expect(JSON.stringify(criteria.mustHave)).not.toMatch(/rust|solana|\bgo\b/i);
+		expect(d.title).toBe("Customer Success Manager");
+	});
+});

@@ -11,6 +11,8 @@ import { formatMoney } from "@/lib/format";
 import { usePayments } from "@/lib/gigs/candidates";
 import type { RoleStatus } from "@/lib/gigs/status";
 import { inCents } from "@/lib/payout";
+import { plain } from "@/lib/plain";
+import { useMe } from "@/lib/queries";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
@@ -67,12 +69,20 @@ export function RoleHeader({
 }
 
 function StatusText({ status, className }: { status: RoleStatus | undefined; className?: string }) {
+	// Something waiting for the company always wins over "sourcing…": the header never hides a decision.
+	const asking =
+		status?.waitingOn.some((w) => w.who === "company") && !/^waiting for you/i.test(status.now.text);
 	return (
 		<span
-			className={cn("text-muted-foreground", status?.now.busy && "shimmer", className)}
+			className={cn(
+				"text-muted-foreground",
+				status?.now.busy && !asking && "shimmer",
+				asking && "text-primary",
+				className,
+			)}
 			aria-live="polite"
 		>
-			{status?.now.text ?? "Getting ready"}
+			{asking ? "Waiting for your decision" : plain(status?.now.text ?? "Getting ready")}
 		</span>
 	);
 }
@@ -98,17 +108,22 @@ function Ledger({ roleId }: { roleId: string }) {
 	return (
 		<ul className="max-h-56 space-y-1.5 overflow-y-auto border-t pt-3 type-label">
 			{ledger.data.map((p) => {
-				// Whole cents that add up: the held part rounds down, "paid" takes the rest.
+				// The line at its plan price (what the company paid for it); the recruiter's share and fee in the detail.
+				const price = BigInt(p.bounty ?? BigInt(p.amount) + BigInt(p.held) + BigInt(p.fees));
 				const c = inCents(p.amount, p.held);
 				return (
 					<li key={p.deliverableId} className="flex items-baseline justify-between gap-3">
 						<span className="min-w-0 truncate">
 							{p.recruiter} <span className="text-muted-foreground">· {p.kind.replace("_", " ")}</span>
 						</span>
-						<span className="shrink-0 tabular text-muted-foreground">
-							{formatMoney(c.now)}
-							{BigInt(p.held) > 0n &&
-								` + ${formatMoney(c.later)} ${p.heldStatus === "HELD" ? "held" : p.heldStatus.toLowerCase()}`}
+						<span className="shrink-0 text-right tabular">
+							{formatMoney(price)}
+							<span className="block text-muted-foreground">
+								{formatMoney(c.now)} to {p.recruiter.split(" ")[0]}
+								{BigInt(p.held) > 0n &&
+									` · ${formatMoney(c.later)} ${p.heldStatus === "HELD" ? "after the interview" : p.heldStatus === "RELEASED" ? "paid after the interview" : "returned to you"}`}
+								{BigInt(p.fees) > 0n && ` · ${formatMoney(p.fees)} fee`}
+							</span>
 							{p.signature && <Receipt signature={p.signature} />}
 						</span>
 					</li>
@@ -118,25 +133,56 @@ function Ledger({ roleId }: { roleId: string }) {
 	);
 }
 
+/** Accepted work at its plan price (what the company pays for it, fees included). Falls back for older APIs. */
+const spentOf = (b: RoleStatus["budget"]) => BigInt(b.spent ?? BigInt(b.paid) + BigInt(b.heldBack));
+
 function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"] }) {
+	const spent = spentOf(budget);
+	const closed = role.status === "CLOSED";
+	// Spent + set aside + uncommitted = the budget, so the lines below always add up to the total.
+	const rows: [string, bigint, string?][] = [
+		[
+			"Spent on accepted work",
+			spent,
+			[
+				BigInt(budget.heldBack) > 0n &&
+					`${formatMoney(budget.heldBack)} of it is paid only once the candidate comes to the interview`,
+				budget.fees && BigInt(budget.fees) > 0n && `includes ${formatMoney(budget.fees)} in fees`,
+			]
+				.filter(Boolean)
+				.join("; ") || undefined,
+		],
+		...(closed
+			? [["Came back to you", BigInt(budget.refunded ?? "0")] as [string, bigint]]
+			: [
+					[
+						"Set aside for open work",
+						BigInt(budget.committed),
+						"money promised to tasks recruiters are working on",
+					] as [string, bigint, string],
+					["Not yet used", BigInt(budget.available)] as [string, bigint],
+				]),
+	];
 	return (
 		<Popover>
 			<PopoverTrigger className="shrink-0 type-label text-muted-foreground tabular hover:text-foreground">
-				{formatMoney(budget.paid)} of {formatMoney(budget.deposited)} spent
+				{formatMoney(spent)} of {formatMoney(budget.deposited)} spent
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-72 space-y-4">
-				<dl className="space-y-2">
-					{[
-						["Spent on accepted work", budget.paid],
-						["Set aside for open gigs", budget.committed],
-						["Waiting on interviews", budget.heldBack],
-						["Uncommitted", budget.available],
-					].map(([k, v]) => (
-						<div key={k} className="flex justify-between gap-4">
-							<dt className="text-muted-foreground">{k}</dt>
-							<dd className="tabular">{formatMoney(v)}</dd>
+			<PopoverContent align="end" className="w-80 space-y-4">
+				<dl className="space-y-2.5">
+					{rows.map(([k, v, note]) => (
+						<div key={k}>
+							<div className="flex justify-between gap-4">
+								<dt className="text-muted-foreground">{k}</dt>
+								<dd className="tabular">{formatMoney(v)}</dd>
+							</div>
+							{note && <p className="type-label text-muted-foreground">{note}</p>}
 						</div>
 					))}
+					<div className="flex justify-between gap-4 border-t pt-2">
+						<dt>Budget</dt>
+						<dd className="tabular">{formatMoney(budget.deposited)}</dd>
+					</div>
 				</dl>
 				<Ledger roleId={role.id} />
 				{role.status === "OPEN" && <TopUp role={role} />}
@@ -201,6 +247,8 @@ function Progress({ p }: { p: RoleStatus["pipeline"] }) {
 
 function TopUp({ role }: { role: RoleDetail }) {
 	const client = useTRPCClient();
+	const me = useMe();
+	const balance = BigInt(me.data?.usdcBalance ?? "0");
 	const [amount, setAmount] = useState(100);
 	const { transact } = useTransact();
 	const value = BigInt(amount) * 1_000_000n;
@@ -212,16 +260,37 @@ function TopUp({ role }: { role: RoleDetail }) {
 		onError: (e) => toast.error(errorMessage(e)),
 	});
 	return (
-		<div className="flex flex-wrap items-center gap-2 border-t pt-4">
-			{[100, 250, 500].map((n) => (
-				<Button key={n} size="sm" variant={amount === n ? "secondary" : "ghost"} onClick={() => setAmount(n)}>
-					+${n}
-				</Button>
-			))}
-			<Button size="sm" className="ml-auto" onClick={() => topUp.mutate()} disabled={topUp.isPending}>
-				{topUp.isPending && <Loader2 className="animate-spin" />}
-				Add
-			</Button>
+		<div className="space-y-2 border-t pt-4">
+			<p className="type-label text-muted-foreground">You have {formatMoney(balance)} available to add</p>
+			{balance < 1_000_000n ? (
+				<p className="type-label text-muted-foreground">Nothing left to add from your account.</p>
+			) : (
+				<div className="flex flex-wrap items-center gap-2">
+					{[100, 250, 500].map((n) => (
+						<Button
+							key={n}
+							size="sm"
+							variant={amount === n ? "secondary" : "ghost"}
+							onClick={() => setAmount(n)}
+							disabled={BigInt(n) * 1_000_000n > balance}
+						>
+							+${n}
+						</Button>
+					))}
+					<Button
+						size="sm"
+						className="ml-auto"
+						onClick={() => topUp.mutate()}
+						disabled={topUp.isPending || value > balance}
+					>
+						{topUp.isPending && <Loader2 className="animate-spin" />}
+						Add
+					</Button>
+				</div>
+			)}
+			{value > balance && balance >= 1_000_000n && (
+				<p className="type-label text-destructive">That's more than you have. Pick a smaller amount.</p>
+			)}
 		</div>
 	);
 }

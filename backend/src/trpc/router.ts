@@ -14,6 +14,7 @@ import {
 	AuthNonceResponse,
 	AuthVerifyRequest,
 	AuthVerifyResponse,
+	BaseUnits,
 	CandidateConfirmRequest,
 	CandidateConfirmResponse,
 	CandidateDetail,
@@ -26,11 +27,14 @@ import {
 	CandidateViewRequest,
 	CheckDuplicateRequest,
 	CheckDuplicateResponse,
+	ClosePreview,
 	CompanyDeliverable,
 	CompanyNote,
 	CosignRequest,
 	CreateRoleRequest,
 	CreateRoleResponse,
+	DecideProposalRequest,
+	DecideProposalResponse,
 	DecisionRequest,
 	DecisionResponse,
 	DeleteNoteRequest,
@@ -41,6 +45,7 @@ import {
 	DismissReportRequest,
 	DraftRoleRequest,
 	DraftRoleResponse,
+	FundRoleResponse,
 	GigClaimResponse,
 	GigDeliverRequest,
 	GigDeliverResponse,
@@ -120,10 +125,22 @@ import {
 	roleShortlist,
 } from "../api/gigs.ts";
 import { ackEscalation, loosenRequirement, raiseGigPrice, resendConfirmation } from "../api/loop.ts";
-import { findMe, setSkills, upsertMe, verifySkill } from "../api/me.ts";
+import { cashOut, findMe, setSkills, upsertMe, verifySkill } from "../api/me.ts";
+import { decideProposal } from "../api/proposals.ts";
 import { declineCosign, listCosigns, setReviewer, submitCosign, submitForCosign } from "../api/protocol.ts";
 import { answerFollowUp, appeal, companyQueue, decideAppeal, manualDecide } from "../api/review.ts";
-import { closeRole, createRole, draftRole, getRole, listRoles, listTasks, topUp } from "../api/roles.ts";
+import {
+	closePreview,
+	closeRole,
+	createRole,
+	discardDraft,
+	draftRole,
+	fundRole,
+	getRole,
+	listRoles,
+	listTasks,
+	topUp,
+} from "../api/roles.ts";
 import { registerScout, scoutProfile } from "../api/scouts.ts";
 import { claimShowUpFee, dismissReport, noShow, reportCandidate, reportGig } from "../api/screening.ts";
 import { roleStatus } from "../api/status.ts";
@@ -174,6 +191,14 @@ export const appRouter = router({
 	}),
 
 	me: router({
+		/** Send USDC from your own account to another address (you sign; the relayer pays the fee). */
+		cashOut: walletProcedure
+			.input(z.object({ to: z.string().min(32).max(44), amount: BaseUnits }))
+			.output(z.object({ unsignedTx: UnsignedTx }))
+			.mutation(({ ctx, input }) => {
+				rateLimit(`cashout:${ctx.wallet}`, 10, MINUTE, "transfers");
+				return cashOut(ctx.wallet, input);
+			}),
 		/** null until the wallet has a profile (then call `upsert`). */
 		get: walletProcedure.output(Me.nullable()).query(({ ctx }) => findMe(ctx.wallet)),
 		upsert: walletProcedure
@@ -247,6 +272,26 @@ export const appRouter = router({
 			.input(z.object({ roleId: z.string().uuid() }))
 			.output(z.array(PaymentLedgerItem))
 			.query(({ ctx, input }) => rolePayments(ctx.wallet, input.roleId)),
+		/** Yes / No on a change the agent proposed (waitingOn approve_proposal / decline_proposal). */
+		decideProposal: walletProcedure
+			.input(DecideProposalRequest)
+			.output(DecideProposalResponse)
+			.mutation(({ ctx, input }) => decideProposal(ctx.wallet, input)),
+		/** A DRAFT role whose budget never landed: the create_role transaction again (or a resync). */
+		fund: walletProcedure
+			.input(Id)
+			.output(FundRoleResponse)
+			.mutation(({ ctx, input }) => fundRole(ctx.wallet, input.id)),
+		/** Delete a DRAFT role that has no budget on-chain. */
+		discardDraft: walletProcedure
+			.input(Id)
+			.output(z.object({ ok: z.boolean() }))
+			.mutation(({ ctx, input }) => discardDraft(ctx.wallet, input.id)),
+		/** What closing returns and what's still in flight. */
+		closePreview: walletProcedure
+			.input(Id)
+			.output(ClosePreview)
+			.query(({ ctx, input }) => closePreview(ctx.wallet, input.id)),
 		/** "Got it" on an agent's inbox question (waitingOn action "acknowledge"). */
 		ackEscalation: walletProcedure
 			.input(AckEscalationRequest)
@@ -530,7 +575,7 @@ export const appRouter = router({
 			.output(CandidateConfirmResponse)
 			.mutation(({ ctx, input }) => {
 				rateLimit(`cand-confirm:${ctx.ip}`, 10, MINUTE, "answers");
-				return candidateRespond(input);
+				return candidateRespond({ ...input, device: { ip: ctx.ip, ua: ctx.ua } });
 			}),
 	}),
 

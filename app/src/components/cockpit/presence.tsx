@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNow } from "@/components/bits";
 import { useWaitingAction } from "@/lib/gigs/actions";
 import type { ThreadActivity } from "@/lib/gigs/schemas";
+import { plain } from "@/lib/plain";
 import { cn } from "@/lib/utils";
 
 /** "12 s", "4 min", "2 h", "3 d" */
@@ -25,7 +26,7 @@ export function Thinking({ items, status }: { items: ThreadActivity[]; status: R
 	const awaitingReply = last?.kind === "COMPANY_MESSAGE";
 	const busy = status?.now.busy;
 	if (!awaitingReply && !busy) return null;
-	const text = awaitingReply ? "Thinking" : (status?.now.detail ?? status?.now.text ?? "Working");
+	const text = plain(awaitingReply ? "Thinking" : (status?.now.detail ?? status?.now.text ?? "Working"));
 	const from = Date.parse(
 		(awaitingReply ? last?.createdAt : (status?.now.startedAt ?? status?.now.since)) ??
 			new Date().toISOString(),
@@ -54,7 +55,9 @@ export function WaitingList({ roleId, status }: { roleId: string; status: RoleSt
 				const due = w.expectedBy ? Date.parse(w.expectedBy) - now : null;
 				return (
 					<li key={w.what} className="type-label text-muted-foreground">
-						<span className={cn(w.slow && "text-warning-foreground")}>Waiting for {lower(w.what)}</span>
+						<span className={cn(w.slow && "text-warning-foreground")}>
+							Waiting for {lower(plain(w.what))}
+						</span>
 						{left !== null
 							? ` · ${left > 0 ? `${since(left)} left` : "time is up"}`
 							: waited > 60_000

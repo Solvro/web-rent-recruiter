@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import type { NoShowResponse, UnsignedTx } from "@scout/shared";
 import { address } from "@solana/kit";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import type { z } from "zod";
 import { canonical } from "../agent-runner/backend-ports.ts";
 import { db, schema } from "../db/index.ts";
@@ -14,7 +14,7 @@ import { publish } from "../events.ts";
 import { HttpError, notFound } from "../http.ts";
 import { normalizeProfileUrl, toHex } from "../lib/candidate-hash.ts";
 import { availableBudget } from "../lib/views.ts";
-import { status as recordingStatus } from "../recall/service.ts";
+import { recordingMeta, status as recordingStatus } from "../recall/service.ts";
 import {
 	agentSigner,
 	fetchProgramAccount,
@@ -108,6 +108,33 @@ export async function noShow(wallet: string, gigId: string): Promise<z.output<ty
 	if (gig.claimantWallet !== wallet)
 		throw new HttpError(403, "NOT_CLAIMANT", "Only the recruiter who took the gig.");
 	if (gig.status !== "OPEN") throw new HttpError(409, "NO_OPEN_GIG", "This gig isn't open.");
+	// A call that happened can't be a no-show: notes were sent, or the recording has the candidate talking.
+	const [sent] = await db
+		.select({ id: schema.submissions.id })
+		.from(schema.submissions)
+		.where(
+			and(
+				eq(schema.submissions.gigId, gig.id),
+				eq(schema.submissions.scoutWallet, wallet),
+				eq(schema.submissions.confirmed, true),
+				ne(schema.submissions.status, "REJECTED"),
+			),
+		)
+		.limit(1);
+	const rec = await recordingMeta(gig.id);
+	const candidateFirst = (about?.candidateName ?? "").split(" ")[0]?.toLowerCase() ?? "";
+	const talked =
+		rec &&
+		rec.durationSeconds >= 5 * 60 &&
+		(gig.type === "REFERENCE_CHECK"
+			? rec.speakers.length >= 2
+			: rec.speakers.some((sp) => candidateFirst && sp.toLowerCase().includes(candidateFirst)));
+	if (sent || talked)
+		throw new HttpError(
+			409,
+			"CALL_HAPPENED",
+			sent ? "You already sent notes for this call." : "The recording shows the call took place.",
+		);
 	const who = first(about?.candidateName);
 	const noShows = gig.noShows + 1;
 
@@ -126,7 +153,9 @@ export async function noShow(wallet: string, gigId: string): Promise<z.output<ty
 			noShows,
 			showUpFee,
 			// The 24 h to hold the call restart from the reschedule.
-			...(closing ? { status: "CLOSED" as const } : { claimedAt: now }),
+			...(closing
+				? { status: "CLOSED" as const, closedReason: "NO_SHOW" as const, closedAt: now }
+				: { claimedAt: now }),
 		})
 		.where(eq(schema.gigs.id, gig.id));
 	if (closing) {
@@ -284,7 +313,11 @@ export async function reportGig(wallet: string, input: { gigId: string; reason: 
 	if (gig.reported) return { ok: true };
 	await db
 		.update(schema.gigs)
-		.set({ reported: true, ...(gig.status === "OPEN" ? { status: "PAUSED" as const } : {}) })
+		.set({
+			reported: true,
+			reportReason: input.reason,
+			...(gig.status === "OPEN" ? { status: "PAUSED" as const } : {}),
+		})
 		.where(eq(schema.gigs.id, gig.id));
 	await flag("REPORTED", about, wallet, input.reason, gig.id);
 	const [by] = await db.select().from(schema.accounts).where(eq(schema.accounts.wallet, wallet));
@@ -346,7 +379,10 @@ export async function reportCandidate(
 		.where(and(eq(schema.shortlist.roleId, role.id), eq(schema.shortlist.candidateId, sub.id)));
 	for (const g of await candidateGigs(role.id, sub.id)) {
 		if (g.status === "CLOSED") continue;
-		await db.update(schema.gigs).set({ status: "CLOSED", reported: false }).where(eq(schema.gigs.id, g.id));
+		await db
+			.update(schema.gigs)
+			.set({ status: "CLOSED", reported: false, closedReason: "REPORTED_FAKE", closedAt: new Date() })
+			.where(eq(schema.gigs.id, g.id));
 		await closeOnchain(role, g.taskAddress);
 	}
 

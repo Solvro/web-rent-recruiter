@@ -11,12 +11,16 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import { bearer, walletFromToken } from "../auth.ts";
 import { type AppError, toAppError } from "../http.ts";
+import { noteDevice } from "../lib/devices.ts";
 
 /** The caller's wallet comes ONLY from a verified SIWS session (Authorization: Bearer, or SSE connectionParams). */
 export async function createContext({ req, info }: CreateFastifyContextOptions) {
 	const token =
 		bearer(req.headers.authorization) ?? (info.connectionParams?.token as string | undefined) ?? null;
-	return { wallet: await walletFromToken(token), token, log: req.log, ip: req.ip };
+	const wallet = await walletFromToken(token);
+	const ua = req.headers["user-agent"] ?? null;
+	if (wallet) noteDevice(wallet, req.ip, ua);
+	return { wallet, token, log: req.log, ip: req.ip, ua };
 }
 export type Context = Awaited<ReturnType<typeof createContext>>;
 

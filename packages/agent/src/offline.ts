@@ -9,10 +9,14 @@ import { allCriteria, type KindedCriterion, type Verdict } from "./scoring.ts";
 // ---- Draft criteria from a job description --------------------------------
 
 const BULLET = /^\s*(?:[-*•▪◦]|\d+[.)])\s+(.*)$/;
+/** Headings only count on short, non-bullet lines (a paragraph saying "looking for" isn't one). */
 const MUST_HEADING =
-	/(requirement|must|you have|you bring|looking for|qualification|what you need|about you|we expect)/i;
-const NICE_HEADING = /(nice to have|nice-to-have|bonus|plus|preferred|great if|extra points)/i;
-const OTHER_HEADING = /(we offer|benefits|perks|about us|responsibilit|what you.ll do|your role|the team)/i;
+	/(requirement|must|you have|you bring|you.ll bring|you will bring|looking for|qualification|what you need|what we need|what you will need|what you.ll need|about you|we expect|skills|profile)/i;
+const NICE_HEADING = /(nice to have|nice-to-have|bonus|preferred|great if|extra points|advantage|plus)/i;
+const OTHER_HEADING =
+	/(we offer|benefits|perks|about us|responsibilit|what you.ll do|what you will do|your role|the team|the role|compensation|about the)/i;
+const ROLE_WORD =
+	/\b(engineer|developer|manager|designer|lead|specialist|analyst|scientist|director|consultant|architect|recruiter|representative|associate|executive|officer|head|coordinator|administrator|accountant|marketer|writer|researcher|success|sales|support|operations|product|intern)\b/i;
 
 const CITIES = [
 	"Warsaw",
@@ -34,31 +38,142 @@ const CITIES = [
 	"EU",
 	"CET",
 	"Poland",
+	"Portugal",
+	"United States",
+	"Germany",
+	"Spain",
 ];
-const LANGUAGES = ["English", "Polish", "German", "French", "Spanish", "Dutch", "Ukrainian"];
+const LANGUAGES = [
+	"English",
+	"Polish",
+	"German",
+	"French",
+	"Spanish",
+	"Italian",
+	"Dutch",
+	"Ukrainian",
+	"Czech",
+	"Portuguese",
+	"Romanian",
+	"Swedish",
+	"Danish",
+	"Norwegian",
+	"Finnish",
+	"Hungarian",
+	"Turkish",
+];
+const SOFT =
+	/\b(communicat\w*|passion\w*|motivated|care|caring|flexib\w*|attitude|team player|energetic|listening|curious|curiosity|ownership|self-starter|degree)\b/i;
 
-/** First clause of a bullet, at most ~10 words: "Shipped Solana programs to mainnet (Anchor…)" -> "Shipped Solana programs to mainnet". */
+/** The bullet's main point, at most ~10 words. Skips an exclamation intro ("We've got clients…!"). */
 const shortLabel = (text: string) => {
-	const clean = text
+	const sentences = text
 		.replace(/\s+/g, " ")
-		.replace(/[.;:]+$/, "")
-		.trim();
-	const clause = clean.split(/,|\(| - | – /)[0].trim();
+		.trim()
+		.split(/(?<=[.!?])\s+/)
+		.filter(Boolean);
+	const main = sentences.find((x) => !x.endsWith("!")) ?? sentences[0] ?? text;
+	let clean = main.replace(/[.;:!]+$/, "").trim();
+	const colon = clean.indexOf(":");
+	if (colon > 0 && clean.slice(0, colon).split(" ").length >= 3) clean = clean.slice(0, colon);
+	// "X, Y or Z at a SaaS company" is one requirement: keep the list instead of cutting at the comma.
+	const list = /,[^,]*\bor\b/.test(clean) && clean.split(" ").length <= 16;
+	const clause = list ? clean : clean.split(/,|\(| - | – /)[0].trim();
 	const words = (clause.split(" ").length >= 3 ? clause : clean).split(" ");
-	return words.length > 10 ? `${words.slice(0, 10).join(" ")}…` : words.join(" ");
+	const max = list ? 16 : 10;
+	return words.length > max ? `${words.slice(0, max).join(" ")}…` : words.join(" ");
 };
 
-function detectSeniority(text: string): Criteria["seniority"] {
-	if (/\b(head of|director|vp|vice president|cto|chief)\b/i.test(text)) return "EXECUTIVE";
-	if (/\bprincipal\b/i.test(text)) return "PRINCIPAL";
-	if (/\b(staff|lead|founding)\b/i.test(text)) return "STAFF";
-	if (/\b(senior|sr\.?)\b/i.test(text)) return "SENIOR";
-	if (/\b(junior|jr\.?|intern|graduate)\b/i.test(text)) return "JUNIOR";
-	const years = [...text.matchAll(/(\d+)\s*\+?\s*(?:years|yrs)/gi)].map((m) => Number(m[1]));
+const LEVELS: [Criteria["seniority"], RegExp][] = [
+	["EXECUTIVE", /\b(head of|director|vp|vice president|cto|ceo|coo|chief)\b/i],
+	["PRINCIPAL", /\bprincipal\b/i],
+	["STAFF", /\b(staff|lead|founding)\b/i],
+	["SENIOR", /\b(senior|sr\.?)\b/i],
+	["JUNIOR", /\b(junior|jr\.?|intern|internship|graduate|entry[- ]level|trainee)\b/i],
+];
+
+/** Seniority from the TITLE first (duties like "lead design reviews" don't make a role staff), then years. */
+function detectSeniority(title: string, requirements: string): Criteria["seniority"] {
+	for (const [level, re] of LEVELS) if (re.test(title)) return level;
+	const years = [...requirements.matchAll(/(\d+)\s*\+?\s*(?:years|yrs)/gi)].map((m) => Number(m[1]));
 	const max = years.length ? Math.max(...years) : 0;
-	if (max >= 7) return "STAFF";
+	if (max >= 8) return "STAFF";
 	if (max >= 5) return "SENIOR";
-	return "MID";
+	if (max >= 2) return "MID";
+	return years.length ? "JUNIOR" : "MID";
+}
+
+/** "Insider One - Customer Success Manager (Warsaw, Poland)" → title + company. */
+export function titleAndCompany(text: string): { title: string; company: string | null } {
+	const first =
+		text
+			.split(/\r?\n/)
+			.map((l) => l.replace(/^#+\s*|^(job )?title:\s*/i, "").trim())
+			.find((l) => l.length > 0 && l.length < 140) ?? "Open role";
+	const isPlace = (inner: string) =>
+		/\b(remote|hybrid|on-?site|anywhere)\b/i.test(inner) ||
+		CITIES.some((c) => new RegExp(`\\b${c}\\b`, "i").test(inner));
+	// "(Remote - United States, Portugal)" / "(Warsaw, Poland)": a location, not part of the title.
+	const stripPlace = (p: string) =>
+		p.replace(/\s*\(([^()]*)\)\s*$/, (m, inner: string) => (isPlace(inner) ? "" : m)).trim();
+	const parts = stripPlace(first)
+		.split(/\s+[-–—|]\s+|\s+at\s+/)
+		.map((p) => p.trim())
+		.filter(Boolean);
+	const titleIdx = parts.findIndex((p) => ROLE_WORD.test(p));
+	let title = stripPlace(parts[titleIdx >= 0 ? titleIdx : 0] ?? first);
+	// "Senior Software Engineer - Go & Rust, Blockchain Infrastructure — QuickNode": keep the specialization.
+	const rest = parts.filter((_, i) => i !== titleIdx);
+	// The company is the header part the body talks about most ("Northwind Pay is …"), else the last one.
+	const body = text.split(/\r?\n/).slice(1).join("\n");
+	const mentions = (p: string) => body.split(p).length - 1;
+	const candidates = rest.filter(
+		(p) => !ROLE_WORD.test(p) && p.split(" ").length <= 4 && /^[A-Z0-9]/.test(p) && !/^remote\b/i.test(p),
+	);
+	const company =
+		[...candidates].sort(
+			(a, b) => mentions(b) - mentions(a) || candidates.indexOf(b) - candidates.indexOf(a),
+		)[0] ??
+		text.match(/(?:^|\n)\s*([A-Z][\w&.'-]*(?:\s[A-Z][\w&.'-]*){0,3}) is (?:the|a|an)\b/)?.[1] ??
+		null;
+	const specialization = rest.find(
+		(p) => p !== company && ROLE_WORD.test(p) === false && /,|&|\b(and)\b/.test(p),
+	);
+	if (specialization && title.split(" ").length <= 4) title = `${title} (${stripPlace(specialization)})`;
+	return { title: title || "Open role", company: company ? stripPlace(company) : null };
+}
+
+/**
+ * Languages the role requires, with a CEFR level when the text implies one: "Fluent Polish and
+ * English" → Polish (C1), English. Languages that are only "an advantage" are left out. A
+ * non-English language comes first (that's the one the language check is for).
+ */
+export function detectLanguages(text: string): string[] {
+	const found = new Map<string, string | null>();
+	for (const clause of text.split(/[\n.;()]+/)) {
+		if (/\b(advantage|nice to have|bonus|plus|preferred)\b/i.test(clause)) continue;
+		for (const lang of LANGUAGES) {
+			if (!new RegExp(`\\b${lang}\\b`, "i").test(clause)) continue;
+			const explicit = text
+				.match(new RegExp(`\\b${lang}\\b\\s*\\(?\\s*([ABC][12])\\b`, "i"))?.[1]
+				?.toUpperCase();
+			const level =
+				explicit ??
+				(/\bnative\b/i.test(clause)
+					? "C2"
+					: /\b(fluent|fluency|excellent|strong|professional|business|proficient|advanced)\b/i.test(clause)
+						? "C1"
+						: null);
+			if (!found.has(lang) || (level && !found.get(lang))) found.set(lang, level);
+		}
+	}
+	const entries = [...found.entries()];
+	const nonEnglish = entries.filter(([l]) => l !== "English");
+	const english = entries.find(([l]) => l === "English");
+	const label = ([l, level]: [string, string | null]) =>
+		level && (l !== "English" || !nonEnglish.length) ? `${l} (${level})` : l;
+	const out = [...nonEnglish.map(label), ...(english ? [label(english)] : [])];
+	return out.length ? out : ["English"];
 }
 
 const SALARY_RANGE =
@@ -83,35 +198,61 @@ function detectSalary(text: string): Criteria["salaryRange"] {
 	return null;
 }
 
+const isLanguageBullet = (item: string) =>
+	LANGUAGES.some((l) => new RegExp(`\\b${l}\\b`, "i").test(item)) &&
+	!/\b(experience|years|built|worked)\b/i.test(item.replace(/communication skills/i, ""));
+
 export function offlineDraftRole(jobDescription: string): {
 	title: string;
+	company: string | null;
 	summary: string;
 	criteria: Criteria;
 } {
 	const lines = jobDescription.split(/\r?\n/);
-	const title =
-		lines
-			.map((l) => l.replace(/^#+\s*|^(job )?title:\s*/i, "").trim())
-			.find((l) => l.length > 0 && l.length < 90) ?? "Open role";
+	const { title, company } = titleAndCompany(jobDescription);
 
 	const must: string[] = [];
 	const nice: string[] = [];
-	const loose: string[] = [];
 	let section: "must" | "nice" | "other" | null = null;
 	for (const line of lines) {
+		// "Nice to have: TypeScript SDKs, open-source work." on one line.
+		const inline = line.match(
+			/^\s*(nice to have|nice-to-have|bonus|preferred|requirements?|must have)\s*:\s*(.+)$/i,
+		);
+		if (inline) {
+			const items = inline[2]
+				.split(/,|;|\band\b(?=[^,]*$)/)
+				.map((x) => x.replace(/\.$/, "").trim())
+				.filter((x) => x.length > 2);
+			(NICE_HEADING.test(inline[1]) ? nice : must).push(...items);
+			continue;
+		}
 		const bullet = line.match(BULLET);
 		if (!bullet) {
-			if (NICE_HEADING.test(line)) section = "nice";
-			else if (MUST_HEADING.test(line)) section = "must";
-			else if (OTHER_HEADING.test(line)) section = "other";
+			const heading = line.trim();
+			if (!heading || heading.length > 60) continue;
+			if (NICE_HEADING.test(heading)) section = "nice";
+			else if (MUST_HEADING.test(heading)) section = "must";
+			else if (OTHER_HEADING.test(heading)) section = "other";
 			continue;
 		}
 		const item = bullet[1].trim();
+		// Only the requirement sections feed criteria; duties never become must-haves.
 		if (section === "must") must.push(item);
 		else if (section === "nice") nice.push(item);
-		else if (section === null) loose.push(item);
 	}
-	const mustItems = (must.length ? must : loose).slice(0, 6);
+	// Every requirement bullet is kept: hard ones as must-haves (up to 6), soft or extra ones as
+	// nice-to-haves, language bullets as the role's languages.
+	const hard = must.filter((m) => !isLanguageBullet(m) && !SOFT.test(m));
+	const soft = must.filter((m) => !isLanguageBullet(m) && SOFT.test(m));
+	// Soft bullets are still explicit requirements: when there are few hard ones, they're must-haves too.
+	const promoted = soft.slice(0, Math.max(0, 3 - hard.length));
+	const mustItems = [...hard.slice(0, 6), ...promoted];
+	const niceItems = [
+		...hard.slice(6),
+		...soft.slice(promoted.length),
+		...nice.filter((n) => !isLanguageBullet(n)),
+	].slice(0, 8);
 	const toCriterion = (weightFor: (i: number) => number) => (text: string, i: number) => ({
 		id: "",
 		label: shortLabel(text),
@@ -119,17 +260,14 @@ export function offlineDraftRole(jobDescription: string): {
 	});
 
 	const text = jobDescription;
-	const mode: Criteria["location"]["mode"] = /\bremote\b/i.test(text)
-		? /\bhybrid\b/i.test(text)
-			? "HYBRID"
-			: "REMOTE"
-		: /\bhybrid\b/i.test(text)
-			? "HYBRID"
+	const mode: Criteria["location"]["mode"] = /\bhybrid\b/i.test(text)
+		? "HYBRID"
+		: /\bremote\b/i.test(text)
+			? "REMOTE"
 			: "ONSITE";
 	const places = CITIES.filter((c) => new RegExp(`\\b${c}\\b`, "i").test(text));
-	// Languages from nice-to-have bullets are differentiators, not requirements.
-	const required = nice.reduce((acc, item) => acc.replace(item, ""), text);
-	const languages = LANGUAGES.filter((l) => new RegExp(`\\b${l}\\b`, "i").test(required));
+	const requirementsText = must.join("\n");
+	const languages = detectLanguages(requirementsText || text);
 	const dealBreakers: Criterion[] = [];
 	if (
 		/(no visa sponsorship|unable to sponsor|cannot sponsor|can't sponsor|without sponsorship)/i.test(text)
@@ -139,18 +277,17 @@ export function offlineDraftRole(jobDescription: string): {
 
 	const criteria = normalizeCriteria({
 		mustHave: mustItems.map(toCriterion((i) => (i < 2 ? 5 : i < 4 ? 4 : 3))),
-		niceToHave: nice.slice(0, 5).map(toCriterion(() => 2)),
-		seniority: detectSeniority(`${title}\n${text}`),
+		niceToHave: niceItems.map(toCriterion(() => 2)),
+		seniority: detectSeniority(title, requirementsText),
 		location: { mode, places: [...new Set(places)] },
 		salaryRange: detectSalary(text),
-		languages: languages.length ? languages : ["English"],
+		languages,
 		dealBreakers,
 	});
-	const top = criteria.mustHave.slice(0, 2).map((c) => c.label.toLowerCase());
-	const summary = `${title} (${criteria.seniority.toLowerCase()}, ${mode.toLowerCase()}${
-		places.length ? `, ${places.slice(0, 2).join("/")}` : ""
-	}). Strong fits bring ${top.length ? top.join(" and ") : "the core skills listed in the description"}.`;
-	return { title, summary, criteria };
+	const top = criteria.mustHave.slice(0, 2).map((c) => c.label.charAt(0).toLowerCase() + c.label.slice(1));
+	const where = places.length ? `, ${places.slice(0, 2).join("/")}` : "";
+	const summary = `${title}${company ? ` at ${company}` : ""} (${criteria.seniority.toLowerCase()}, ${mode.toLowerCase()}${where}). Strong fits bring ${top.length ? top.join(" and ") : "the requirements listed in the posting"}.`;
+	return { title, company, summary, criteria };
 }
 
 // ---- Review a candidate ---------------------------------------------------

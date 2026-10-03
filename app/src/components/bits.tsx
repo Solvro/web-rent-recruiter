@@ -120,7 +120,7 @@ export function ScoreChip({ review }: { review: AgentReview }) {
 	const m = MATCH[review.recommendation];
 	return (
 		<Chip tone={m.tone}>
-			<span className="tabular">{review.score}</span> · {m.label}
+			<span className="tabular">{review.score}/100</span> · {m.label}
 		</Chip>
 	);
 }

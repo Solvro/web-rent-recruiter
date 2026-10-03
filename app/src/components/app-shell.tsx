@@ -150,7 +150,7 @@ function PayoutMoment({ wallet }: { wallet: string }) {
 						key: `${s.id}:rejected`,
 						big: false,
 						amount: "",
-						line: `The agent didn't accept ${s.gigType === "SOURCING" ? `${person}'s profile` : "your notes"}${s.review?.reasons[0] ? ` · ${s.review.reasons[0]}` : ""}`,
+						line: `The agent didn't accept ${s.gigType === "SOURCING" ? `${person}'s profile` : "your notes"}`,
 						receipt: null,
 					});
 				if (s.status === "ACCEPTED" && p && wasLater !== p.laterStatus) {

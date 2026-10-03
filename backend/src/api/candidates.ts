@@ -548,6 +548,12 @@ export async function rolePayments(wallet: Address, roleId: string): Promise<Pay
 				recruiter,
 				gigTitle: gig?.title ?? "",
 				kind,
+				bounty: (
+					(sub.payoutNow ?? 0n) +
+					(sub.payoutLater ?? 0n) +
+					(sub.platformFee ?? 0n) +
+					(sub.operatorFee ?? 0n)
+				).toString(),
 				amount: (sub.payoutNow ?? 0n).toString(),
 				held: (sub.payoutLater ?? 0n).toString(),
 				heldStatus: sub.laterStatus,

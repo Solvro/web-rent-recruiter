@@ -139,6 +139,31 @@ export interface DecisionRecord {
 	gigId?: string;
 }
 
+export type ChangeKind =
+	| "extra_sourcing"
+	| "raise_price"
+	| "adjust_criteria"
+	| "pause_gigs"
+	| "resume_gigs"
+	| "close_slots";
+
+/**
+ * A change the company has to confirm. `input` is JSON (amounts as base-unit strings) and is
+ * exactly what `applyProposal` needs; `summary` is one plain sentence with the cost.
+ */
+export interface ChangeProposal {
+	kind: ChangeKind;
+	summary: string;
+	input: Record<string, unknown>;
+}
+
+export interface WaitingOn {
+	who: string;
+	what: string;
+	since: string;
+	slow?: boolean;
+}
+
 export type ActivityKind =
 	| "plan"
 	| "gig_posted"
@@ -213,6 +238,19 @@ export interface RoleAgentPorts {
 		deliverableId?: string;
 		limit?: number;
 	}): Promise<DecisionRecord[]>;
+	/**
+	 * Company chat never changes anything directly: change requests become a proposal in the
+	 * company's inbox (Yes / No). On Yes the backend runs `applyProposal(ports, proposal)`.
+	 * Without this port the agent only describes what it would change.
+	 */
+	proposeChange?(proposal: ChangeProposal): Promise<{ proposalId: string }>;
+	/** What the role is waiting on right now (from the role's status), newest question first. */
+	getWaitingOn?(): Promise<WaitingOn[]>;
+	/**
+	 * Closes a gig: its unused slots are released back to the budget (close_task). Accepted and
+	 * pending deliverables are unaffected.
+	 */
+	closeGig?(gigId: string, reason: string): Promise<{ signature?: string }>;
 	/** agent_activity row + SSE push. */
 	log(entry: { kind: ActivityKind; message: string; data?: Record<string, unknown> }): Promise<void>;
 	onEvent?(event: AgentEvent): void;

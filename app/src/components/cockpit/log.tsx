@@ -17,6 +17,7 @@ import { errorMessage } from "@/lib/errors";
 import { firstName } from "@/lib/format";
 import { useSendMessage } from "@/lib/gigs/api";
 import type { ThreadActivity } from "@/lib/gigs/schemas";
+import { isPlumbing, plain } from "@/lib/plain";
 import { cn } from "@/lib/utils";
 import { useCandidatesPanel, WithCandidateLinks } from "./candidates";
 import { Follow } from "./follow";
@@ -46,7 +47,7 @@ function toRows(items: ThreadActivity[]): Row[] {
 	let phase = -1;
 	for (const item of items) {
 		// Tool calls behind a reply are the agent's plumbing, not news for Hanna.
-		if (item.kind === "TOOL") continue;
+		if (item.kind === "TOOL" || isPlumbing(item.message)) continue;
 		const p = phaseOf(item);
 		if (p > phase) {
 			phase = p;
@@ -68,6 +69,7 @@ export function Log({
 	busy,
 	pinned,
 	pinnedKey,
+	closed = false,
 	above,
 	below,
 }: {
@@ -79,6 +81,8 @@ export function Log({
 	pinned: ReactNode;
 	/** Changes when the pinned card changes, so the list can keep its last line in view. */
 	pinnedKey?: string;
+	/** A closed role: read-only, no composer. */
+	closed?: boolean;
 	/** Orientation and waiting lines shown under the log. */
 	above?: ReactNode;
 	below?: ReactNode;
@@ -117,7 +121,7 @@ export function Log({
 				</MessageScroller>
 				<div ref={bottom} className="space-y-3 pb-4">
 					{pinned}
-					<Composer roleId={roleId} items={items} />
+					{!closed && <Composer roleId={roleId} items={items} />}
 				</div>
 			</div>
 		</MessageScrollerProvider>
@@ -150,7 +154,7 @@ function ChatLine({ item, live }: { item: ThreadActivity; live: boolean }) {
 		);
 	return (
 		<p className="my-2 px-2 whitespace-pre-line" title={new Date(item.createdAt).toLocaleString()}>
-			{live ? <Typed text={item.message} live /> : <WithCandidateLinks text={item.message} />}
+			{live ? <Typed text={plain(item.message)} live /> : <WithCandidateLinks text={plain(item.message)} />}
 		</p>
 	);
 }
@@ -178,7 +182,7 @@ function StepLine({ item }: { item: ThreadActivity }) {
 				className="flex w-full items-baseline gap-3 rounded-xl px-2 py-1 text-left type-label hover:bg-muted"
 			>
 				<span className={cn("min-w-0 flex-1", tone)}>
-					<WithCandidateLinks text={item.message} />
+					<WithCandidateLinks text={plain(item.message)} />
 				</span>
 				<time
 					dateTime={item.createdAt}
@@ -193,7 +197,7 @@ function StepLine({ item }: { item: ThreadActivity }) {
 			>
 				<div className="overflow-hidden">
 					<div className="space-y-1 px-2 pt-1 pb-2 type-label text-muted-foreground">
-						{item.detail && <p>{item.detail}</p>}
+						{item.detail && <p>{plain(item.detail)}</p>}
 						<p className="flex flex-wrap gap-x-3">
 							<span>{new Date(item.createdAt).toLocaleString()}</span>
 							{proof && (
@@ -203,7 +207,7 @@ function StepLine({ item }: { item: ThreadActivity }) {
 									rel="noreferrer"
 									className="inline-flex items-center gap-0.5 hover:text-foreground"
 								>
-									Signed by your agent <ArrowUpRight className="size-3" />
+									Proof of payment <ArrowUpRight className="size-3" />
 								</a>
 							)}
 						</p>

@@ -9,12 +9,12 @@ import { Chip, Countdown, Disclosure, EmptyState, ErrorState } from "@/component
 import { BookingTimes, NoShow, ReportFake, ShowUpFee } from "@/components/call-tools";
 import { CopyButton } from "@/components/copy";
 import { FollowUps } from "@/components/follow-ups";
+import { depositLine, PayBreakdown, RoleBrief } from "@/components/gig-brief";
 import { Avatar } from "@/components/person";
-import { JobPost, locationText, salaryText } from "@/components/role-draft/job-post";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { personOf, WorkStatus } from "@/components/work";
+import { depositStatusLine, personOf, WhyNotAccepted, WorkStatus } from "@/components/work";
 import { appCodeOf, errorData, errorMessage, isDuplicate, isNotFound } from "@/lib/errors";
 import { firstName, formatMoney } from "@/lib/format";
 import { eligibilityLine, requirementChips } from "@/lib/gig-access";
@@ -22,6 +22,7 @@ import { CLAIM_HOURS, GIG_TYPES, kindOf } from "@/lib/gig-types";
 import { earnFor, gigApi, splitFor, useGig, useMyWork, useRecording } from "@/lib/gigs/api";
 import { callApi } from "@/lib/gigs/calls";
 import type { GigView } from "@/lib/gigs/schemas";
+import { useWork } from "@/lib/gigs/work";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTitle } from "@/lib/use-title";
 import { useTransact } from "@/lib/use-transact";
@@ -53,6 +54,7 @@ function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 	// A call you delivered: its status, never the empty form again.
 	if (g.exclusive && latest && latest.status !== "REJECTED" && (g.claimedByMe || g.status !== "OPEN"))
 		return <Delivered gig={g} work={mine} />;
+	if (g.status !== "OPEN" && g.closedReason) return <ClosedForYou gig={g} />;
 	if (g.status !== "OPEN")
 		return mine.length || g.showUpFee ? (
 			<Delivered gig={g} work={mine} />
@@ -68,20 +70,11 @@ function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 				<h1 className="type-display">
 					Earn {formatMoney(earn)} <span className="text-muted-foreground">{GIG_TYPES[kindOf(g)].unit}</span>
 				</h1>
-				{split.later > 0n && (
-					<p className="text-muted-foreground">
-						<span className="text-success tabular">{formatMoney(split.now)}</span>{" "}
-						{g.type === "SOURCING"
-							? "when the candidate confirms interest"
-							: "when the agent accepts your notes"}
-						, <span className="tabular">{formatMoney(split.later)}</span> when{" "}
-						{g.candidate?.name ? firstName(g.candidate.name) : "the candidate"} comes to the interview
-					</p>
-				)}
-				<p className="text-muted-foreground">{g.title}</p>
+				<PayBreakdown gig={g} now={split.now} later={split.later} operator={me.operator ?? null} />
+				{g.exclusive && !g.redacted && <p className="text-muted-foreground">{g.title}</p>}
 				{g.candidate && <CandidateLine gig={g} />}
 			</header>
-			{g.type === "SOURCING" && g.post && <PostOf post={g.post} />}
+			{g.post && <RoleBrief post={g.post} compact={g.type !== "SOURCING"} />}
 			{g.exclusive && !g.claimedByMe ? (
 				<Claim gig={g} />
 			) : g.type === "SOURCING" ? (
@@ -106,42 +99,6 @@ function KindChip({ gig }: { gig: GigView }) {
 			<info.icon className="size-3.5" />
 			{info.name}
 		</Chip>
-	);
-}
-
-/** The job post the recruiter sources for: must-haves, nice-to-haves, salary and place. */
-function PostOf({ post }: { post: NonNullable<GigView["post"]> }) {
-	const crit = (labels: string[], prefix: string) =>
-		labels.map((label, i) => ({ id: `${prefix}-${i}`, label, weight: 3 }));
-	const location = { mode: post.workMode, places: post.location ? post.location.split(/,\s*/) : [] };
-	const meta = [
-		locationText(location),
-		salaryText(post.salaryRange),
-		post.mustHave.length ? `${post.mustHave.length} must-haves` : null,
-	]
-		.filter(Boolean)
-		.join(" · ");
-	return (
-		<div className="space-y-3">
-			{meta && <p className="type-label text-muted-foreground">{meta}</p>}
-			<Disclosure label="Read the job post">
-				<JobPost
-					className="rounded-4xl bg-card p-6 ring-1 ring-foreground/5 sm:p-8"
-					data={{
-						title: post.title,
-						company: post.companyDescriptor,
-						seniority: post.seniority,
-						location,
-						salary: post.salaryRange,
-						summary: post.summary,
-						mustHave: crit(post.mustHave, "must"),
-						niceToHave: crit(post.niceToHave, "nice"),
-						dealBreakers: crit(post.dealBreakers, "deal"),
-						languages: post.languages,
-					}}
-				/>
-			</Disclosure>
-		</div>
 	);
 }
 
@@ -213,6 +170,68 @@ function deliveredLine(d: DeliverableView) {
 	return "See your notes and the agent's review";
 }
 
+/** The call you took ended early: what was recorded, what happens next, and whether you're paid for your time. */
+function ClosedForYou({ gig }: { gig: GigView }) {
+	const who = gig.candidate?.name ? firstName(gig.candidate.name) : "The candidate";
+	const when = gig.closedAt
+		? new Date(gig.closedAt).toLocaleString("en-GB", {
+				day: "numeric",
+				month: "short",
+				hour: "2-digit",
+				minute: "2-digit",
+			})
+		: null;
+	const fake = gig.closedReason === "REPORTED_FAKE";
+	return (
+		<div className="mx-auto max-w-xl space-y-10">
+			<header className="space-y-3">
+				<KindChip gig={gig} />
+				<h1 className="type-display">
+					{fake ? "Thanks, we got your report" : `${who} missed the call twice`}
+				</h1>
+				<p className="text-muted-foreground">
+					{fake
+						? `The agent stopped all work on ${who} and the company decides what happens next. Reporting doesn't count against you.`
+						: "The screening is stopped. Nothing counts against you."}
+				</p>
+			</header>
+			<dl className="space-y-2 rounded-3xl bg-card p-5 ring-1 ring-foreground/5">
+				<div className="flex justify-between gap-4">
+					<dt className="text-muted-foreground">Recorded</dt>
+					<dd className="text-right">
+						{[fake ? "Reported as possibly fake" : "Two no-shows", when].filter(Boolean).join(" · ")}
+					</dd>
+				</div>
+				{fake && gig.reportReason && (
+					<div className="space-y-1">
+						<dt className="text-muted-foreground">What you wrote</dt>
+						<dd>“{gig.reportReason}”</dd>
+					</div>
+				)}
+				<div className="flex justify-between gap-4">
+					<dt className="text-muted-foreground">Pay for this call</dt>
+					<dd className="text-right">
+						{gig.showUpFee
+							? gig.showUpFee.status === "PAID"
+								? `Show-up fee paid · ${formatMoney(gig.showUpFee.amount)}`
+								: `Show-up fee of ${formatMoney(gig.showUpFee.amount)} to claim`
+							: "None, the call didn't happen"}
+					</dd>
+				</div>
+			</dl>
+			{gig.showUpFee && <ShowUpFee gig={gig} />}
+			<div className="flex flex-wrap gap-3">
+				<Link to="/scout" className={buttonVariants()}>
+					Find another gig
+				</Link>
+				<Link to="/scout/submissions" className={buttonVariants({ variant: "outline" })}>
+					My work
+				</Link>
+			</div>
+		</div>
+	);
+}
+
 /** The gig after you delivered (or after it closed): where your work stands, and the show-up fee if there is one. */
 function Delivered({ gig, work }: { gig: GigView; work: DeliverableView[] }) {
 	const d = work[0];
@@ -273,23 +292,64 @@ function CandidateLine({ gig }: { gig: GigView }) {
 				</p>
 			</div>
 		);
+	const reach = [c.contact?.email, c.contact?.phone].filter((x): x is string => !!x);
 	return (
-		<div className="flex items-center gap-3 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
-			<Avatar name={c.name} src={c.card?.avatarUrl} />
-			<div className="min-w-0 flex-1">
-				<p className="truncate">{c.name}</p>
-				<p className="truncate type-label text-muted-foreground">{c.summary.headline}</p>
+		<div className="space-y-3 rounded-3xl bg-card p-4 ring-1 ring-foreground/5">
+			<div className="flex items-center gap-3">
+				<Avatar name={c.name} src={c.card?.avatarUrl} />
+				<div className="min-w-0 flex-1">
+					<p className="truncate">{c.name}</p>
+					<p className="truncate type-label text-muted-foreground">{c.summary.headline}</p>
+				</div>
+				{c.profileUrl && (
+					<a
+						href={c.profileUrl}
+						target="_blank"
+						rel="noreferrer"
+						className="inline-flex items-center gap-1 type-label text-primary hover:underline"
+					>
+						Profile <ExternalLink className="size-3" />
+					</a>
+				)}
 			</div>
-			{c.profileUrl && (
-				<a
-					href={c.profileUrl}
-					target="_blank"
-					rel="noreferrer"
-					className="inline-flex items-center gap-1 type-label text-primary hover:underline"
-				>
-					Profile <ExternalLink className="size-3" />
-				</a>
+			{gig.claimedByMe && gig.type !== "REFERENCE_CHECK" && (
+				<div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 pl-13 type-label">
+					{reach.length ? (
+						reach.map((x) => (
+							<span key={x} className="inline-flex items-center gap-2">
+								{x} <CopyButton text={x} label="Copy" />
+							</span>
+						))
+					) : (
+						<span className="text-muted-foreground">
+							No email or phone yet. Ask the recruiter who found {firstName(c.name)}, or message them on their
+							profile.
+						</span>
+					)}
+				</div>
 			)}
+		</div>
+	);
+}
+
+/** Reference checks: who to call, as the candidate named them on the screening call. */
+function RefereeLine({ gig }: { gig: GigView }) {
+	const r = gig.candidate?.referee;
+	const who = gig.candidate?.name ? firstName(gig.candidate.name) : "the candidate";
+	if (!r)
+		return (
+			<p className="rounded-3xl bg-muted p-4 text-muted-foreground">
+				{who} didn't name a referee on the screening call. Ask {who} for a former manager, then fill in who
+				you talked to below.
+			</p>
+		);
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-accent p-4 text-accent-foreground">
+			<span>
+				Call {r.name} · {r.relation}
+				<span className="block type-label">{r.contact}</span>
+			</span>
+			<CopyButton text={r.contact} label="Copy" className="text-accent-foreground" />
 		</div>
 	);
 }
@@ -482,7 +542,7 @@ function SourcingForm({
 			<ul className="space-y-1 type-label text-muted-foreground">
 				<li>You get a link to send them. You're paid once they confirm they are open to a call.</li>
 				{gig.eligibility?.needsBond ? (
-					<li>{formatMoney(BigInt(gig.bounty) / 10n)} deposit, returned when the agent accepts.</li>
+					<li>{depositLine(BigInt(gig.bounty) / 10n)}</li>
 				) : (
 					operator && <li>No deposit: you are vouched by {operator}.</li>
 				)}
@@ -548,8 +608,11 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 		setAnswers((a) => ({ ...a, [id]: text }));
 	};
 	const [recommendation, setRecommendation] = useState<"ADVANCE" | "MAYBE" | "PASS" | null>(null);
-	const [refereeName, setRefereeName] = useState("");
-	const [refereeRelation, setRefereeRelation] = useState("");
+	const [refereeName, setRefereeName] = useState(gig.candidate?.referee?.name ?? "");
+	const [refereeRelation, setRefereeRelation] = useState(gig.candidate?.referee?.relation ?? "");
+	// Screening calls: a referee the candidate named, for the reference check that follows (optional).
+	const [named, setNamed] = useState({ name: "", relation: "", contact: "" });
+	const namedComplete = named.name.trim() && named.relation.trim() && named.contact.trim();
 	const deliver = useDeliver(gig, onSent);
 	const reference = gig.type === "REFERENCE_CHECK";
 	const language = gig.variant === "language";
@@ -590,6 +653,15 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 								answers: list,
 								recommendation,
 								...(language && level ? { assessedLevel: level } : {}),
+								...(!language && namedComplete
+									? {
+											referee: {
+												name: named.name.trim(),
+												relation: named.relation.trim(),
+												contact: named.contact.trim(),
+											},
+										}
+									: {}),
 							},
 				);
 			}}
@@ -600,6 +672,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 			{recording?.status === "done" && (
 				<p className="type-label text-success">Filled in from the call. Check and edit before you send.</p>
 			)}
+			{reference && <RefereeLine gig={gig} />}
 			{reference && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Input
@@ -640,6 +713,36 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 					</li>
 				))}
 			</ol>
+			{!reference && !language && (
+				<Disclosure label="They named a referee (optional)">
+					<div className="grid gap-3 sm:grid-cols-3">
+						<Input
+							value={named.name}
+							onChange={(e) => setNamed((n) => ({ ...n, name: e.target.value }))}
+							placeholder="Name"
+							aria-label="Referee name"
+							className="h-11"
+						/>
+						<Input
+							value={named.relation}
+							onChange={(e) => setNamed((n) => ({ ...n, relation: e.target.value }))}
+							placeholder="e.g. former manager"
+							aria-label="How they know the candidate"
+							className="h-11"
+						/>
+						<Input
+							value={named.contact}
+							onChange={(e) => setNamed((n) => ({ ...n, contact: e.target.value }))}
+							placeholder="Email or phone"
+							aria-label="Referee email or phone"
+							className="h-11"
+						/>
+					</div>
+					<p className="type-label text-muted-foreground">
+						The recruiter who runs the reference check calls them. Fill in all three or leave it empty.
+					</p>
+				</Disclosure>
+			)}
 			<fieldset className="space-y-2">
 				<legend className="type-label text-muted-foreground">Your call</legend>
 				<div className="flex flex-wrap gap-2">
@@ -843,10 +946,17 @@ function Checking({
 	onAgain: () => void;
 }) {
 	const work = useMyWork();
+	const detail = useWork(deliverableId);
 	const mine = work.data?.find((d) => d.id === deliverableId);
 	const status = mine?.status ?? "PENDING";
 	const confirm = status === "PENDING" ? mine?.confirmation : null;
 	const who = mine?.deliverable.type === "SOURCING" ? firstName(mine.deliverable.name) : "the candidate";
+	const asks = status === "PENDING" && (mine?.followUps ?? []).some((f) => !f.answer);
+	const deposit = mine ? depositStatusLine(mine) : null;
+	const review = mine?.review?.candidateReview ?? null;
+	const until = confirm?.expiresAt
+		? new Date(confirm.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+		: null;
 	return (
 		<div className="mx-auto flex max-w-xl flex-col items-center gap-6 py-20 text-center">
 			{confirm ? (
@@ -856,9 +966,17 @@ function Checking({
 						The agent likes this profile. You get paid when {who} confirms they are open to a conversation.
 					</p>
 					<CopyLink url={confirm.url ?? ""} />
-					<p className="inline-flex items-center gap-2 type-label text-muted-foreground">
-						<Loader2 className="size-3.5 animate-spin" /> Waiting for {who} to confirm
-						{confirm.expiresAt && <Countdown deadline={confirm.expiresAt} prefix="" suffix=" left" />}
+					<p className="max-w-md type-label text-muted-foreground">
+						{who} has until {until} to answer
+						{confirm.expiresAt && <Countdown deadline={confirm.expiresAt} prefix=" ·" suffix="left" />}. If
+						they don't, the profile isn't accepted.
+					</p>
+				</>
+			) : asks && mine ? (
+				<>
+					<h1 className="type-display">The agent has a question for you</h1>
+					<p className="max-w-md text-muted-foreground">
+						Answer below. The agent decides with your answer, or asks the company.
 					</p>
 				</>
 			) : status === "PENDING" &&
@@ -867,8 +985,8 @@ function Checking({
 				<>
 					<Loader2 className="size-6 animate-spin text-primary" />
 					<h1 className="type-display">
-						Self-reported · waiting for{" "}
-						{gig.candidate?.name ? firstName(gig.candidate.name) : "the candidate"} to confirm
+						Waiting for {gig.candidate?.name ? firstName(gig.candidate.name) : "the candidate"} to confirm the
+						call
 					</h1>
 					<p className="max-w-md text-muted-foreground">
 						The call wasn't recorded, so the agent asks the candidate whether it happened. Then it checks your
@@ -885,7 +1003,7 @@ function Checking({
 					<Loader2 className="size-6 animate-spin text-primary" />
 					<h1 className="type-display">The agent is checking your work</h1>
 					<p className="text-muted-foreground">
-						Usually within a minute. Until it starts, you can still edit or withdraw it from your work.
+						Usually within a minute. Until it starts, you can still edit or take it back from your work.
 					</p>
 				</>
 			) : status === "ACCEPTED" ? (
@@ -895,15 +1013,21 @@ function Checking({
 						{mine?.payout && BigInt(mine.payout.now) > 0n
 							? `${formatMoney(mine.payout.now)} is on its way to you.`
 							: "Payment is on its way to you."}
+						{deposit && ` ${deposit}`}
 					</p>
 				</>
 			) : (
 				<>
 					<h1 className="type-display">Not accepted</h1>
-					<p className="max-w-md text-muted-foreground">
-						{mine?.review?.reasons[0] || "The agent couldn't use this one."}
-					</p>
-					{mine && <Appeal d={mine} align="start" />}
+					{review ? (
+						<WhyNotAccepted review={review} criteria={detail.data?.criteria ?? null} />
+					) : (
+						<p className="max-w-md text-muted-foreground">
+							{mine?.review?.reasons[0] || "The agent couldn't use this one."}
+						</p>
+					)}
+					{deposit && <p className="type-label text-muted-foreground">{deposit}</p>}
+					{mine && <Appeal d={mine} align="start" showReasons={false} />}
 				</>
 			)}
 			{mine && <FollowUps d={mine} />}
@@ -917,14 +1041,13 @@ function Checking({
 						See your work
 					</Link>
 				)}
-				{status !== "PENDING" && (gig.type === "SOURCING" || status === "REJECTED") && (
-					<Button variant="outline" onClick={onAgain}>
-						{gig.type === "SOURCING" ? "Send another" : "Fix and resend"}
-					</Button>
+				{status !== "PENDING" && (gig.type === "SOURCING" || status === "REJECTED") ? (
+					<Button onClick={onAgain}>{gig.type === "SOURCING" ? "Send another" : "Fix and resend"}</Button>
+				) : (
+					<Link to="/scout" className={buttonVariants()}>
+						Back to gigs
+					</Link>
 				)}
-				<Link to="/scout" className={buttonVariants()}>
-					Back to gigs
-				</Link>
 			</div>
 		</div>
 	);
