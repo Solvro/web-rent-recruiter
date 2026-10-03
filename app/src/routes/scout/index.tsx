@@ -15,6 +15,7 @@ import { earnFor, useGigs } from "@/lib/gigs/api";
 import type { GigView } from "@/lib/gigs/schemas";
 import { useMe } from "@/lib/queries";
 import { standing, TYPE_WORD } from "@/lib/reputation";
+import { useTitle } from "@/lib/use-title";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/lib/wallet";
 
@@ -49,6 +50,7 @@ const placeOf = (g: GigView) => (g.remote ? "Remote" : g.city);
 function GigBoard() {
 	const gigs = useGigs();
 	const me = useMe();
+	useTitle("Gigs");
 	const search = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
 	const set = (patch: Partial<BoardSearch>) =>

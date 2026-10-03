@@ -173,5 +173,6 @@
 
 /* Toasts sit above the full-width payout panel while it is open (see PayoutMoment). */
 [data-sonner-toaster][data-y-position="bottom"] {
-  bottom: calc(var(--moment-height, 0px) + 24px) !important;
+  /* …and above the cockpit composer, so a toast never covers what Hanna is typing. */
+  bottom: calc(var(--moment-height, 0px) + var(--composer-height, 0px) + 24px) !important;
 }

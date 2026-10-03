@@ -8,6 +8,7 @@ import { personOf, WorkStatus, workInfo } from "@/components/work";
 import { firstName, formatMoney } from "@/lib/format";
 import { useMyWork } from "@/lib/gigs/api";
 import type { DeliverableView } from "@/lib/gigs/schemas";
+import { useTitle } from "@/lib/use-title";
 
 export const Route = createFileRoute("/scout/submissions")({
 	component: () => (
@@ -27,6 +28,7 @@ function earnedOf(list: DeliverableView[]) {
 
 function Earnings({ operator, slug }: { operator: string | null; slug: string }) {
 	const work = useMyWork();
+	useTitle("My work");
 	if (work.isError) return <ErrorState />;
 	if (work.isPending) return <PageSkeleton />;
 	const list = work.data;

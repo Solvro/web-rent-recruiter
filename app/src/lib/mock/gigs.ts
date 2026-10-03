@@ -178,7 +178,7 @@ const unbig = (_k: string, v: unknown) =>
 
 function save() {
 	try {
-		sessionStorage.setItem(
+		localStorage.setItem(
 			KEY,
 			JSON.stringify(
 				{
@@ -203,7 +203,7 @@ function save() {
 
 function load() {
 	try {
-		const raw = sessionStorage.getItem(KEY);
+		const raw = localStorage.getItem(KEY);
 		if (!raw) return false;
 		const d = JSON.parse(raw, unbig);
 		g.gigs = new Map(d.gigs);
@@ -223,7 +223,7 @@ function load() {
 
 export function resetGigs() {
 	try {
-		sessionStorage.removeItem(KEY);
+		localStorage.removeItem(KEY);
 	} catch {
 		// ignore
 	}
@@ -417,7 +417,8 @@ export function startAgent(roleId: string) {
 	);
 	schedule(roleId, 8 * SECOND, "sim-source", "tomasz");
 	schedule(roleId, 14 * SECOND, "sim-source", "piotr");
-	schedule(roleId, 120 * SECOND, "sim-source", "karolina");
+	// Late on purpose: in a demo Lucía sources Karolina herself; the simulator only steps in if nobody does.
+	schedule(roleId, 10 * 60 * SECOND, "sim-source", "karolina");
 	save();
 }
 
@@ -995,6 +996,24 @@ function reply(roleId: string, text: string) {
 		);
 		return;
 	}
+	if (
+		/\b(show|open|see|view)\b.*\b(notes?|profile|transcript|screening|call|reference|candidate)\b/.test(lower)
+	) {
+		const hit = [...g.deliveries.values()].find(
+			(d) =>
+				d.roleId === roleId &&
+				d.payload.type === "SOURCING" &&
+				lower.includes(first(d.payload.name).toLowerCase()),
+		);
+		log(
+			roleId,
+			"AGENT_MESSAGE",
+			hit?.payload.type === "SOURCING"
+				? `Opened ${hit.payload.name}'s page: the profile, my check, every call with its transcript, and payments.`
+				: "Which candidate? Their pages are under the candidates link at the top.",
+		);
+		return;
+	}
 	if (/how many|so far|progress|how is it going|how's it going/.test(lower)) {
 		const p = roleStatus(roleId).pipeline;
 		log(
@@ -1429,9 +1448,10 @@ export function recruiterStanding(
 		return wilson(ok, all);
 	};
 	const operator = p.operator?.name ?? null;
+	const edited = !!selfSkills()[wallet];
 	const skills: RecruiterSkill[] = prof.skills.map((skill) => ({
 		skill,
-		source: skill === "tech-screener" && operator ? "operator" : h ? "seeded" : "self",
+		source: skill === "tech-screener" && operator ? "operator" : h && !edited ? "seeded" : "self",
 		verifiedBy: skill === "tech-screener" ? operator : null,
 	}));
 	const screenings = prof.stats.SCREENING_CALL?.accepted ?? 0;
@@ -1456,8 +1476,47 @@ function wilson(ok: number, n: number) {
 	return Math.round(Math.max(0, lower) * 100);
 }
 
+/** Skills the recruiter set themselves (me.setSkills), kept per browser tab like the rest of the mock. */
+const SKILLS_KEY = "scout.mock-skills.v1";
+function selfSkills(): Record<string, string[]> {
+	try {
+		return JSON.parse(sessionStorage.getItem(SKILLS_KEY) ?? "{}") as Record<string, string[]>;
+	} catch {
+		return {};
+	}
+}
+export function setSelfSkills(wallet: string, skills: string[]) {
+	const next = {
+		...selfSkills(),
+		[wallet]: [...new Set(skills.map((x) => x.trim().toLowerCase()).filter(Boolean))],
+	};
+	try {
+		sessionStorage.setItem(SKILLS_KEY, JSON.stringify(next));
+	} catch {
+		// private mode: lost on reload
+	}
+}
+
+/** Recent gig work for the public profile (newest first). */
+export function recentWorkOf(wallet: string) {
+	return [...g.deliveries.values()]
+		.filter((d) => d.scout === wallet)
+		.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+		.slice(0, 8)
+		.map((d) => ({
+			id: d.id,
+			status: d.status,
+			submittedAt: d.submittedAt,
+			roleTitle: db.roles.get(d.roleId)?.title ?? "Role",
+		}));
+}
+
 export function recruiterProfile(wallet: string) {
-	const h = HISTORY[wallet] ?? { skills: [], accepted: 0, decided: 0, screenings: 0 };
+	const seededHistory = HISTORY[wallet] ?? { skills: [], accepted: 0, decided: 0, screenings: 0 };
+	const own = selfSkills()[wallet];
+	// Operator-verified skills aren't the recruiter's to remove.
+	const verified = db.profiles.get(wallet)?.operator ? seededHistory.skills.filter((x) => x === "tech-screener") : [];
+	const h = own ? { ...seededHistory, skills: [...new Set([...verified, ...own])] } : seededHistory;
 	const mine = [...g.deliveries.values()].filter((d) => d.scout === wallet && d.status !== "PENDING");
 	const ok = (type?: GigType) =>
 		mine.filter((d) => d.status === "ACCEPTED" && (!type || d.type === type)).length;

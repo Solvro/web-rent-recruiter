@@ -23,6 +23,7 @@ import { earnFor, gigApi, splitFor, useGig, useMyWork, useRecording } from "@/li
 import { callApi } from "@/lib/gigs/calls";
 import type { GigView } from "@/lib/gigs/schemas";
 import { useTRPCClient } from "@/lib/trpc";
+import { useTitle } from "@/lib/use-title";
 import { useTransact } from "@/lib/use-transact";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export const Route = createFileRoute("/scout/gigs/$gigId")({
 function GigPage({ gigId, me }: { gigId: string; me: Me }) {
 	const gig = useGig(gigId);
 	const work = useMyWork();
+	useTitle(gig.data ? (gig.data.exclusive ? gig.data.roleTitle : gig.data.title) : "Gig");
 	const [sent, setSent] = useState<string | null>(null);
 	if (gig.isError)
 		return isNotFound(gig.error) ? <Back title="We couldn't find this gig." /> : <ErrorState />;

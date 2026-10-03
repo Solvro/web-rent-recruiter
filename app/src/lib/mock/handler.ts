@@ -24,7 +24,14 @@ export type Transport = (req: {
 import { slugify } from "../format";
 import { draftRole } from "./agent";
 import demo from "./demo-data.json";
-import { ensureGigs, recruiterProfile, recruiterStanding, startAgent } from "./gigs";
+import {
+	ensureGigs,
+	recentWorkOf,
+	recruiterProfile,
+	recruiterStanding,
+	setSelfSkills,
+	startAgent,
+} from "./gigs";
 import { avatarFor, candidateInfo } from "./people";
 import {
 	acceptedCount,
@@ -169,6 +176,13 @@ function me(wallet: string) {
 			? { skills: recruiterStanding(p.wallet)?.skills, reputation: recruiterStanding(p.wallet)?.score }
 			: {}),
 	};
+}
+
+/** A stable stand-in for the recruiter's on-chain reputation account (same address on every read). */
+const profileAddresses = new Map<string, string>();
+function profileAddressOf(wallet: string) {
+	if (!profileAddresses.has(wallet)) profileAddresses.set(wallet, fakeAddress());
+	return profileAddresses.get(wallet) ?? null;
 }
 
 type Ctx = { wallet: string | null; body: unknown; params: Record<string, string> };
@@ -565,6 +579,17 @@ const routes: Route[] = [
 		},
 	],
 	[
+		"PUT",
+		"/me/skills",
+		({ wallet, body }) => {
+			if (!wallet) return fail(401, "UNAUTHORIZED", "Log in first");
+			const { skills } = body as { skills: string[] };
+			setSelfSkills(wallet, Array.isArray(skills) ? skills : []);
+			const m = me(wallet);
+			return m ? ok(m) : fail(404, "NOT_FOUND", "No profile yet");
+		},
+	],
+	[
 		"GET",
 		"/scouts/:pubkey",
 		({ params }) => {
@@ -591,16 +616,21 @@ const routes: Route[] = [
 					advanced: p.advanced,
 					flagged: p.flagged,
 				},
-				profileAddress: p.registered ? fakeAddress() : null,
+				profileAddress: profileAddressOf(p.wallet),
 				operator: p.operator,
 				skills: recruiterStanding(p.wallet)?.skills,
 				score: recruiterStanding(p.wallet)?.score,
-				recent: subs.slice(0, 8).map((x) => ({
-					id: x.id,
-					status: x.status,
-					submittedAt: x.submittedAt,
-					roleTitle: db.roles.get(x.roleId)?.title ?? "Role",
-				})),
+				recent: [
+					...recentWorkOf(p.wallet),
+					...subs.slice(0, 8).map((x) => ({
+						id: x.id,
+						status: x.status,
+						submittedAt: x.submittedAt,
+						roleTitle: db.roles.get(x.roleId)?.title ?? "Role",
+					})),
+				]
+					.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+					.slice(0, 8),
 			});
 		},
 	],

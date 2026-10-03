@@ -8,6 +8,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
 		<Sonner
 			theme="light"
 			className="toaster group"
+			duration={4000}
 			icons={{
 				success: <CircleCheckIcon className="size-4" />,
 				info: <InfoIcon className="size-4" />,

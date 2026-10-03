@@ -3,10 +3,12 @@ import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Receipt } from "@/components/receipt";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
+import { usePayments } from "@/lib/gigs/candidates";
 import type { RoleStatus } from "@/lib/gigs/status";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTransact } from "@/lib/use-transact";
@@ -40,12 +42,21 @@ export function RoleHeader({
 					</span>
 				</p>
 				{status && <Spent role={role} budget={status.budget} />}
+				<button
+					type="button"
+					onClick={onDetails}
+					className="shrink-0 type-label text-muted-foreground hover:text-foreground"
+				>
+					Details
+				</button>
 			</div>
 			<div className="flex flex-wrap items-baseline gap-x-4">
 				{status && <Progress p={status.pipeline} />}
 				<CandidatesButton />
 			</div>
-			{status && <p className="type-label text-muted-foreground">{nextLine(status.pipeline)}</p>}
+			{status && (
+				<p className="hidden type-label text-muted-foreground sm:block">{nextLine(status.pipeline)}</p>
+			)}
 		</header>
 	);
 }
@@ -61,6 +72,29 @@ function CandidatesButton() {
 		>
 			{count} candidate{count === 1 ? "" : "s"}
 		</button>
+	);
+}
+
+/** Who got what, for which gig, with the receipt. */
+function Ledger({ roleId }: { roleId: string }) {
+	const ledger = usePayments(roleId, true);
+	if (!ledger.data?.length) return null;
+	return (
+		<ul className="max-h-56 space-y-1.5 overflow-y-auto border-t pt-3 type-label">
+			{ledger.data.map((p) => (
+				<li key={p.deliverableId} className="flex items-baseline justify-between gap-3">
+					<span className="min-w-0 truncate">
+						{p.recruiter} <span className="text-muted-foreground">· {p.kind.replace("_", " ")}</span>
+					</span>
+					<span className="shrink-0 tabular text-muted-foreground">
+						{formatMoney(p.amount)}
+						{BigInt(p.held) > 0n &&
+							` + ${formatMoney(p.held)} ${p.heldStatus === "HELD" ? "held" : p.heldStatus.toLowerCase()}`}
+						{p.signature && <Receipt signature={p.signature} />}
+					</span>
+				</li>
+			))}
+		</ul>
 	);
 }
 
@@ -84,6 +118,7 @@ function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"
 						</div>
 					))}
 				</dl>
+				<Ledger roleId={role.id} />
 				{role.status === "OPEN" && <TopUp role={role} />}
 			</PopoverContent>
 		</Popover>

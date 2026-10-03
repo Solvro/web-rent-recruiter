@@ -233,7 +233,7 @@ const STORAGE_KEY = "scout.mock-db.v5";
 /** Survives page reloads and Vite HMR; reset from the account menu. */
 export function persist() {
 	try {
-		sessionStorage.setItem(
+		localStorage.setItem(
 			STORAGE_KEY,
 			JSON.stringify(
 				{
@@ -253,7 +253,7 @@ export function persist() {
 
 function restore() {
 	try {
-		const raw = sessionStorage.getItem(STORAGE_KEY);
+		const raw = localStorage.getItem(STORAGE_KEY);
 		if (!raw) return false;
 		const data = JSON.parse(raw, (_k, v) =>
 			v && typeof v === "object" && "$big" in v ? BigInt((v as { $big: string }).$big) : v,
@@ -271,8 +271,10 @@ function restore() {
 
 export function resetMockData() {
 	try {
-		sessionStorage.removeItem(STORAGE_KEY);
-		sessionStorage.removeItem("scout.mock-gigs.v3");
+		localStorage.removeItem(STORAGE_KEY);
+		localStorage.removeItem("scout.mock-gigs.v3");
+		localStorage.removeItem("scout.mock-recall.v1");
+		localStorage.removeItem("scout.mock-confirm.v1");
 	} catch {
 		// ignore
 	}

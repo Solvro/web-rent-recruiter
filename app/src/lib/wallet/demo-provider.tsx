@@ -1,5 +1,6 @@
 import { signBytes } from "@solana/kit";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { API_MOCK, DEMO_SECRETS } from "../env";
 import { PERSONAS, type PersonaId } from "../personas";
 import { setSessionSigner } from "../session";
@@ -74,6 +75,8 @@ export function DemoWalletProvider({ children }: { children: ReactNode }) {
 	useResetOnAccountChange(address);
 
 	const selectPersona = useCallback((id: PersonaId) => {
+		// Another person now: their toasts aren't yours.
+		toast.dismiss();
 		setPersonaId(id);
 		try {
 			localStorage.setItem(STORAGE_KEY, id);

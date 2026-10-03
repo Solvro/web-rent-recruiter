@@ -16,6 +16,7 @@ type Route = { method: "GET" | "POST" | "PUT"; path: string; body?: unknown; nul
 const ROUTES: Record<string, (input: Input) => Route> = {
 	"me.get": () => ({ method: "GET", path: "/me", nullOn404: true }),
 	"me.upsert": (i) => ({ method: "PUT", path: "/me", body: i }),
+	"me.setSkills": (i) => ({ method: "PUT", path: "/me/skills", body: i }),
 	"roles.draft": (i) => ({ method: "POST", path: "/roles/draft", body: i }),
 	"roles.create": (i) => ({ method: "POST", path: "/roles", body: i }),
 	"roles.list": () => ({ method: "GET", path: "/roles" }),

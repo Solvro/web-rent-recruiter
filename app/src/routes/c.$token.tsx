@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
 import { firstName } from "@/lib/format";
 import { type CandidateConfirmView, useCandidateConfirm, useCandidateRespond } from "@/lib/gigs/confirm";
+import { useTitle } from "@/lib/use-title";
 
 /**
  * The candidate's page: one question, no login. It shows only what a candidate needs (role, company, who reached
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/c/$token")({
 
 function Confirm({ token }: { token: string }) {
 	const view = useCandidateConfirm(token);
+	useTitle(view.data?.roleTitle ?? null);
 	return (
 		<main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-8 px-4 py-10">
 			{view.isPending ? (

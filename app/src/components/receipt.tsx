@@ -1,6 +1,7 @@
 import { explorerTxUrl } from "@scout/shared";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { API_MOCK } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
 export type ReceiptDetails = {
@@ -44,14 +45,18 @@ export function Receipt({
 							))}
 						</ul>
 					)}
-					<a
-						href={explorerTxUrl(signature)}
-						target="_blank"
-						rel="noreferrer"
-						className="type-label text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
-					>
-						Proof of payment
-					</a>
+					{API_MOCK ? (
+						<p className="type-label text-muted-foreground/80">Demo data: no real payment to show.</p>
+					) : (
+						<a
+							href={explorerTxUrl(signature)}
+							target="_blank"
+							rel="noreferrer"
+							className="type-label text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+						>
+							Proof of payment
+						</a>
+					)}
 				</DialogContent>
 			</Dialog>
 		</>

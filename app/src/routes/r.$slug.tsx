@@ -1,13 +1,20 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Link2 } from "lucide-react";
+import { explorerAddressUrl, type ScoutPublicProfile } from "@scout/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Check, Link2, Loader2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { PageSkeleton } from "@/components/account";
-import { EmptyState } from "@/components/bits";
+import { Chip, EmptyState } from "@/components/bits";
 import { Avatar } from "@/components/person";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
-import { useScout } from "@/lib/queries";
-import { skillName, skillSource, standing, TYPE_WORD } from "@/lib/reputation";
+import { useMe, useScout } from "@/lib/queries";
+import { SKILL_CHOICES, skillName, skillSource, standing, TYPE_WORD, uniqueSkills } from "@/lib/reputation";
+import { useTRPC } from "@/lib/trpc";
+import { useTitle } from "@/lib/use-title";
+import { cn } from "@/lib/utils";
 
 /** Public recruiter profile at /r/<slug>, resolved by the API on any device. */
 export const Route = createFileRoute("/r/$slug")({
@@ -17,19 +24,41 @@ export const Route = createFileRoute("/r/$slug")({
 	},
 });
 
+const dateLabel = (iso: string) =>
+	new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const STATUS = {
+	ACCEPTED: { label: "Accepted", tone: "good" },
+	REJECTED: { label: "Not accepted", tone: "neutral" },
+	PENDING: { label: "In review", tone: "accent" },
+} as const;
+
 function PublicProfile({ slug }: { slug: string }) {
 	const scout = useScout({ slug });
+	const me = useMe();
+	useTitle(scout.data?.displayName ?? "Recruiter");
 	if (scout.isPending) return <PageSkeleton />;
-	if (scout.isError) return <EmptyState title="We couldn't find this recruiter." />;
+	if (scout.isError)
+		return (
+			<EmptyState
+				title="We couldn't find this recruiter."
+				action={
+					<Link to="/" className={buttonVariants({ variant: "outline" })}>
+						Go home
+					</Link>
+				}
+			/>
+		);
 	const p = scout.data;
 	const { accepted, rejected, totalEarned } = p.reputation;
+	const owner = !!me.data && (me.data.slug === p.slug || me.data.wallet === p.wallet);
+	const skills = uniqueSkills(p.skills ?? []);
 
 	const share = async () => {
 		try {
-			await navigator.clipboard.writeText(`${location.origin}/r/${slug}`);
+			await navigator.clipboard.writeText(`${location.origin}/r/${p.slug}`);
 			toast.success("Link copied");
 		} catch {
-			toast(`${location.origin}/r/${slug}`);
+			toast(`${location.origin}/r/${p.slug}`);
 		}
 	};
 
@@ -58,11 +87,12 @@ function PublicProfile({ slug }: { slug: string }) {
 					})}
 				</dl>
 			)}
-			{p.skills && p.skills.length > 0 && (
+
+			{(skills.length > 0 || owner) && (
 				<div className="w-full space-y-2">
 					<p className="type-label text-muted-foreground">Skills</p>
 					<ul className="flex flex-wrap justify-center gap-1.5">
-						{p.skills.map((sk) => {
+						{skills.map((sk) => {
 							const source = skillSource(sk);
 							return (
 								<li
@@ -75,14 +105,118 @@ function PublicProfile({ slug }: { slug: string }) {
 							);
 						})}
 					</ul>
+					{owner && <SkillsEditor profile={p} />}
 				</div>
 			)}
+
+			{p.recent.length > 0 && (
+				<div className="w-full space-y-2 text-left">
+					<p className="text-center type-label text-muted-foreground">Recent gigs</p>
+					<ul className="divide-y rounded-3xl bg-card px-5 ring-1 ring-foreground/5">
+						{p.recent.slice(0, 5).map((r) => (
+							<li key={r.id} className="flex items-center gap-3 py-3">
+								<span className="min-w-0 flex-1">
+									<span className="block truncate">{r.roleTitle}</span>
+									<span className="type-label text-muted-foreground">{dateLabel(r.submittedAt)}</span>
+								</span>
+								<Chip tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Chip>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
+
 			{p.score?.seededHistory && (
 				<p className="type-label text-muted-foreground">Part of this history is demo data.</p>
 			)}
-			<Button variant="ghost" onClick={share}>
-				<Link2 /> Copy link
-			</Button>
+			<div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+				<Button variant="ghost" onClick={share}>
+					<Link2 /> Copy link
+				</Button>
+				{p.profileAddress && (
+					<a
+						href={explorerAddressUrl(p.profileAddress)}
+						target="_blank"
+						rel="noreferrer"
+						className="type-label text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
+					>
+						Proof of track record
+					</a>
+				)}
+			</div>
+		</div>
+	);
+}
+
+/** The owner picks the skills they claim; operator-verified and earned skills stay as they are. */
+function SkillsEditor({ profile }: { profile: ScoutPublicProfile }) {
+	const trpc = useTRPC();
+	const qc = useQueryClient();
+	const own = (profile.skills ?? [])
+		.filter((s) => s.source === "self" || s.source === "seeded")
+		.map((s) => s.skill.toLowerCase());
+	const [open, setOpen] = useState(false);
+	const [picked, setPicked] = useState<string[]>(own);
+	const save = useMutation(
+		trpc.me.setSkills.mutationOptions({
+			onSuccess: () => {
+				setOpen(false);
+				toast.success("Skills saved");
+				void qc.invalidateQueries();
+			},
+		}),
+	);
+	const choices = [...new Set([...SKILL_CHOICES, ...own])];
+	if (!open)
+		return (
+			<button
+				type="button"
+				onClick={() => {
+					setPicked(own);
+					setOpen(true);
+				}}
+				className="type-label text-primary underline-offset-4 hover:underline"
+			>
+				Edit your skills
+			</button>
+		);
+	return (
+		<div className="space-y-4 rounded-3xl bg-card p-5 text-left ring-1 ring-foreground/5">
+			<p className="type-label text-muted-foreground">
+				Pick what you can do. Gigs that need a skill show up for you when you have it.
+			</p>
+			<div className="flex flex-wrap gap-2">
+				{choices.map((tag) => {
+					const on = picked.includes(tag);
+					return (
+						<button
+							key={tag}
+							type="button"
+							aria-pressed={on}
+							onClick={() => setPicked((list) => (on ? list.filter((x) => x !== tag) : [...list, tag]))}
+							className={cn(
+								"inline-flex items-center gap-1 rounded-full px-3 py-1.5 type-label ring-1 ring-inset transition-colors",
+								on
+									? "bg-accent text-accent-foreground ring-primary/30"
+									: "text-muted-foreground ring-border hover:bg-muted",
+							)}
+						>
+							{on && <Check className="size-3.5" />}
+							{skillName(tag)}
+						</button>
+					);
+				})}
+			</div>
+			{save.isError && <p className="type-label text-destructive">{errorMessage(save.error)}</p>}
+			<div className="flex gap-2">
+				<Button size="sm" onClick={() => save.mutate({ skills: picked })} disabled={save.isPending}>
+					{save.isPending && <Loader2 className="animate-spin" />}
+					Save
+				</Button>
+				<Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+					Cancel
+				</Button>
+			</div>
 		</div>
 	);
 }

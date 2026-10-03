@@ -117,7 +117,7 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 						),
 				)
 			: undefined;
-	const title = w.what.replace(/^You to /, "");
+	const title = w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, "");
 	return (
 		<article className={card}>
 			<p className="type-label text-primary">Needs you</p>

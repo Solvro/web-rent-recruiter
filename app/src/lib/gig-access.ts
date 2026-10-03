@@ -13,15 +13,17 @@ const LANGS: Record<string, string> = {
 	ro: "Romanian",
 };
 
+const TECH: Record<string, string> = { typescript: "TypeScript", javascript: "JavaScript", go: "Go" };
+
 export function skillLabel(tag: string): string | null {
 	const [kind, a, b] = tag.split(":");
 	if (kind === "family") return null;
 	if (kind === "tech-screener") return "Tech screener";
-	if (kind === "engineer" && a) return `${a[0]?.toUpperCase()}${a.slice(1)} engineer`;
+	if (kind === "engineer" && a) return `${TECH[a] ?? `${a[0]?.toUpperCase()}${a.slice(1)}`} engineer`;
 	if (kind === "design" && a) return `${a[0]?.toUpperCase()}${a.slice(1)} designer`;
 	if (kind === "lang" && a) {
 		const name = LANGS[a] ?? a.toUpperCase();
-		return b === "native" ? `Native ${name}` : `${name} ${b ?? ""}`.trim();
+		return b === "native" ? `Native ${name}` : `${name} ${b?.toUpperCase() ?? ""}`.trim();
 	}
 	return tag;
 }

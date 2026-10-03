@@ -19,7 +19,7 @@ const KEY = "scout.mock-recall.v1";
 const sessions = new Map<string, Session>(
 	(() => {
 		try {
-			return JSON.parse(sessionStorage.getItem(KEY) ?? "[]") as [string, Session][];
+			return JSON.parse(localStorage.getItem(KEY) ?? "[]") as [string, Session][];
 		} catch {
 			return [];
 		}
@@ -27,7 +27,7 @@ const sessions = new Map<string, Session>(
 );
 const save = () => {
 	try {
-		sessionStorage.setItem(KEY, JSON.stringify([...sessions]));
+		localStorage.setItem(KEY, JSON.stringify([...sessions]));
 	} catch {}
 };
 const STEPS: [RecordingStatus, number, string][] = [

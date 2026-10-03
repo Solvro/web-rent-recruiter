@@ -1,5 +1,5 @@
 import { ArrowUp, ArrowUpRight, Loader2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 	MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Textarea } from "@/components/ui/textarea";
+import { API_MOCK } from "@/lib/env";
 import { errorMessage } from "@/lib/errors";
 import { firstName } from "@/lib/format";
 import { useSendMessage } from "@/lib/gigs/api";
@@ -84,6 +85,7 @@ export function Log({
 }) {
 	const seen = useSeen(items);
 	const rows = toRows(items);
+	const bottom = useComposerHeight();
 	return (
 		<MessageScrollerProvider defaultScrollPosition="end">
 			<div className="flex min-h-0 flex-1 flex-col">
@@ -113,13 +115,30 @@ export function Log({
 					</MessageScrollerViewport>
 					<Follow changeKey={`${items.length}:${busy ? now : ""}`} layoutKey={pinnedKey} />
 				</MessageScroller>
-				<div className="space-y-3 pb-4">
+				<div ref={bottom} className="space-y-3 pb-4">
 					{pinned}
 					<Composer roleId={roleId} items={items} />
 				</div>
 			</div>
 		</MessageScrollerProvider>
 	);
+}
+
+/** Publishes the composer area's height so toasts can sit above it. */
+function useComposerHeight() {
+	const ref = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const el = ref.current;
+		const root = document.documentElement;
+		if (!el || typeof ResizeObserver === "undefined") return;
+		const ro = new ResizeObserver(() => root.style.setProperty("--composer-height", `${el.offsetHeight}px`));
+		ro.observe(el);
+		return () => {
+			ro.disconnect();
+			root.style.removeProperty("--composer-height");
+		};
+	}, []);
+	return ref;
 }
 
 function ChatLine({ item, live }: { item: ThreadActivity; live: boolean }) {
@@ -138,7 +157,8 @@ function ChatLine({ item, live }: { item: ThreadActivity; live: boolean }) {
 
 function StepLine({ item }: { item: ThreadActivity }) {
 	const [open, setOpen] = useState(false);
-	const proof = item.solscanUrl ?? item.explorerUrl;
+	// Demo data has made-up signatures: no proof link that leads nowhere.
+	const proof = API_MOCK ? null : (item.solscanUrl ?? item.explorerUrl);
 	const tone =
 		item.kind === "DELIVERY_ACCEPTED" || item.kind === "SHORTLISTED"
 			? "text-foreground"

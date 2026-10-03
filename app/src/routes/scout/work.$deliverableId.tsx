@@ -19,6 +19,7 @@ import { firstName } from "@/lib/format";
 import { useMyWork } from "@/lib/gigs/api";
 import { type GigWorkView, useEditWork, useWithdrawWork, useWork } from "@/lib/gigs/work";
 import { typedClient } from "@/lib/trpc";
+import { useTitle } from "@/lib/use-title";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/scout/work/$deliverableId")({
@@ -36,6 +37,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 	const detail = useWork(id);
 	const row = mine.data?.find((d) => d.id === id);
 	const d = detail.data?.work ?? row;
+	useTitle(d ? personOf(d, detail.data?.candidateName) : "My work");
 	// Calls: the questions come from the gig the recruiter took, until the full detail arrives.
 	const gigId = d && !detail.data && d.gigType !== "SOURCING" ? d.gigId : null;
 	const gig = useQuery({

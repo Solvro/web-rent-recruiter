@@ -1,10 +1,10 @@
 import type { RoleDetail } from "@scout/shared";
 import { useMutation } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageSkeleton, RequireAccount } from "@/components/account";
-import { ErrorState } from "@/components/bits";
+import { EmptyState, ErrorState } from "@/components/bits";
 import { Pinned, useAsks } from "@/components/cockpit/asks";
 import { CandidatesProvider } from "@/components/cockpit/candidates";
 import { RoleHeader } from "@/components/cockpit/header";
@@ -12,9 +12,9 @@ import { Log } from "@/components/cockpit/log";
 import { Thinking, WaitingList, WhatHappensNext } from "@/components/cockpit/presence";
 import { CriteriaChips } from "@/components/criteria";
 import { ReviewerSettings } from "@/components/reviewer-settings";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { errorMessage } from "@/lib/errors";
+import { appCodeOf, errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { useRoleActivity, useShortlist } from "@/lib/gigs/api";
 import { useRoleStatus } from "@/lib/gigs/status";
@@ -46,7 +46,19 @@ function Cockpit({ roleId }: { roleId: string }) {
 		shortlist: shortlist.data ?? [],
 		thread: items,
 	});
-	if (role.isError) return <ErrorState />;
+	if (role.isError)
+		return appCodeOf(role.error) === "NOT_FOUND" || /not found|invalid/i.test(errorMessage(role.error)) ? (
+			<EmptyState
+				title="This role doesn't exist, or it isn't yours."
+				action={
+					<Link to="/company" className={buttonVariants({ variant: "outline" })}>
+						Your roles
+					</Link>
+				}
+			/>
+		) : (
+			<ErrorState />
+		);
 	if (role.isPending) return <PageSkeleton />;
 	const r = role.data;
 

@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { PageSkeleton, RequireAccount } from "@/components/account";
 import { Chip, EmptyState, ErrorState } from "@/components/bits";
 import { buttonVariants } from "@/components/ui/button";
-import { formatMoney } from "@/lib/format";
+import { dateLabel, formatMoney } from "@/lib/format";
 import { useRoles } from "@/lib/queries";
 
 export const Route = createFileRoute("/company/")({
@@ -42,10 +42,16 @@ function Roles() {
 							params={{ roleId: r.id }}
 							className="flex items-center gap-4 py-5 transition-colors hover:text-primary"
 						>
-							<span className="min-w-0 flex-1 truncate">{r.title}</span>
+							<span className="min-w-0 flex-1">
+								<span className="block truncate">{r.title}</span>
+								<span className="block type-label text-muted-foreground">
+									{r.status === "OPEN" ? "Agent working" : r.status === "CLOSED" ? "Closed" : "Draft"} ·
+									created {dateLabel(new Date(r.createdAt))}
+								</span>
+							</span>
 							{r.pendingCount > 0 && <Chip tone="warn">{r.pendingCount} to review</Chip>}
-							<span className="w-28 text-right type-label text-muted-foreground tabular">
-								{formatMoney(BigInt(r.budget.remaining) - BigInt(r.budget.heldBack))} left
+							<span className="text-right type-label text-muted-foreground tabular">
+								{formatMoney(r.budget.paid)} of {formatMoney(r.budget.deposited)} spent
 							</span>
 						</Link>
 					</li>
