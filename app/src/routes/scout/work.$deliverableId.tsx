@@ -99,6 +99,7 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 			</header>
 
 			<Waiting d={d} person={person} />
+			<FollowUps d={d} />
 
 			<section className="space-y-4">
 				<h2 className="type-label text-muted-foreground">What you sent</h2>
@@ -123,9 +124,8 @@ function WorkPage({ id, me }: { id: string; me: Me }) {
 
 			<Review d={d} w={w} />
 
-			<FollowUps d={d} />
-			{d.status === "REJECTED" && d.review?.reasons[0] !== "Withdrawn by the recruiter." && (
-				<Appeal d={d} align="start" />
+			{d.status === "REJECTED" && !WITHDRAWN.test(d.review?.reasons[0] ?? "") && (
+				<Appeal d={d} align="start" showReasons={false} />
 			)}
 
 			<div className="space-y-6">
@@ -168,6 +168,8 @@ function Waiting({ d, person }: { d: DeliverableView; person: string }) {
 		);
 	return null;
 }
+
+const WITHDRAWN = /^withdrawn by the recruiter/i;
 
 const REC: Record<string, string> = { ADVANCE: "Move forward", MAYBE: "Not sure", PASS: "Not a fit" };
 
@@ -239,7 +241,8 @@ function CheckMark({ check }: { check: CallDetail["questions"][number]["check"] 
 function Review({ d, w }: { d: DeliverableView; w: GigWorkView | null }) {
 	const review = d.review?.candidateReview ?? null;
 	const reasons = d.review?.reasons ?? [];
-	const rejectText = w?.rejectText ?? (d.status === "REJECTED" ? reasons[0] : null);
+	const raw = w?.rejectText ?? (d.status === "REJECTED" ? reasons[0] : null);
+	const rejectText = raw && WITHDRAWN.test(raw) ? "You withdrew this. It doesn't count against you." : raw;
 	const summary = !review ? w?.call?.summary : null;
 	const others = !review && !rejectText ? reasons : [];
 	if (!review && !rejectText && !summary && !others.length) {

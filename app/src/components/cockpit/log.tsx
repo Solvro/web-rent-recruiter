@@ -17,7 +17,7 @@ import { firstName } from "@/lib/format";
 import { useSendMessage } from "@/lib/gigs/api";
 import type { ThreadActivity } from "@/lib/gigs/schemas";
 import { cn } from "@/lib/utils";
-import { WithCandidateLinks } from "./candidates";
+import { useCandidatesPanel, WithCandidateLinks } from "./candidates";
 import { Follow } from "./follow";
 import { Fresh, Typed, useSeen } from "./fresh";
 
@@ -44,6 +44,8 @@ function toRows(items: ThreadActivity[]): Row[] {
 	const rows: Row[] = [];
 	let phase = -1;
 	for (const item of items) {
+		// Tool calls behind a reply are the agent's plumbing, not news for Hanna.
+		if (item.kind === "TOOL") continue;
 		const p = phaseOf(item);
 		if (p > phase) {
 			phase = p;
@@ -209,10 +211,22 @@ function suggestionsFor(items: ThreadActivity[]) {
 function Composer({ roleId, items }: { roleId: string; items: ThreadActivity[] }) {
 	const [text, setText] = useState("");
 	const send = useSendMessage(roleId);
+	const { byName, open } = useCandidatesPanel();
 	const submit = (value: string, e?: FormEvent) => {
 		e?.preventDefault();
 		const v = value.trim();
 		if (!v || send.isPending) return;
+		// "Show Karolina's notes / transcript / profile": open their page right away; the agent still answers.
+		if (
+			/\b(show|open|see|view)\b.*\b(notes?|profile|transcript|screening|call|reference|candidate)\b/i.test(v)
+		) {
+			const hit = [...byName].find(
+				([name]) =>
+					v.toLowerCase().includes(name.toLowerCase()) ||
+					v.toLowerCase().includes(name.split(" ")[0].toLowerCase()),
+			);
+			if (hit) open(hit[1]);
+		}
 		setText("");
 		send.mutate(v, {
 			onError: (err) => {

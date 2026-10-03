@@ -13,9 +13,33 @@ import { currentWorkSince } from "./gigs.ts";
 
 const name = (full: string) => full.split(" ")[0] ?? full;
 const HOUR = 3_600_000;
-/** DEMO_FAST: a day of hiring passes in a minute, so "slower than expected" shows up live. */
-const scale = () => (process.env.DEMO_FAST === "1" ? 24 * 60 : 1);
-const typical = (hours: number) => (hours * HOUR) / scale();
+const MIN = 60_000;
+type Stage = "confirm" | "sourcing" | "take_screening" | "take_reference" | "run_call";
+/** Real-world norms (hours): when each kind of wait usually ends. */
+const REAL_HOURS: Record<Stage, number> = {
+	confirm: 24,
+	sourcing: PRICING.raiseAfterHours.SOURCING,
+	take_screening: PRICING.raiseAfterHours.SCREENING_CALL,
+	take_reference: PRICING.raiseAfterHours.REFERENCE_CHECK,
+	run_call: 24,
+};
+/**
+ * DEMO_FAST norms (minutes), generous on purpose: "slower than usual" on stage should mean it really is.
+ * COCKPIT_DEMO_FACTOR scales them (the e2e uses a small factor to see "slow" quickly).
+ */
+const DEMO_MINUTES: Record<Stage, number> = {
+	confirm: 15,
+	sourcing: 15,
+	take_screening: 30,
+	take_reference: 30,
+	run_call: 30,
+};
+const typicalMs = (stage: Stage) =>
+	process.env.DEMO_FAST === "1"
+		? DEMO_MINUTES[stage] * MIN * Number(process.env.COCKPIT_DEMO_FACTOR ?? 1)
+		: REAL_HOURS[stage] * HOUR;
+const takeStage = (type: string): Stage =>
+	type === "REFERENCE_CHECK" ? "take_reference" : type === "SOURCING" ? "sourcing" : "take_screening";
 const toUsd = (base: bigint) => Number(base) / 1e6;
 const fromUsd = (usd: number) => BigInt(Math.round(usd * 1e6)).toString();
 
@@ -57,13 +81,15 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 
 	const now = Date.now();
 	const available = availableBudget(role);
-	const expect = (since: Date, hours: number) => {
-		const by = new Date(since.getTime() + typical(hours));
+	const expect = (since: Date, stage: Stage) => {
+		const by = new Date(since.getTime() + typicalMs(stage));
 		return { expectedBy: by.toISOString(), slow: now > by.getTime() };
 	};
 	/** C's repriceRule on the cockpit clock: the price it would raise to, or null. */
 	const suggestRaise = (g: (typeof gigs)[number]) => {
-		const hoursOpen = ((now - g.createdAt.getTime()) * scale()) / HOUR;
+		// On the cockpit clock: the stage's norm maps to C's raiseAfterHours for this gig type.
+		const hoursOpen =
+			((now - g.createdAt.getTime()) / typicalMs(takeStage(g.type))) * PRICING.raiseAfterHours[g.type];
 		const r = repriceRule({
 			gig: {
 				taskType: g.type,
@@ -122,7 +148,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 			deadline: c.expiresAt.toISOString(),
 			gigId: s?.sub.gigId ?? null,
 			deliverableId: c.submissionId,
-			...expect(c.createdAt, 24),
+			...expect(c.createdAt, "confirm"),
 			actions: [{ id: "resend_confirmation", label: "Send a new link", deliverableId: c.submissionId }],
 		});
 	}
@@ -153,7 +179,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 				deadline: null,
 				gigId: g.id,
 				deliverableId: null,
-				...expect(g.createdAt, PRICING.raiseAfterHours[g.type]),
+				...expect(g.createdAt, takeStage(g.type)),
 				actions: raiseAction(g),
 			});
 		} else {
@@ -166,7 +192,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 				deadline: new Date(since.getTime() + env.claimTimeoutSeconds * 1000).toISOString(),
 				gigId: g.id,
 				deliverableId: null,
-				...expect(since, 24),
+				...expect(since, "run_call"),
 				actions: [],
 			});
 		}
@@ -190,7 +216,7 @@ export async function roleStatus(roleId: string): Promise<RoleStatusView> {
 			deadline: null,
 			gigId: g.id,
 			deliverableId: null,
-			expectedBy: new Date(g.createdAt.getTime() + typical(PRICING.raiseAfterHours.SOURCING)).toISOString(),
+			expectedBy: new Date(g.createdAt.getTime() + typicalMs("sourcing")).toISOString(),
 			slow: Boolean(raise),
 			actions,
 		});

@@ -22,6 +22,7 @@ import { db, schema } from "../db/index.ts";
 import { env } from "../env.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../http.ts";
 import { newRoleSalt } from "../lib/candidate-hash.ts";
+import { withJdLanguages } from "../lib/jd-languages.ts";
 import { roleDetail, roleSummary, submissionView, taskView } from "../lib/views.ts";
 import { currentPipelineSummary } from "../services/pipeline.ts";
 import {
@@ -101,7 +102,9 @@ async function reviewsFor(submissionIds: string[]) {
 export async function draftRole(
 	input: z.output<typeof DraftRoleRequest>,
 ): Promise<z.output<typeof DraftRoleResponse>> {
-	const draft = await agentDraftRole(input.jobDescription);
+	const raw = await agentDraftRole(input.jobDescription);
+	// "Fluent English (C1)" in the JD must survive the draft: it's what books the language check.
+	const draft = { ...raw, criteria: withJdLanguages(input.jobDescription, raw.criteria) };
 	const budget = await suggestBudget(draft.criteria, { title: draft.title });
 	return {
 		...draft,

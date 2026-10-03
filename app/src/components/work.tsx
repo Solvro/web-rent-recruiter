@@ -50,6 +50,10 @@ export function WorkStatus({ d, person }: { d: DeliverableView; person: string }
 		!d.review
 	)
 		return <Chip tone="accent">Waiting for {firstName(person)} to confirm the call</Chip>;
+	if (d.status === "PENDING" && d.followUps?.some((f) => !f.answer))
+		return <Chip tone="warn">The agent asked you something</Chip>;
+	if (d.status === "PENDING" && d.review?.verdict === "ESCALATE")
+		return <Chip tone="accent">The company is deciding</Chip>;
 	if (d.status === "PENDING")
 		return (
 			<Chip tone="accent">
@@ -143,7 +147,9 @@ export function PayoutBreakdown({
 					},
 				]
 			: []),
-		...(BigInt(p.operatorFee) > 0n ? [{ label: operator ?? "Your operator", amount: p.operatorFee }] : []),
+		...(BigInt(p.operatorFee) > 0n
+			? [{ label: operator ? `${operator}, who vouched for you` : "Your operator", amount: p.operatorFee }]
+			: []),
 		...(BigInt(p.platformFee) > 0n ? [{ label: "Service fee", amount: p.platformFee }] : []),
 	];
 	return (

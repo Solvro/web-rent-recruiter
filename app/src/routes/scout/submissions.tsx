@@ -69,7 +69,6 @@ function Earnings({ operator, slug }: { operator: string | null; slug: string })
 function Row({ work: d }: { work: DeliverableView }) {
 	const info = workInfo(d);
 	const person = personOf(d);
-	const asks = (d.followUps ?? []).some((f) => !f.answer);
 	const confirmUrl =
 		d.status === "PENDING" && d.confirmation?.status === "PENDING" ? d.confirmation.url : null;
 	const callLink = d.callChecks?.find((c) => c.status === "PENDING" && c.url);
@@ -97,7 +96,6 @@ function Row({ work: d }: { work: DeliverableView }) {
 			</div>
 			<div className="relative z-10 flex shrink-0 flex-col items-end gap-1.5 text-right">
 				<WorkStatus d={d} person={person} />
-				{asks && <span className="type-label text-primary">The agent asks you something</span>}
 				{confirmUrl && <CopyButton text={confirmUrl} />}
 				{callLink?.url && (
 					<CopyButton text={callLink.url} label={`Copy call check for ${firstName(person)}`} />

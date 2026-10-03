@@ -35,6 +35,7 @@ import { agentSigner, fetchProgramAccount, type RoleVaultAccount } from "../sola
 import { acceptIx, createTaskIx, rejectIx } from "../solana/scout.ts";
 import { sendAsRelayer } from "../solana/tx.ts";
 import { confirmationKind, preAccept } from "./confirmations.ts";
+import { decisionLine, humanize } from "./narrate.ts";
 
 type SubRow = typeof schema.submissions.$inferSelect;
 type OnchainGigType = "SOURCING" | "SCREENING_CALL" | "REFERENCE_CHECK";
@@ -602,13 +603,19 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 					.where(eq(schema.gigs.id, str(d.gigId) as string));
 				if (g?.tx) d.signature = g.tx;
 			}
+			// One plain line per decision; the agent's own words become the detail.
+			const narrated = await decisionLine(kind, message, d);
+			if (narrated && "skip" in narrated) return;
+			if (narrated) d.more = humanize(message);
 			// The timeline line is one sentence; a longer explanation (e.g. the budget plan) goes to its detail.
 			const [line, ...more] = message.split(/(?<=[.!?])\s+(?=[A-Z$])/);
-			if (more.length && message.length > 120) d.more = more.join(" ");
+			if (!narrated && more.length && message.length > 120) d.more = more.join(" ");
 			await logActivity(
 				roleId,
 				KIND[kind] ?? "NOTE",
-				more.length && message.length > 120 ? (line ?? message) : message,
+				narrated
+					? narrated.line
+					: humanize(more.length && message.length > 120 ? (line ?? message) : message),
 				{
 					gigId: str(d.gigId) ?? null,
 					deliverableId: str(d.deliverableId) ?? str(d.candidateId) ?? null,

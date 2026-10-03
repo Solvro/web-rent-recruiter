@@ -135,7 +135,11 @@ function PayoutMoment({ wallet }: { wallet: string }) {
 					});
 				}
 				// Status notes join the same queue so nothing ever stacks on top of a payout panel.
-				if (wasStatus === "PENDING" && s.status === "REJECTED")
+				if (
+					wasStatus === "PENDING" &&
+					s.status === "REJECTED" &&
+					!/^withdrawn by the recruiter/i.test(s.review?.reasons[0] ?? "")
+				)
 					fresh.push({
 						key: `${s.id}:rejected`,
 						big: false,

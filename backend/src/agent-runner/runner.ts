@@ -198,6 +198,9 @@ async function runJobInner(roleId: string, job: Job) {
 		}
 	};
 	const agent = createRoleAgent(narrated(roleId, createBackendPorts(roleId, onStepEvent)));
+	// Snapshot BEFORE the step: anything that lands while it runs (a candidate's yes, a payout) must trigger the
+	// next step. If the step changed things itself, the next tick runs once more and settles (steps are idempotent).
+	const before = await fingerprint(roleId);
 	if (job.kind === "debug") {
 		const lines = await agent.advanceRole();
 		job.resolve(lines);
@@ -206,7 +209,7 @@ async function runJobInner(roleId: string, job: Job) {
 	} else {
 		await agent.runStep();
 	}
-	lastSeen.set(roleId, await fingerprint(roleId));
+	lastSeen.set(roleId, before);
 	await refreshStatus(roleId);
 }
 

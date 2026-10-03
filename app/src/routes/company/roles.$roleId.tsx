@@ -51,7 +51,7 @@ function Cockpit({ roleId }: { roleId: string }) {
 	const r = role.data;
 
 	return (
-		<CandidatesProvider roleId={r.id}>
+		<CandidatesProvider roleId={r.id} criteria={r.criteria}>
 			<div className="fixed inset-x-0 top-16 bottom-0 z-20 bg-background">
 				<div className="mx-auto flex h-full w-full max-w-[760px] flex-col px-4">
 					<RoleHeader role={r} status={status.data} onDetails={() => setDetails(true)} />

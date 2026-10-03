@@ -493,7 +493,7 @@ const r2 = await asCompany.roles.create.mutate({
 		readFileSync(new URL("../agent/fixtures/criteria-senior-rust.json", import.meta.url), "utf8"),
 	),
 	taskType: "SOURCING",
-	reviewWindowSeconds: 120,
+	reviewWindowSeconds: 240,
 	holdbackWindowSeconds: 600,
 	holdbackBps: 0,
 	deposit: toBaseUnits(20).toString(),

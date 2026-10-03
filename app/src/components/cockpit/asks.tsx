@@ -13,7 +13,7 @@ import { gigApi } from "@/lib/gigs/api";
 import { callApi } from "@/lib/gigs/calls";
 import { useReviewQueue } from "@/lib/gigs/review";
 import type { ShortlistItemView as ShortlistItem, ThreadActivity } from "@/lib/gigs/schemas";
-import { useDecideDelivery, type Waiting } from "@/lib/gigs/status";
+import type { Waiting } from "@/lib/gigs/status";
 import { useTransact } from "@/lib/use-transact";
 import { WithCandidateLinks } from "./candidates";
 import { Meter } from "./decisions";
@@ -34,19 +34,19 @@ export function useAsks({
 	thread: ThreadActivity[];
 }): { key: string; node: ReactNode }[] {
 	const queue = useReviewQueue(roleId, true);
-	const inQueue = new Set((queue.data ?? []).map((q) => q.id));
 	// The API's own actions win: a waiting item that carries them is shown as-is, and the cards we build from the
 	// shortlist skip candidates it already covers.
 	const withActions = waiting.filter((w) => w.actions?.length);
-	const covered = new Set(withActions.map((w) => w.deliverableId).filter(Boolean));
+	const covered = new Set(
+		withActions
+			.flatMap((w) => [w.deliverableId, ...(w.actions ?? []).map((x) => x.candidateId)])
+			.filter(Boolean),
+	);
 	return [
-		...withActions.map((w, i) => ({
-			key: `act-${w.deliverableId ?? w.gigId ?? i}-${w.what}`,
+		...withActions.map((w) => ({
+			key: `act-${w.deliverableId ?? w.actions?.[0]?.activityId ?? w.gigId ?? ""}-${w.actions?.[0]?.id ?? ""}`,
 			node: <ActionCard w={w} roleId={roleId} thread={thread} />,
 		})),
-		...waiting
-			.filter((w) => !w.actions?.length && w.deliverableId && !inQueue.has(w.deliverableId))
-			.map((w) => ({ key: `ask-${w.deliverableId}`, node: <AskCard w={w} thread={thread} /> })),
 		...(queue.data ?? [])
 			.filter((item) => !covered.has(item.id))
 			.map((item) => ({ key: `review-${item.id}`, node: <ReviewCard item={item} /> })),
@@ -60,9 +60,12 @@ export function useAsks({
 }
 
 export function Pinned({ asks }: { asks: { key: string; node: ReactNode }[] }) {
-	const [i, setI] = useState(0);
+	// The pager follows the item, not its position: a refetch that reorders the list keeps the same card shown.
+	const [selected, setSelected] = useState<string | null>(null);
 	if (!asks.length) return null;
-	const at = Math.min(i, asks.length - 1);
+	const found = asks.findIndex((x) => x.key === selected);
+	const at = found >= 0 ? found : 0;
+	const setI = (n: number) => setSelected(asks[n]?.key ?? null);
 	return (
 		<div className="space-y-2 animate-in fade-in slide-in-from-bottom-2">
 			{asks.length > 1 && (
@@ -100,9 +103,20 @@ const card = "space-y-3 rounded-3xl bg-card p-5 shadow-sm ring-1 ring-foreground
 /** A company item exactly as the API describes it: what it waits for, the agent's reasoning, its actions. */
 function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread: ThreadActivity[] }) {
 	const run = useWaitingAction(roleId);
-	const why = thread.findLast(
-		(t) => (w.deliverableId && t.deliverableId === w.deliverableId) || (w.gigId && t.gigId === w.gigId),
-	);
+	// The reasoning for exactly this item: its activity (agent questions) or its deliverable's review line.
+	const activityId = w.actions?.find((x) => x.activityId)?.activityId;
+	const why = activityId
+		? thread.find((t) => t.id === activityId)
+		: w.deliverableId
+			? thread.findLast(
+					(t) =>
+						t.deliverableId === w.deliverableId &&
+						!!t.detail &&
+						["ESCALATED", "REVIEWED", "DELIVERY_REJECTED", "DELIVERY_ACCEPTED", "SHORTLISTED"].includes(
+							t.kind,
+						),
+				)
+			: undefined;
 	const title = w.what.replace(/^You to /, "");
 	return (
 		<article className={card}>
@@ -124,40 +138,6 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 					</Button>
 				))}
 			</div>
-		</article>
-	);
-}
-
-/** The agent asks about a borderline delivery. */
-function AskCard({ w, thread }: { w: Waiting; thread: ThreadActivity[] }) {
-	const decide = useDecideDelivery();
-	const asked = thread.findLast((t) => t.deliverableId === w.deliverableId && t.kind === "ESCALATED");
-	const score = Number(w.what.match(/\((\d+)\)/)?.[1] ?? Number.NaN);
-	const id = w.deliverableId ?? "";
-	const name = w.what.match(/decide on (.+?)'s profile/i)?.[1];
-	const title = name ? `Take ${name}?` : w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, "");
-	return (
-		<article className={card}>
-			<p className="type-label text-primary">Your agent asks</p>
-			<div className="flex items-start gap-3">
-				<p className="flex-1">{title.charAt(0).toUpperCase() + title.slice(1)}</p>
-				{Number.isFinite(score) && <Meter score={score} />}
-			</div>
-			{asked?.detail && <p className="type-label text-muted-foreground">{asked.detail}</p>}
-			<div className="flex gap-2">
-				<Button onClick={() => decide.mutate({ id, accept: true })} disabled={decide.isPending}>
-					{decide.isPending && decide.variables?.accept && <Loader2 className="animate-spin" />}
-					Yes, take it
-				</Button>
-				<Button
-					variant="ghost"
-					onClick={() => decide.mutate({ id, accept: false })}
-					disabled={decide.isPending}
-				>
-					No
-				</Button>
-			</div>
-			{decide.isError && <p className="type-label text-destructive">{errorMessage(decide.error)}</p>}
 		</article>
 	);
 }

@@ -217,9 +217,7 @@ function CallCheck({ view, token }: { view: CandidateConfirmView; token: string 
 				</Button>
 				{respond.isError && <p className="text-center text-destructive">{errorMessage(respond.error)}</p>}
 			</div>
-			<p className="type-label text-muted-foreground">
-				Your answer goes only to the hiring company. It takes one tap, nothing else to fill in.
-			</p>
+			<p className="type-label text-muted-foreground">Your answer goes only to the hiring company.</p>
 		</>
 	);
 }

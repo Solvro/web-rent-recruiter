@@ -549,6 +549,7 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 			}}
 		>
 			{!reference && <BookingTimes gig={gig} />}
+			{!reference && <ShowUpFee gig={gig} />}
 			<Notetaker gigId={gig.id} onDone={onDone} />
 			{recording?.status === "done" && (
 				<p className="type-label text-success">Filled in from the call. Check and edit before you send.</p>
@@ -637,7 +638,6 @@ function ScriptForm({ gig, onSent }: { gig: GigView; onSent: (id: string) => voi
 					</div>
 				</fieldset>
 			)}
-			{!reference && <ShowUpFee gig={gig} />}
 			{!reference && (
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<NoShow gig={gig} />

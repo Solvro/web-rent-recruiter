@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Check, Lock, Search, UserRound } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { PageSkeleton, rememberIntent } from "@/components/account";
 import { EmptyState, ErrorState } from "@/components/bits";
 import { Avatar } from "@/components/person";
@@ -65,7 +65,7 @@ function GigBoard() {
 		if (search.pay && earnFor(g, operatorFeeBps) < BigInt(search.pay * 1_000_000)) return false;
 		return true;
 	};
-	const shown = all
+	const sorted = all
 		.filter((g) => matches(g))
 		.sort((a, b) =>
 			search.sort === "new"
@@ -74,6 +74,9 @@ function GigBoard() {
 					? a.slotsLeft / a.maxDeliverables - b.slotsLeft / b.maxDeliverables
 					: Number(earnFor(b, operatorFeeBps) - earnFor(a, operatorFeeBps)),
 		);
+	// Live refetches don't move cards under the cursor: known gigs keep their place, new ones join at the end.
+	// A new sort or filter re-sorts from scratch.
+	const shown = useStableOrder(sorted, JSON.stringify(search));
 	const count = (kind?: GigKind) =>
 		all.filter((g) => matches(g, true) && (!kind || kindOf(g) === kind)).length;
 	const active = search.type ? GIG_TYPES[search.type] : null;
@@ -118,7 +121,7 @@ function GigBoard() {
 				</div>
 				{active && (
 					<p className="type-label text-muted-foreground">
-						{active.does} · you send: {active.deliver.toLowerCase()} · {active.time.toLowerCase()}
+						{active.does} · you send: {active.deliver.toLowerCase()}
 					</p>
 				)}
 			</div>
@@ -167,6 +170,16 @@ function GigBoard() {
 			)}
 		</div>
 	);
+}
+
+function useStableOrder(list: GigView[], key: string) {
+	const order = useRef<{ key: string; ids: string[] }>({ key: "", ids: [] });
+	if (order.current.key !== key) order.current = { key, ids: list.map((g) => g.id) };
+	const byId = new Map(list.map((g) => [g.id, g]));
+	const kept = order.current.ids.filter((id) => byId.has(id));
+	const fresh = list.filter((g) => !kept.includes(g.id)).map((g) => g.id);
+	order.current.ids = [...kept, ...fresh];
+	return order.current.ids.map((id) => byId.get(id) as GigView);
 }
 
 function TypeTab({

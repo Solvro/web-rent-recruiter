@@ -1104,6 +1104,23 @@ if (piotr) {
 const activity = await asCompany.roles.activity.query({ roleId });
 check(
 	activity.items
+		.filter((i) => i.kind !== "COMPANY_MESSAGE" && i.kind !== "AGENT_MESSAGE")
+		.every(
+			(i) =>
+				!/\b(ACCEPT|REJECT|ESCALATE|ADVANCE|MAYBE|PASS)\b/.test(i.message) && /^[A-Z0-9$"“]/.test(i.message),
+		) &&
+		!activity.items.some((i) => i.kind === "REVIEWED") &&
+		activity.items.some((i) => /^Accepted Karolina's screening \(\d+\) and paid /.test(i.message)),
+	'the thread: one plain sentence per decision (e.g. "Accepted Karolina\'s screening (96) and paid …")',
+);
+check(
+	!activity.items.some(
+		(i) => /no recording/i.test(`${i.message} ${i.detail ?? ""}`) && i.message.includes("reference"),
+	),
+	"the recorded reference isn't described as unrecorded",
+);
+check(
+	activity.items
 		.filter((i) => i.kind === "PLANNED")
 		.every((i) => i.message.length <= 200 && !/[.!?]\s+[A-Z$]/.test(i.message)),
 	"the plan is one line on the timeline (the breakdown is in its detail)",

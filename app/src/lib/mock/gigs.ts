@@ -10,6 +10,9 @@ import type {
 	AgentReview,
 	AppealView,
 	CallDetail,
+	CandidateDetail,
+	CandidateRow,
+	CandidateStage,
 	Criteria,
 	Deliverable,
 	DeliverableView,
@@ -30,7 +33,6 @@ import referenceGood from "../../../../backend/src/agent/fixtures/reference-karo
 import screeningGood from "../../../../backend/src/agent/fixtures/screening-karolina-good.json";
 import { canClaimGig, gigRequirements, repriceRule } from "../../../../backend/src/agent/gigs/pure";
 import { formatMoney } from "../format";
-import type { CandidateCall, CandidateDetail, CandidateStage, RoleCandidate } from "../gigs/candidates";
 import { planGigs, withLevel } from "../gigs/plan";
 import type { RoleActivityView, ShortlistItemView } from "../gigs/schemas";
 import type { GigWorkView } from "../gigs/work";
@@ -1484,14 +1486,23 @@ function deliverableView(d: MockDelivery): DeliverableView {
 		roleId: d.roleId,
 		roleTitle: db.roles.get(d.roleId)?.title ?? "",
 		status: d.status,
-		review: d.reviewedAt
-			? {
-					verdict: d.status === "ACCEPTED" ? "ACCEPT" : "REJECT",
-					reasons: d.reasons,
-					candidateReview: d.candidateReview,
-					reviewedAt: d.reviewedAt,
-				}
-			: null,
+		// Like the backend: a pre-accepted (waiting for the candidate) or escalated deliverable already shows the review.
+		review:
+			d.reviewedAt || d.confirmToken || d.escalated
+				? {
+						verdict:
+							d.status === "ACCEPTED"
+								? "ACCEPT"
+								: d.status === "REJECTED"
+									? "REJECT"
+									: d.escalated
+										? "ESCALATE"
+										: "ACCEPT",
+						reasons: d.reasons,
+						candidateReview: d.candidateReview,
+						reviewedAt: d.reviewedAt ?? d.submittedAt,
+					}
+				: null,
 		deliverable: d.payload,
 		payout: d.split
 			? {
@@ -1731,14 +1742,14 @@ function roleStatus(roleId: string): RoleStatusView {
 			wait("company", `You to decide on ${who} for an interview`, iso(), {
 				deliverableId: s.candidateId,
 				actions: [
-					{ id: "invite", label: "Invite to interview", deliverableId: s.candidateId },
-					{ id: "pass", label: "Pass", deliverableId: s.candidateId },
+					{ id: "invite", label: "Invite to interview", candidateId: s.candidateId },
+					{ id: "pass", label: "Pass", candidateId: s.candidateId },
 				],
 			});
 		if (s.decision === "INVITED")
 			wait("company", `You to confirm ${first(who)} came to the interview`, s.decidedAt ?? iso(), {
 				deliverableId: s.candidateId,
-				actions: [{ id: "attended", label: `Yes, ${first(who)} came`, deliverableId: s.candidateId }],
+				actions: [{ id: "attended", label: `Yes, ${first(who)} came`, candidateId: s.candidateId }],
 			});
 	}
 	for (const x of gigs) {
@@ -2110,6 +2121,9 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 			gigProcedures["roles.answer"]({ ...ctx, input: { deliverableId: d.id, take: accept } });
 			return { unsignedTx: null };
 		}
+		// Never decide twice: a paid or rejected deliverable stays as it is.
+		if (d.status !== "PENDING" && g.appeals.get(d.id)?.status !== "OPEN")
+			throw new MockError(409, "ALREADY_DECIDED", "This one is already decided.");
 		const reason = String(ctx.input.reasonText ?? "").trim();
 		if (!reason) throw new MockError(400, "REASON_REQUIRED", "Say why, so the recruiter can learn from it.");
 		return {
@@ -2454,14 +2468,23 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 				unsignedTx: registerTx(`${name} came to the interview`, () => {
 					entry.decision = "ATTENDED";
 					entry.decidedAt = iso();
+					const by = new Map<string, bigint>();
 					for (const d of g.deliveries.values()) {
 						const gig = g.gigs.get(d.gigId);
-						if (d.id === entry.sourceDeliveryId || gig?.candidate?.id === entry.candidateId)
-							releaseHeld(d, true);
+						if (d.id !== entry.sourceDeliveryId && gig?.candidate?.id !== entry.candidateId) continue;
+						if (d.laterStatus === "HELD") by.set(d.scout, (by.get(d.scout) ?? 0n) + (d.split?.later ?? 0n));
+						releaseHeld(d, true);
 					}
-					log(entry.roleId, "DECISION", `${name} came to the interview`, {
-						detail: "The held part of the screening payment went to the recruiter.",
-					});
+					const parts = [...by].map(([w, amt]) => `${first(displayName(w))} ${formatMoney(amt)}`).join(" · ");
+					log(
+						entry.roleId,
+						"DECISION",
+						`${name} came to the interview. Released ${parts || "nothing held"}`,
+						{
+							detail: "The parts held back until the interview went to the recruiters who did the work.",
+							signature: fakeSignature(),
+						},
+					);
 					save();
 				}),
 			};
@@ -2477,220 +2500,257 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 	},
 };
 
-// ---- candidates (company view) -------------------------------------------------------------------------
+// ---- candidates (company view, same shapes as roles.candidates / roles.candidate) --------------------------
 
-const companyNotes = new Map<string, string>();
+const companyNotes = new Map<string, { id: string; text: string; createdAt: string }[]>();
 const removed = new Set<string>();
+const callsAbout = (id: string) =>
+	[...g.deliveries.values()].filter((x) => g.gigs.get(x.gigId)?.candidate?.id === id);
+const callKind = (gig: MockGig | undefined) =>
+	gig?.type === "REFERENCE_CHECK"
+		? ("reference" as const)
+		: gig?.variant === "language"
+			? ("language" as const)
+			: ("screening" as const);
 
 function candidateStage(d: MockDelivery): CandidateStage {
 	const entry = g.shortlist.get(d.id);
-	if (d.status === "REJECTED" || entry?.decision === "PASSED") return "PASSED";
+	if (entry?.decision === "PASSED" || removed.has(d.id)) return "PASSED";
+	if (entry?.decision === "ATTENDED") return "ATTENDED";
+	if (entry?.decision === "INVITED") return "INVITED";
 	if (entry) return "SHORTLISTED";
-	const calls = [...g.deliveries.values()].filter(
-		(x) => g.gigs.get(x.gigId)?.candidate?.id === d.id && x.status === "ACCEPTED",
-	);
-	const done = (pred: (gig: MockGig) => boolean) =>
-		calls.some((x) => {
-			const gig = g.gigs.get(x.gigId);
-			return gig && pred(gig);
-		});
-	if (done((x) => x.type === "REFERENCE_CHECK")) return "REFERENCE";
-	if (done((x) => x.variant === "language")) return "LANGUAGE";
-	if (done((x) => x.type === "SCREENING_CALL")) return "SCREENED";
-	if (d.status === "ACCEPTED") return "CONFIRMED";
-	return "PROFILE";
+	if (d.status === "REJECTED") return "REJECTED";
+	if (d.status === "PENDING") return d.confirmToken ? "CONFIRMING" : "REVIEWING";
+	const open = [...g.gigs.values()].some((x) => x.candidate?.id === d.id && x.status === "OPEN");
+	return open || callsAbout(d.id).length ? "IN_CALLS" : "ACCEPTED";
 }
 
-function candidateRow(d: MockDelivery): RoleCandidate | null {
+function candidateRow(d: MockDelivery): CandidateRow | null {
 	if (d.payload.type !== "SOURCING") return null;
 	const card = candidateInfo(d.payload.name);
 	return {
-		id: d.id,
+		candidateId: d.id,
 		name: d.payload.name,
 		avatarUrl: card.avatarUrl,
-		title: [card.currentTitle, card.currentCompany].filter(Boolean).join(" at ") || null,
+		currentTitle: card.currentTitle,
+		currentCompany: card.currentCompany,
 		location: card.location,
 		profileUrl: d.payload.profileUrl,
 		score: d.candidateReview?.score ?? null,
 		stage: candidateStage(d),
 		sourcedBy: { wallet: d.scout, displayName: displayName(d.scout) },
-		updatedAt: d.reviewedAt ?? d.submittedAt,
+		confirmed: !!d.confirmToken && confirmationOf(d.confirmToken)?.status === "YES",
+		lastActivityAt: d.reviewedAt ?? d.submittedAt,
+		removed: removed.has(d.id),
 	};
 }
 
+function callDetail(x: MockDelivery): CallDetail | null {
+	const gig = g.gigs.get(x.gigId);
+	const p = x.payload;
+	if (!gig || p.type === "SOURCING") return null;
+	const recorded = hasRecording(gig.id);
+	const evidence =
+		p.type === "SCREENING_CALL"
+			? (p.evidence ?? (recorded ? "recording" : "self-reported"))
+			: recorded
+				? "recording"
+				: "self-reported";
+	const lines = transcriptOf(gig.id);
+	return {
+		deliverableId: x.id,
+		gigId: gig.id,
+		kind: callKind(gig),
+		recruiter: { wallet: x.scout, displayName: displayName(x.scout) },
+		status: x.status,
+		submittedAt: x.submittedAt,
+		questions: (gig.script ?? []).map((q) => {
+			const answer = p.answers.find((a) => a.questionId === q.id)?.answer ?? null;
+			const len = answer?.trim().length ?? 0;
+			return {
+				id: q.id,
+				question: q.question,
+				whatGoodLooksLike: q.whatGoodLooksLike,
+				answer,
+				check: x.reviewedAt
+					? {
+							missing: len < 12,
+							generic: len >= 12 && len < 40,
+							contradiction: false,
+							fit: Math.min(1, len / 160),
+						}
+					: null,
+			};
+		}),
+		recommendation: p.recommendation,
+		followUps: x.followUps ?? [],
+		recruiterNote: null,
+		assessedLevel: p.type === "SCREENING_CALL" ? (p.assessedLevel ?? null) : null,
+		referee: p.type === "REFERENCE_CHECK" ? { name: p.refereeName, relation: p.refereeRelation } : null,
+		evidence,
+		confirmation: null,
+		transcript: lines,
+		recordingUrl: null,
+		integrity: lines
+			? {
+					durationSeconds: (lines.at(-1)?.startSec ?? 0) + 30,
+					speakers: new Set(lines.map((l) => l.speaker)).size,
+					failed: [],
+				}
+			: null,
+		review: x.reviewedAt
+			? {
+					verdict: x.status === "ACCEPTED" ? "ACCEPT" : "REJECT",
+					reasons: x.reasons,
+					candidateReview: null,
+					reviewedAt: x.reviewedAt,
+				}
+			: null,
+		summary:
+			p.answers
+				.slice(0, 2)
+				.map((a) => a.answer)
+				.join(" ") || null,
+		score:
+			x.status === "ACCEPTED"
+				? Math.min(98, 70 + p.answers.filter((a) => a.answer.length > 60).length * 5)
+				: null,
+	};
+}
+
+const paymentOf = (x: MockDelivery) => {
+	if (!x.split) return null;
+	const gig = g.gigs.get(x.gigId);
+	return {
+		deliverableId: x.id,
+		kind: x.payload.type === "SOURCING" ? ("sourcing" as const) : callKind(gig),
+		recruiter: displayName(x.scout),
+		now: x.split.now.toString(),
+		later: x.split.later.toString(),
+		laterStatus: x.laterStatus,
+		signature: x.settlementTx,
+		explorerUrl: null,
+	};
+};
+
 function candidateDetail(d: MockDelivery): CandidateDetail | null {
 	const row = candidateRow(d);
-	const role = db.roles.get(d.roleId);
 	if (!row || d.payload.type !== "SOURCING") return null;
-	const criteria = role
-		? [...role.criteria.mustHave, ...role.criteria.niceToHave, ...role.criteria.dealBreakers]
-		: [];
-	const calls = [...g.deliveries.values()]
-		.filter((x) => g.gigs.get(x.gigId)?.candidate?.id === d.id)
-		.map((x): CandidateCall | null => {
-			const gig = g.gigs.get(x.gigId);
-			const p = x.payload;
-			if (!gig || p.type === "SOURCING") return null;
-			const script = gig.script ?? [];
-			const evidence =
-				p.type === "SCREENING_CALL"
-					? (p.evidence ?? (hasRecording(gig.id) ? "recording" : "self-reported"))
-					: null;
-			return {
-				kind:
-					p.type === "REFERENCE_CHECK" ? "REFERENCE" : gig.variant === "language" ? "LANGUAGE" : "SCREENING",
-				deliverableId: x.id,
-				recruiter: displayName(x.scout),
-				status: x.status,
-				score:
-					x.status === "ACCEPTED"
-						? Math.min(98, 70 + p.answers.filter((a) => a.answer.length > 60).length * 5)
-						: null,
-				summary:
-					p.answers
-						.slice(0, 2)
-						.map((a) => a.answer)
-						.join(" ") || null,
-				recommendation: p.recommendation,
-				evidence,
-				callConfirmed: evidence === "self-reported" ? (x.status === "PENDING" ? "PENDING" : "YES") : null,
-				level: p.type === "SCREENING_CALL" ? (p.assessedLevel ?? null) : null,
-				referee: p.type === "REFERENCE_CHECK" ? `${p.refereeName} · ${p.refereeRelation}` : null,
-				items: script.map((q) => {
-					const answer = p.answers.find((a) => a.questionId === q.id)?.answer ?? "";
-					return { question: q.question, answer, check: answer.trim().length >= 12 ? "ok" : "missing" };
-				}),
-				transcript: transcriptOf(gig.id),
-				recordingUrl: null,
-			};
-		})
-		.filter((c): c is CandidateCall => !!c);
-	const paidFor = [
-		d,
-		...[...g.deliveries.values()].filter((x) => g.gigs.get(x.gigId)?.candidate?.id === d.id),
-	];
-	const payments = paidFor.flatMap((x) => {
-		if (!x.split) return [];
-		const what = x.payload.type === "SOURCING" ? "Found and confirmed" : whatOf(x).replace(/ for .*/, "");
-		const rows: CandidateDetail["payments"] = [
-			{
-				to: displayName(x.scout),
-				what,
-				amount: x.split.now.toString(),
-				status: "PAID",
-				signature: x.settlementTx,
-			},
-		];
-		if (x.split.later > 0n)
-			rows.push({
-				to: displayName(x.scout),
-				what: `${what} · held part`,
-				amount: x.split.later.toString(),
-				status:
-					x.laterStatus === "RELEASED" ? "RELEASED" : x.laterStatus === "REFUNDED" ? "REFUNDED" : "HELD",
-				signature: null,
-			});
-		return rows;
-	});
 	const confirm = d.confirmToken ? confirmationFor(d.confirmToken) : null;
+	const answers = d.confirmToken ? confirmationOf(d.confirmToken) : null;
 	return {
 		...row,
-		note: d.payload.notes,
-		summary: d.candidateReview?.summary ?? null,
-		verdicts: (d.candidateReview?.verdicts ?? []).map((v) => ({
-			label: criteria.find((c) => c.id === v.criterionId)?.label ?? v.criterionId,
-			verdict: v.verdict,
-			reasoning: v.reasoning,
-		})),
-		confirmation: confirm ? { status: confirm.status, respondedAt: confirm.respondedAt } : null,
-		calls,
-		payments,
-		companyNote: companyNotes.get(d.id) ?? null,
-		decision: g.shortlist.get(d.id)?.decision ?? "NONE",
+		recruiterNote: d.payload.notes,
+		review: d.candidateReview,
+		confirmation: confirm,
+		candidateAnswers:
+			answers?.status === "YES"
+				? {
+						availability: answers.availability ?? null,
+						salaryExpectation: answers.salaryExpectation ?? null,
+						timeZone: null,
+					}
+				: null,
+		followUps: d.followUps ?? [],
+		calls: callsAbout(d.id)
+			.map(callDetail)
+			.filter((c): c is CallDetail => !!c),
+		payments: [d, ...callsAbout(d.id)].map(paymentOf).filter((p): p is NonNullable<typeof p> => !!p),
+		notes: companyNotes.get(d.id) ?? [],
 	};
 }
 
 const candidateProcedures: Record<string, (ctx: Ctx) => unknown> = {
-	"candidates.list": ({ input }) =>
+	"roles.candidates": ({ input }) =>
 		[...g.deliveries.values()]
-			.filter((d) => d.roleId === String(input.roleId) && d.type === "SOURCING" && !removed.has(d.id))
+			.filter(
+				(d) =>
+					d.roleId === String(input.roleId) &&
+					d.type === "SOURCING" &&
+					(input.includeRemoved || !removed.has(d.id)),
+			)
 			.map(candidateRow)
-			.filter((r): r is RoleCandidate => !!r)
+			.filter((r): r is CandidateRow => !!r && (!input.stage || r.stage === input.stage))
 			.sort((a, b) => (b.score ?? -1) - (a.score ?? -1)),
-	"candidates.byId": ({ input }) => {
+	"roles.candidate": ({ input }) => {
 		const d = g.deliveries.get(String(input.candidateId));
 		const detail = d && candidateDetail(d);
 		if (!detail) throw new MockError(404, "NOT_FOUND", "Candidate not found");
 		return detail;
 	},
-	"candidates.note": (ctx) => {
+	"roles.payments": ({ input }) =>
+		[...g.deliveries.values()]
+			.filter((x) => x.roleId === String(input.roleId) && x.split)
+			.map((x) => ({
+				deliverableId: x.id,
+				recruiter: displayName(x.scout),
+				gigTitle: g.gigs.get(x.gigId)?.title ?? "",
+				kind: x.payload.type === "SOURCING" ? ("sourcing" as const) : callKind(g.gigs.get(x.gigId)),
+				amount: (x.split?.now ?? 0n).toString(),
+				held: (x.split?.later ?? 0n).toString(),
+				heldStatus: x.laterStatus,
+				fees: ((x.split?.platformFee ?? 0n) + (x.split?.operatorFee ?? 0n)).toString(),
+				signature: x.settlementTx,
+				explorerUrl: null,
+				at: x.reviewedAt ?? x.submittedAt,
+			})),
+	"candidates.addNote": (ctx) => {
 		need(ctx);
-		companyNotes.set(String(ctx.input.candidateId), String(ctx.input.note ?? ""));
+		const note = { id: newId("note"), text: String(ctx.input.text), createdAt: iso() };
+		const id = String(ctx.input.candidateId);
+		companyNotes.set(id, [...(companyNotes.get(id) ?? []), note]);
+		return note;
+	},
+	"candidates.deleteNote": (ctx) => {
+		need(ctx);
+		for (const [id, list] of companyNotes)
+			companyNotes.set(
+				id,
+				list.filter((n) => n.id !== ctx.input.noteId),
+			);
 		return { ok: true };
 	},
-	/** The company overrides the agent: take or pass on a profile, put someone on the shortlist, or remove them. */
+	/** The company overrides the agent: take or pass on someone. */
 	"candidates.update": (ctx) => {
 		need(ctx);
 		const d = g.deliveries.get(String(ctx.input.candidateId));
 		if (d?.payload.type !== "SOURCING") throw new MockError(404, "NOT_FOUND", "Candidate not found");
 		const name = d.payload.name;
-		const reason = String(ctx.input.reason ?? "").trim();
-		switch (ctx.input.action) {
-			case "accept":
-				if (d.status === "ACCEPTED") break;
-				d.escalated = false;
-				if (d.status === "REJECTED") {
-					d.status = "PENDING";
-					d.reasons = [];
-					d.reviewedAt = null;
-				}
-				d.candidateReview ??= reviewFor(db.roles.get(d.roleId)?.criteria as Criteria, {
-					name,
-					profileUrl: d.payload.profileUrl,
-					notes: d.payload.notes,
-				});
-				preAccept(d);
-				log(d.roleId, "DECISION", `You took ${name} over the agent's call`, {
-					deliverableId: d.id,
-					detail: reason || undefined,
-				});
-				break;
-			case "pass": {
-				const entry = g.shortlist.get(d.id);
-				if (entry) {
-					entry.decision = "PASSED";
-					entry.decidedAt = iso();
-				} else if (d.status === "PENDING") reject(d, reason || "The company passed");
-				log(d.roleId, "DECISION", `You passed on ${name}`, {
-					deliverableId: d.id,
-					detail: reason || undefined,
-				});
-				break;
+		if (ctx.input.note)
+			gigProcedures["candidates.addNote"]({ ...ctx, input: { candidateId: d.id, text: ctx.input.note } });
+		if (ctx.input.stageOverride === "accept" && d.status !== "ACCEPTED") {
+			d.escalated = false;
+			if (d.status === "REJECTED") {
+				d.status = "PENDING";
+				d.reasons = [];
+				d.reviewedAt = null;
 			}
-			case "shortlist":
-				if (!g.shortlist.has(d.id))
-					g.shortlist.set(d.id, {
-						candidateId: d.id,
-						roleId: d.roleId,
-						sourceDeliveryId: d.id,
-						agentNote: d.candidateReview?.summary ?? "",
-						screening: null,
-						reference: null,
-						decision: "NONE",
-						decidedAt: null,
-					});
-				log(d.roleId, "SHORTLISTED", `You added ${name} to the shortlist`, { deliverableId: d.id });
-				break;
-			case "remove":
-				removed.add(d.id);
-				log(d.roleId, "NOTE", `You removed ${name} from this role`, {
-					deliverableId: d.id,
-					detail: reason || undefined,
-				});
-				break;
+			d.candidateReview ??= reviewFor(db.roles.get(d.roleId)?.criteria as Criteria, {
+				name,
+				profileUrl: d.payload.profileUrl,
+				notes: d.payload.notes,
+			});
+			preAccept(d);
+			log(d.roleId, "DECISION", `You took ${name} over the agent's call`, { deliverableId: d.id });
+		}
+		if (ctx.input.stageOverride === "pass") {
+			const entry = g.shortlist.get(d.id);
+			if (entry) {
+				entry.decision = "PASSED";
+				entry.decidedAt = iso();
+			} else if (d.status === "PENDING") reject(d, "The company passed");
+			log(d.roleId, "DECISION", `You passed on ${name}`, { deliverableId: d.id });
 		}
 		save();
-		return { ok: true };
+		return { unsignedTx: null };
+	},
+	"candidates.remove": (ctx) => {
+		const res = gigProcedures["candidates.update"]({
+			...ctx,
+			input: { candidateId: ctx.input.candidateId, stageOverride: "pass" },
+		});
+		removed.add(String(ctx.input.candidateId));
+		return res;
 	},
 };
 

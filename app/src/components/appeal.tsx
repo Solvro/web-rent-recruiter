@@ -14,7 +14,16 @@ const DAY = 86_400_000;
  * On a rejected delivery: the reasons, and once (within the appeal window) "Ask the company to review" with a
  * short note. Then the appeal's state: waiting, paid after a second look, or kept rejected with the company's note.
  */
-export function Appeal({ d, align = "start" }: { d: DeliverableView; align?: "start" | "end" }) {
+export function Appeal({
+	d,
+	align = "start",
+	showReasons = true,
+}: {
+	d: DeliverableView;
+	align?: "start" | "end";
+	/** Off where the page already shows the reasons. */
+	showReasons?: boolean;
+}) {
 	const qc = useQueryClient();
 	const [open, setOpen] = useState(false);
 	const [why, setWhy] = useState(false);
@@ -26,7 +35,7 @@ export function Appeal({ d, align = "start" }: { d: DeliverableView; align?: "st
 			void qc.invalidateQueries({ queryKey: ["gigs", "mine"] });
 		},
 	});
-	const reasons = d.review?.reasons ?? [];
+	const reasons = showReasons ? (d.review?.reasons ?? []) : [];
 	const reviewedAt = d.review?.reviewedAt ? Date.parse(d.review.reviewedAt) : Date.parse(d.submittedAt);
 	const canAppeal = !d.appeal && Date.now() - reviewedAt < APPEAL_WINDOW_DAYS * DAY;
 	const side = align === "end" ? "items-end text-right" : "items-start text-left";

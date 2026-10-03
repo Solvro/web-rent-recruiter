@@ -25,6 +25,7 @@ import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or } from "drizz
 import type { z } from "zod";
 import { canClaimGig, gigRequirements } from "../agent/gigs/index.ts";
 import { confirmationOf } from "../agent-runner/confirmations.ts";
+import { humanize } from "../agent-runner/narrate.ts";
 import { db, schema } from "../db/index.ts";
 import { publish } from "../events.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../http.ts";
@@ -436,7 +437,7 @@ export function toDeliverableReview(
 					/^(Accepted|Pre-accepted)\b|paid with a holdback/i.test(x)
 				),
 		)
-		.map((x) => (typeof x === "string" ? withQuestionText(x, gig) : x))
+		.map((x) => (typeof x === "string" ? humanize(withQuestionText(x, gig)) : x))
 		.filter((x, i, all): x is string => Boolean(x) && all.indexOf(x) === i);
 	const fromAction = (
 		{ accept: "ACCEPT", reject: "REJECT", escalate: "ESCALATE", follow_up: "FOLLOW_UP" } as Record<
