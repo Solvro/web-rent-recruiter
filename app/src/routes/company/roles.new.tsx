@@ -256,21 +256,28 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 
 	return (
 		<div ref={column} className="rd-page mx-auto max-w-2xl">
+			{/*
+			 * Two different controls in two different places: "Skip" (right) only while the post is being written,
+			 * "← Job description" (left) only once it is done. A double-click on Skip lands on empty space, never on
+			 * the control that throws the draft away.
+			 */}
 			<div className="flex h-6 items-center justify-between gap-4">
-				<p
-					className={cn("type-label text-muted-foreground", status && "shimmer")}
-					aria-live="polite"
-					style={{ visibility: status ? "visible" : "hidden" }}
-				>
-					{status ?? "Ready"}
-				</p>
-				<button
-					type="button"
-					onClick={stage === "post" ? reveal.skip : stream.reset}
-					className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-				>
-					{stage === "post" ? "Skip" : "Edit job description"}
-				</button>
+				{status ? (
+					<p className="type-label text-muted-foreground shimmer" aria-live="polite">
+						{status}
+					</p>
+				) : (
+					<EditJd onEdit={stream.reset} />
+				)}
+				{stage === "post" && (
+					<button
+						type="button"
+						onClick={reveal.skip}
+						className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+					>
+						Skip
+					</button>
+				)}
 			</div>
 
 			{/*
@@ -391,5 +398,24 @@ function Drafting({ jd, me, stream }: { jd: string; me: Me; stream: ReturnType<t
 				</div>
 			)}
 		</div>
+	);
+}
+
+/** Back to the job description. Ignores clicks for a moment after it appears, so no stray click lands on it. */
+function EditJd({ onEdit }: { onEdit: () => void }) {
+	const [armed, setArmed] = useState(false);
+	useEffect(() => {
+		const t = setTimeout(() => setArmed(true), 700);
+		return () => clearTimeout(t);
+	}, []);
+	return (
+		<button
+			type="button"
+			onClick={() => armed && onEdit()}
+			aria-disabled={!armed}
+			className="type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+		>
+			← Job description
+		</button>
 	);
 }

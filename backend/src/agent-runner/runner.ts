@@ -414,7 +414,11 @@ async function keeper() {
 		)
 		.limit(5);
 	for (const s of held)
-		await release(s.id).catch((err) => log.warn(`[keeper] release ${s.id}: ${(err as Error).message}`));
+		await release(s.id).catch((err) => {
+			// The chain's clock can trail ours by a few seconds: just retry on the next tick.
+			if (!/HoldbackWindowOpen/.test((err as Error).message))
+				log.warn(`[keeper] release ${s.id}: ${(err as Error).message}`);
+		});
 }
 
 /** Timeline row when a recruiter delivers (once per deliverable). */

@@ -281,8 +281,15 @@ export function resetMockData() {
 }
 
 let seeded: Promise<void> | null = null;
+/** The demo company never runs out: the mock store now outlives the tab, and many demo roles add up. */
+const DEMO_COMPANY_FUNDS = toBaseUnits(2500);
+function topUpDemoCompany() {
+	const hanna = db.profiles.get(PERSONAS.company.mockAddress);
+	if (hanna && hanna.balance < toBaseUnits(1000)) hanna.balance = DEMO_COMPANY_FUNDS;
+}
+
 export function ensureSeeded() {
-	seeded ??= restore() ? Promise.resolve() : seed().then(persist);
+	seeded ??= (restore() ? Promise.resolve() : seed().then(persist)).then(topUpDemoCompany);
 	return seeded;
 }
 
@@ -312,7 +319,7 @@ async function seed() {
 		company,
 		person(PERSONAS.company.displayName, "company", {
 			companyName: PERSONAS.company.companyName ?? null,
-			balance: toBaseUnits(1000),
+			balance: DEMO_COMPANY_FUNDS,
 		}),
 	);
 	profile(

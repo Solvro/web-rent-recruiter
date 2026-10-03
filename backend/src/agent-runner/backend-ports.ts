@@ -179,10 +179,27 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 			const candidates: CandidateView[] = subs
 				.filter((s) => s.deliverableType === "SOURCING" && s.status === "ACCEPTED")
 				.map((c) => {
-					const calls = subs.filter((s) => s.aboutCandidateId === c.id);
-					const accepted = (type: GigType) =>
-						calls.find((s) => s.deliverableType === type && s.status === "ACCEPTED");
-					const screening = accepted("SCREENING_CALL");
+					const calls = subs
+						.filter((s) => s.aboutCandidateId === c.id)
+						.sort((a, b) => a.submittedAt.getTime() - b.submittedAt.getTime());
+					// An accepted call passed, whoever accepted it (the company may have accepted an escalation).
+					const passedCall = (s: SubRow | undefined) => {
+						const call = s ? stored(s)?.call : undefined;
+						return call ? { ...call, verdict: "ACCEPT" as const } : undefined;
+					};
+					const variantOf = (s: SubRow) => gigs.find((g) => g.id === s.gigId)?.variant ?? "standard";
+					// Latest accepted of each kind; a language check is a SCREENING_CALL task with variant "language".
+					const accepted = (type: GigType, variant?: "standard" | "language") =>
+						calls
+							.filter(
+								(s) =>
+									s.deliverableType === type &&
+									s.status === "ACCEPTED" &&
+									(!variant || variantOf(s) === variant),
+							)
+							.at(-1);
+					const screening = accepted("SCREENING_CALL", "standard");
+					const language = accepted("SCREENING_CALL", "language");
 					const reference = accepted("REFERENCE_CHECK");
 					const gigAbout = (type: GigType) =>
 						gigs.some((g) => g.aboutCandidateId === c.id && g.type === type && g.status !== "CLOSED");
@@ -205,8 +222,9 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 						notes: c.notes,
 						stage,
 						...(stored(c)?.sourcing ? { sourcing: stored(c)?.sourcing as AgentReview } : {}),
-						...(screening && stored(screening)?.call ? { screening: stored(screening)?.call } : {}),
-						...(reference && stored(reference)?.call ? { reference: stored(reference)?.call } : {}),
+						...(passedCall(screening) ? { screening: passedCall(screening) } : {}),
+						...(passedCall(reference) ? { reference: passedCall(reference) } : {}),
+						...(passedCall(language) ? { language: passedCall(language) } : {}),
 					};
 				});
 			return {

@@ -252,11 +252,11 @@ function CandidateLine({ gig }: { gig: GigView }) {
 	if (!c) return null;
 	if (c.redacted || !c.name)
 		return (
-			<p className="flex items-center gap-2 text-muted-foreground">
-				<span className="grid size-6 place-items-center rounded-full bg-muted" aria-hidden>
+			<p className="flex items-start gap-2 text-muted-foreground">
+				<span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted" aria-hidden>
 					<UserRound className="size-3.5" />
 				</span>
-				{[c.summary.headline, c.summary.city].filter(Boolean).join(" · ")}
+				<span className="min-w-0">{[c.summary.headline, c.summary.city].filter(Boolean).join(" · ")}</span>
 			</p>
 		);
 	return (
@@ -314,13 +314,13 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 					<span className="type-label text-muted-foreground">{info.unit}</span>
 					{raisedFrom !== null && (
 						<span className="mt-1 block type-label text-muted-foreground">
-							Price went up · was <span className="line-through">{formatMoney(raisedFrom)}</span>
+							was <span className="line-through">{formatMoney(raisedFrom)}</span>
 						</span>
 					)}
 				</p>
 			</div>
 			{chips.length > 0 && (
-				<div className="flex flex-wrap gap-1.5 pl-14">
+				<div className="flex flex-wrap gap-1.5 sm:pl-14">
 					{chips.map((c) => (
 						<span key={c} className="rounded-full bg-muted px-2.5 py-0.5 type-label text-muted-foreground">
 							{c}
@@ -328,7 +328,7 @@ function GigCard({ gig, earn, place }: { gig: GigView; earn: bigint; place: stri
 					))}
 				</div>
 			)}
-			<div className="flex flex-wrap items-center justify-between gap-4 pl-14">
+			<div className="flex flex-wrap items-center justify-between gap-4 sm:pl-14">
 				{myScore !== null && myScore > 0 && (
 					<span className="type-label text-muted-foreground">
 						You: {TYPE_WORD[gig.type]} · {standing(myScore)}

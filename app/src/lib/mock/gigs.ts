@@ -1198,9 +1198,9 @@ export function ensureGigs() {
 		if (fde && src) {
 			const SEEDED_NOTES: Record<string, string> = {
 				"Marek Zieliński":
-					"Five years shipping computer-vision pipelines at a robotics startup, spent half his time on customer sites getting deployments running. Open to Zürich, wants a hands-on customer role.",
+					"Field engineer at a robotics company: deployed on-prem edge hardware with Jetson GPUs and integrated cameras, sensors and robots with their software on customer sites. Customer-facing deployment role, EU citizen, happy to travel 50%. Early-stage startup experience, open to Zürich.",
 				"Julia Kowalska":
-					"Solutions engineer turned developer: Python and TypeScript, led on-site integrations for three industrial clients. Told me she's ready to move this quarter.",
+					"Solutions engineer at an IoT platform: integrated cameras and sensors with software, deployed on-prem edge hardware for industrial clients, customer-facing on site, travels 50%. EU citizen, speaks German, early-stage startup experience. Ready to move this quarter.",
 			};
 			for (const [i, name] of ["Marek Zieliński", "Julia Kowalska"].entries()) {
 				const profileUrl = `https://linkedin.com/in/${name.toLowerCase().replace(/[^a-z]+/g, "-")}-fde-demo`;
@@ -1515,7 +1515,9 @@ export function recruiterProfile(wallet: string) {
 	const seededHistory = HISTORY[wallet] ?? { skills: [], accepted: 0, decided: 0, screenings: 0 };
 	const own = selfSkills()[wallet];
 	// Operator-verified skills aren't the recruiter's to remove.
-	const verified = db.profiles.get(wallet)?.operator ? seededHistory.skills.filter((x) => x === "tech-screener") : [];
+	const verified = db.profiles.get(wallet)?.operator
+		? seededHistory.skills.filter((x) => x === "tech-screener")
+		: [];
 	const h = own ? { ...seededHistory, skills: [...new Set([...verified, ...own])] } : seededHistory;
 	const mine = [...g.deliveries.values()].filter((d) => d.scout === wallet && d.status !== "PENDING");
 	const ok = (type?: GigType) =>
