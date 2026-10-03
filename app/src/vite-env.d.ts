@@ -10,4 +10,6 @@ interface ImportMetaEnv {
 	readonly VITE_DEMO_COMPANY_SECRET?: string;
 	readonly VITE_DEMO_SCOUT_SECRET?: string;
 	readonly VITE_DEMO_SCOUT2_SECRET?: string;
+	/** Public origin for candidate links (a tunnel or the deployed app), e.g. https://x.trycloudflare.com */
+	readonly VITE_PUBLIC_APP_URL?: string;
 }

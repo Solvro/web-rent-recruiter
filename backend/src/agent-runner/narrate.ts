@@ -2,7 +2,7 @@
  * The company's thread, in plain words: one line per decision, sentence case, no raw verdict tokens.
  * "Accepted Karolina's screening (96) and paid Ola $22.68." The agent's own text becomes the line's detail.
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.ts";
 
 const TOKENS: Record<string, string> = {
@@ -49,6 +49,16 @@ export async function decisionLine(
 		.where(eq(schema.submissions.id, id));
 	if (!row) return null;
 	const { sub, gig, scout } = row;
+	// A decided sourced candidate gets one line: drop the earlier "X sourced Y".
+	if (sub.deliverableType === "SOURCING" && kind !== "escalated")
+		await db
+			.delete(schema.agentActivity)
+			.where(
+				and(
+					eq(schema.agentActivity.deliverableId, sub.id),
+					eq(schema.agentActivity.kind, "DELIVERY_RECEIVED"),
+				),
+			);
 	const r = sub.agentReview as { sourcing?: { score?: number }; call?: { score?: number } } | null;
 	const score = r?.sourcing?.score ?? r?.call?.score;
 	const s = score !== undefined ? ` (${score})` : "";
@@ -69,7 +79,9 @@ export async function decisionLine(
 	}
 	if (kind === "rejected")
 		return {
-			line: sourcing ? `Passed on ${what}${s}: ${why}.` : `Sent back ${who}'s notes on ${what}${s}: ${why}.`,
+			line: sourcing
+				? `Passed on ${what}${s} from ${who}: ${why}.`
+				: `Sent back ${who}'s notes on ${what}${s}: ${why}.`,
 		};
 	return { line: `Asked you about ${what}${s}: ${why}.` };
 }

@@ -33,7 +33,7 @@ export async function propose(ports: RoleAgentPorts, proposal: ChangeProposal): 
 	const { proposalId } = await ports.proposeChange(proposal);
 	return {
 		ok: true,
-		message: `I've put that in your inbox: Yes or No. ${proposal.summary}`,
+		message: `I've put it in the card above the message box: Yes or No. ${proposal.summary}`,
 		data: { proposed: true, proposalId },
 	};
 }

@@ -78,12 +78,21 @@ export async function preAccept(submissionId: string): Promise<{ status: string;
 	const kind = confirmationKind(sub, gig) ?? "interest";
 	const score = (sub.agentReview as { sourcing?: { score?: number } } | null)?.sourcing?.score ?? null;
 	const token = randomBytes(24).toString("base64url");
-	const link = `${env.appUrl}/c/${token}`;
+	const link = `${env.publicAppUrl}/c/${token}`;
 	const expiresAt = new Date(sub.reviewDeadline.getTime() - MARGIN_MS);
 	await db
 		.insert(schema.candidateConfirmations)
 		.values({ tokenHash: sha(token), submissionId, expiresAt, link, kind });
 	const firstName = sub.candidateName.split(" ")[0];
+	// One line per candidate: this pre-accept line replaces "X sourced Y" (it says who delivered whom).
+	await db
+		.delete(schema.agentActivity)
+		.where(
+			and(
+				eq(schema.agentActivity.deliverableId, submissionId),
+				eq(schema.agentActivity.kind, "DELIVERY_RECEIVED"),
+			),
+		);
 	await logActivity(
 		role.id,
 		"DELIVERY_ACCEPTED",

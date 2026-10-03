@@ -13,14 +13,26 @@ import { bearer, walletFromToken } from "../auth.ts";
 import { type AppError, toAppError } from "../http.ts";
 import { noteDevice } from "../lib/devices.ts";
 
+/**
+ * The real client IP. Behind the app's dev proxy (and a cloudflared tunnel) every request comes from loopback, so
+ * only then the forwarded headers are trusted: CF-Connecting-IP first, then the first X-Forwarded-For hop.
+ */
+export function clientIp(socketIp: string, headers: Record<string, string | string[] | undefined>) {
+	const loopback = socketIp === "127.0.0.1" || socketIp === "::1" || socketIp === "::ffff:127.0.0.1";
+	if (!loopback) return socketIp;
+	const one = (h: string | string[] | undefined) => (Array.isArray(h) ? h[0] : h)?.split(",")[0]?.trim();
+	return one(headers["cf-connecting-ip"]) || one(headers["x-forwarded-for"]) || socketIp;
+}
+
 /** The caller's wallet comes ONLY from a verified SIWS session (Authorization: Bearer, or SSE connectionParams). */
 export async function createContext({ req, info }: CreateFastifyContextOptions) {
 	const token =
 		bearer(req.headers.authorization) ?? (info.connectionParams?.token as string | undefined) ?? null;
 	const wallet = await walletFromToken(token);
 	const ua = req.headers["user-agent"] ?? null;
-	if (wallet) noteDevice(wallet, req.ip, ua);
-	return { wallet, token, log: req.log, ip: req.ip, ua };
+	const ip = clientIp(req.ip, req.headers);
+	if (wallet) noteDevice(wallet, ip, ua);
+	return { wallet, token, log: req.log, ip, ua };
 }
 export type Context = Awaited<ReturnType<typeof createContext>>;
 

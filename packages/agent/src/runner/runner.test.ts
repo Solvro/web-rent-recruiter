@@ -254,7 +254,7 @@ describe("company chat never changes anything (proposals)", () => {
 		const out = (await tools.postExtraGig.execute?.({ count: 3, focus: "Go" }, {} as never)) as unknown as {
 			data: { message: string };
 		};
-		expect(out.data.message).toMatch(/inbox: Yes or No/);
+		expect(out.data.message).toMatch(/card above the message box: Yes or No/);
 		expect(snapshot()).toBe(before); // nothing changed
 		const [proposal] = mem.state.proposals;
 		expect(proposal?.summary).toBe(

@@ -11,6 +11,7 @@ import { firstName, formatMoney } from "@/lib/format";
 import { GIG_TYPES, kindOf } from "@/lib/gig-types";
 import { useMyWork } from "@/lib/gigs/api";
 import type { DeliverableView, GigView } from "@/lib/gigs/schemas";
+import { publicLink } from "@/lib/public-url";
 import { typedClient } from "@/lib/trpc";
 import { useTitle } from "@/lib/use-title";
 import { useWallet } from "@/lib/wallet";
@@ -149,9 +150,9 @@ function Row({ work: d }: { work: DeliverableView }) {
 			</div>
 			<div className="relative z-10 flex max-w-[48%] shrink-0 flex-col items-end gap-1.5 text-right">
 				<WorkStatus d={d} person={person} />
-				{confirmUrl && <CopyButton text={confirmUrl} />}
+				{confirmUrl && <CopyButton text={publicLink(confirmUrl)} />}
 				{callLink?.url && (
-					<CopyButton text={callLink.url} label={`Copy call check for ${firstName(person)}`} />
+					<CopyButton text={publicLink(callLink.url)} label={`Copy call check for ${firstName(person)}`} />
 				)}
 			</div>
 		</li>

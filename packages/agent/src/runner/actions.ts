@@ -127,8 +127,9 @@ export async function postInitialGigs(ports: RoleAgentPorts): Promise<ActionResu
 	const plan = await planGigs({ criteria: role.criteria, title: role.title, budget: role.budget.available });
 	await ports.log({
 		kind: "plan",
-		message: plan.rationale,
-		data: { committed: usd(plan.committed), reserve: usd(plan.reserve) },
+		message: planSentence(plan),
+		// The full breakdown stays available as the line's detail.
+		data: { committed: usd(plan.committed), reserve: usd(plan.reserve), more: plan.rationale },
 	});
 	const posted: string[] = [];
 	const now = plan.gigs.filter((g) => g.when === "now");
@@ -147,6 +148,28 @@ export async function postInitialGigs(ports: RoleAgentPorts): Promise<ActionResu
 		message: `Posted ${posted.length} gig(s). Planned later: ${plan.gigs.filter((g) => g.when !== "now").length} call gig(s).`,
 		data: { rationale: plan.rationale, gigIds: posted },
 	};
+}
+
+/** One line for the company's thread: "Planned: 17 profiles, 3 screening calls, an English language check and a reference ($30 in reserve)." */
+function planSentence(plan: Awaited<ReturnType<typeof planGigs>>): string {
+	const count = (pick: (g: (typeof plan.gigs)[number]) => boolean) =>
+		plan.gigs.filter(pick).reduce((n, g) => n + g.maxDeliverables, 0);
+	const profiles = count((g) => g.taskType === "SOURCING");
+	const screenings = count((g) => g.taskType === "SCREENING_CALL" && g.variant !== "language");
+	const languages = plan.gigs.filter((g) => g.variant === "language");
+	const references = count((g) => g.taskType === "REFERENCE_CHECK");
+	const lang = languages[0]?.title.match(/^(\S+) language check/i)?.[1];
+	const parts = [
+		profiles ? `${profiles} profile${profiles === 1 ? "" : "s"}` : null,
+		screenings ? `${screenings} screening call${screenings === 1 ? "" : "s"}` : null,
+		languages.length
+			? `${lang ? `${/^[AEIOU]/i.test(lang) ? "an" : "a"} ${lang}` : "a"} language check`
+			: null,
+		references ? (references === 1 ? "a reference" : `${references} references`) : null,
+	].filter((x): x is string => Boolean(x));
+	const list =
+		parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : (parts[0] ?? "sourcing");
+	return `Planned: ${list} (${usd(plan.reserve)} in reserve).`;
 }
 
 /** Reviews one pending deliverable and stores the review plus the policy decision. */

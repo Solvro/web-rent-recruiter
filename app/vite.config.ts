@@ -16,6 +16,8 @@ export default defineConfig({
 	],
 	server: {
 		port: 5173,
+		// The demo shows candidate links on a real phone through a Cloudflare quick tunnel.
+		allowedHosts: [".trycloudflare.com"],
 		// Backend dev server (backend/.env PORT). Override with API_PROXY_TARGET.
 		proxy: { "/trpc": { target: BACKEND, changeOrigin: true } },
 	},
@@ -23,6 +25,7 @@ export default defineConfig({
 	preview: {
 		port: 4173,
 		strictPort: true,
+		allowedHosts: [".trycloudflare.com"],
 		proxy: { "/trpc": { target: BACKEND, changeOrigin: true } },
 	},
 });

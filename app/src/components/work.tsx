@@ -8,12 +8,14 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Chip, Disclosure } from "@/components/bits";
 import { CopyButton } from "@/components/copy";
+import { QrToggle } from "@/components/qr";
 import { API_MOCK } from "@/lib/env";
 import { errorMessage } from "@/lib/errors";
 import { firstName, formatMoney, personInTitle } from "@/lib/format";
 import { GIG_TYPES, type GigKind } from "@/lib/gig-types";
 import { kindOfWork, type WorkKind } from "@/lib/gigs/work";
 import { inCents } from "@/lib/payout";
+import { publicLink } from "@/lib/public-url";
 import { typedClient } from "@/lib/trpc";
 
 export const KIND_OF: Record<WorkKind, GigKind> = {
@@ -125,7 +127,8 @@ export function CallChecks({
 						<span className="type-label">
 							Send {who} this link: did the {c.callKind} with {firstName(c.recruiterName)} happen?
 						</span>
-						<CopyButton text={c.url} className="text-accent-foreground" />
+						<CopyButton text={publicLink(c.url)} className="text-accent-foreground" />
+						<QrToggle text={publicLink(c.url)} />
 					</li>
 				) : (
 					<li key={c.deliverableId} className="type-label text-muted-foreground">
@@ -287,20 +290,22 @@ export function SendLink({
 	});
 	const c = d.confirmation;
 	if (!c?.url || c.status !== "PENDING") return null;
+	const url = publicLink(c.url);
 	const who = firstName(person);
 	const until = new Date(c.expiresAt).toLocaleString("en-GB", {
 		weekday: "short",
 		hour: "2-digit",
 		minute: "2-digit",
 	});
-	const message = `Hi ${who}, I came across a ${role.title} role${role.company ? ` at ${role.company}` : ""} that I think fits you well. If you're open to a 30-minute call about it, you can say yes here (one tap, no sign-up): ${c.url}`;
+	const message = `Hi ${who}, I came across a ${role.title} role${role.company ? ` at ${role.company}` : ""} that I think fits you well. If you're open to a 30-minute call about it, you can say yes here (one tap, no sign-up): ${url}`;
 	return (
 		<div className="w-full space-y-3 rounded-3xl bg-accent p-5 text-left text-accent-foreground">
-			<p className="break-all type-label">{c.url}</p>
+			<p className="break-all type-label">{url}</p>
 			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-				<CopyButton text={c.url} className="text-accent-foreground" />
+				<CopyButton text={url} className="text-accent-foreground" />
 				<CopyButton text={message} label="Copy message with link" className="text-accent-foreground" />
 			</div>
+			<QrToggle text={url} />
 			<Disclosure label="See the message">
 				<p className="rounded-2xl bg-card p-3 text-foreground">{message}</p>
 			</Disclosure>

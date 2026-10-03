@@ -215,7 +215,7 @@ export async function resendConfirmation(wallet: string, deliverableId: string) 
 	if (row.c.status !== "PENDING" || row.c.expiresAt < new Date())
 		throw new HttpError(409, "LINK_EXPIRED", "This confirmation isn't pending any more.");
 	const token = randomBytes(24).toString("base64url");
-	const link = `${env.appUrl}/c/${token}`;
+	const link = `${env.publicAppUrl}/c/${token}`;
 	await db
 		.update(schema.candidateConfirmations)
 		.set({ tokenHash: createHash("sha256").update(token).digest("hex"), link })

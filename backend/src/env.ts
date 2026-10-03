@@ -15,7 +15,13 @@ export const env = {
 	repoRoot,
 	port: Number(process.env.PORT ?? 8788),
 	host: process.env.HOST ?? "0.0.0.0",
-	corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173").split(","),
+	corsOrigins: [
+		...(process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173").split(","),
+		// The public app (e.g. a cloudflared tunnel for the on-stage phone) may call the API too.
+		...(process.env.PUBLIC_APP_URL ? [process.env.PUBLIC_APP_URL.replace(/\/$/, "")] : []),
+	]
+		.map((o) => o.trim())
+		.filter(Boolean),
 	/** Unset → embedded PGlite in backend/.data (no Docker needed). */
 	databaseUrl: process.env.DATABASE_URL || null,
 	pgliteDir: resolve(repoRoot, "backend/.data/pglite"),
@@ -76,6 +82,14 @@ export const env = {
 	/** Sign-In-With-Solana message fields (what the wallet shows the user). */
 	/** The app, for links we hand out (candidate confirmation /c/<token>). */
 	appUrl: (process.env.APP_URL ?? "http://localhost:5173").replace(/\/$/, ""),
+	/**
+	 * Where candidates open their /c links: a public URL (e.g. a cloudflared tunnel) when the app itself runs on
+	 * localhost and the candidate is on a phone. Defaults to APP_URL.
+	 */
+	publicAppUrl: (process.env.PUBLIC_APP_URL ?? process.env.APP_URL ?? "http://localhost:5173").replace(
+		/\/$/,
+		"",
+	),
 	authDomain: process.env.AUTH_DOMAIN ?? "scout.app",
 	authUri: process.env.AUTH_URI ?? "https://scout.app",
 	indexerEnabled: process.env.INDEXER !== "off",

@@ -30,6 +30,7 @@ import { earnFor, gigApi, splitFor, useGig, useMyWork, useRecording } from "@/li
 import { callApi } from "@/lib/gigs/calls";
 import type { GigView } from "@/lib/gigs/schemas";
 import { useWork } from "@/lib/gigs/work";
+import { publicLink } from "@/lib/public-url";
 import { useTRPCClient } from "@/lib/trpc";
 import { useTitle } from "@/lib/use-title";
 import { useTransact } from "@/lib/use-transact";
@@ -142,7 +143,7 @@ function SentHere({ work }: { work: DeliverableView[] }) {
 							</Link>
 							<span className="relative z-10 flex flex-col items-end gap-1">
 								<WorkStatus d={d} person={person} />
-								{url && <CopyButton text={url} />}
+								{url && <CopyButton text={publicLink(url)} />}
 							</span>
 						</li>
 					);

@@ -4,6 +4,7 @@
  */
 import type { CandidateConfirmation } from "@scout/shared";
 import type { CandidateConfirmInput, CandidateConfirmView } from "../gigs/confirm";
+import { publicBase } from "../public-url";
 import { MockError } from "./gigs";
 
 type Status = CandidateConfirmation["status"];
@@ -36,7 +37,7 @@ function put(entry: Stored) {
 	}
 }
 
-export const confirmUrl = (token: string) => `${location.origin}/c/${token}`;
+export const confirmUrl = (token: string) => `${publicBase()}/c/${token}`;
 
 export function createConfirmation(card: Omit<CandidateConfirmView, "status">) {
 	const token = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>

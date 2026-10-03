@@ -491,6 +491,10 @@ check(
 );
 check((await balance(asSourcer)) <= toBaseUnits(20), "no payout before the candidate confirms");
 check(
+	!process.env.PUBLIC_APP_URL || Boolean(pre?.confirmation?.url?.startsWith(process.env.PUBLIC_APP_URL)),
+	`the candidate's link uses the public app URL (${pre?.confirmation?.url?.split("/c/")[0]})`,
+);
+check(
 	Date.parse(pre?.confirmation?.expiresAt ?? "0") - Date.now() >
 		(process.env.DEMO_FAST === "1" ? 15 * 60_000 : 0),
 	`the candidate has until ${pre?.confirmation?.expiresAt} to confirm`,
@@ -1309,6 +1313,15 @@ check(
 		(i) => /no recording/i.test(`${i.message} ${i.detail ?? ""}`) && i.message.includes("reference"),
 	),
 	"the recorded reference isn't described as unrecorded",
+);
+check(
+	activity.items.some((i) => /^Planned: \d+ profiles?, /.test(i.message)),
+	'the plan line is one short sentence ("Planned: 17 profiles, …")',
+);
+check(
+	!activity.items.some((i) => i.kind === "DELIVERY_RECEIVED" && i.deliverableId === karolina) &&
+		activity.items.some((i) => i.deliverableId === karolina && /delivered Karolina Mazurek/.test(i.message)),
+	'one line per sourced candidate (no separate "sourced" line once decided)',
 );
 check(
 	activity.items
