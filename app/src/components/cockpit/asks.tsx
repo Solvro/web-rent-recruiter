@@ -127,8 +127,13 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 	const raw = plain(w.what.replace(/^You to /, "").replace(/\s*\(\d+\)$/, ""));
 	const proposal = w.actions?.some((x) => x.id === "approve_proposal");
 	const [head, ...rest] = proposal ? [raw] : raw.split(/:\s+/);
-	const title = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
-	const reasonText = rest.length && title !== raw ? rest.join(": ") : null;
+	const inviting = w.actions?.some((x) => x.id === "invite");
+	const baseTitle = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
+	// "Decide on Karolina: invite or pass" → the buttons already say that; name the decision instead.
+	const title = inviting && !/interview/i.test(baseTitle) ? `${baseTitle} for an interview` : baseTitle;
+	const restText = rest.length && baseTitle !== raw ? rest.join(": ") : null;
+	const reasonText =
+		restText && !/^(invite|pass|accept|reject|yes|no)\b[\w\s,]*$/i.test(restText) ? restText : null;
 	const fullDetail = why?.detail && !raw.includes(plain(why.detail).slice(0, 40)) ? plain(why.detail) : null;
 	// "From Andreea Popescu. Karolina …" → who sourced them on a quiet line of its own, the reasoning as prose.
 	const from = fullDetail?.match(/^From ([^.]+)\.\s*/);

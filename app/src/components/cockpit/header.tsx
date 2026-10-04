@@ -122,7 +122,9 @@ const spentOf = (b: RoleStatus["budget"]) => BigInt(b.spent ?? BigInt(b.paid) + 
 function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"] }) {
 	const spent = spentOf(budget);
 	const closed = role.status === "CLOSED";
-	// Spent + set aside + uncommitted = the budget, so the lines below always add up to the total.
+	// Deposits forfeited by recruiters sit in "not yet used" on top of the budget: shown, so the lines add up.
+	const kept = BigInt(budget.bondsForfeited ?? "0");
+	// Spent + set aside + uncommitted − kept deposits = the budget, so the lines below always add up to the total.
 	const rows: [string, bigint, string?][] = [
 		[
 			"Spent on accepted work",
@@ -164,6 +166,17 @@ function Spent({ role, budget }: { role: RoleDetail; budget: RoleStatus["budget"
 							{note && <p className="type-label text-muted-foreground">{note}</p>}
 						</div>
 					))}
+					{kept > 0n && (
+						<div>
+							<div className="flex justify-between gap-4">
+								<dt className="text-muted-foreground">Kept from rejected work</dt>
+								<dd className="tabular">−{formatMoney(kept)}</dd>
+							</div>
+							<p className="type-label text-muted-foreground">
+								recruiters' deposits on work your agent didn't accept; it adds to your budget
+							</p>
+						</div>
+					)}
 					<div className="flex justify-between gap-4 border-t pt-2">
 						<dt>Budget</dt>
 						<dd className="tabular">{formatMoney(budget.deposited)}</dd>

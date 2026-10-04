@@ -103,23 +103,26 @@ async function rowsFor(roleId: string, subs: SubRow[]): Promise<CandidateRow[]> 
 		const myCalls = calls.filter((c) => c.aboutCandidateId === sub.id);
 		const myGigs = gigs.filter((g) => g.aboutCandidateId === sub.id);
 		const stage: CandidateStage =
-			sub.status === "PENDING"
-				? conf?.status === "PENDING"
-					? "CONFIRMING"
-					: "REVIEWING"
-				: sub.status === "REJECTED"
-					? "REJECTED"
-					: sub.passedAt || item?.decision === "PASSED"
-						? "PASSED"
-						: item?.decision === "ATTENDED"
-							? "ATTENDED"
-							: item?.decision === "INVITED"
-								? "INVITED"
-								: item
-									? "SHORTLISTED"
-									: myCalls.length || myGigs.some((g) => g.status === "OPEN" || g.status === "PAUSED")
-										? "IN_CALLS"
-										: "ACCEPTED";
+			// The company's own "pass" (or remove) is what it sees, even when it rejected a pending candidate on-chain.
+			sub.removed || sub.passedAt
+				? "PASSED"
+				: sub.status === "PENDING"
+					? conf?.status === "PENDING"
+						? "CONFIRMING"
+						: "REVIEWING"
+					: sub.status === "REJECTED"
+						? "REJECTED"
+						: sub.passedAt || item?.decision === "PASSED"
+							? "PASSED"
+							: item?.decision === "ATTENDED"
+								? "ATTENDED"
+								: item?.decision === "INVITED"
+									? "INVITED"
+									: item
+										? "SHORTLISTED"
+										: myCalls.length || myGigs.some((g) => g.status === "OPEN" || g.status === "PAUSED")
+											? "IN_CALLS"
+											: "ACCEPTED";
 		const times = [
 			sub.submittedAt,
 			...myCalls.map((c) => c.submittedAt),

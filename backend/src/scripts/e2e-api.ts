@@ -1159,7 +1159,8 @@ const before = await Promise.all([asSourcer, asScreener, asReferee].map(balance)
 			const item = (await asCompany.roles.shortlist.query({ roleId })).find(
 				(x) => x.candidateId === karolina,
 			);
-			return item?.decision === "NONE" && /Shortlist ready/.test(st.now.text);
+			// The header names the company's own decision first ("Waiting for you: decide on Karolina…").
+			return item?.decision === "NONE" && /Shortlist ready|decide on Karolina/i.test(st.now.text);
 		},
 		30_000,
 	);
