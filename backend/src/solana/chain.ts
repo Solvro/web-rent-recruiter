@@ -260,3 +260,19 @@ export async function scoutChainInfo(scout: Address): Promise<{
 }
 
 export const enumName = (v: string | { __kind: string }) => (typeof v === "string" ? v : v.__kind);
+
+/**
+ * Wall clock minus the chain's clock, in ms (cached 30 s). On-chain deadlines are in chain time; a local validator
+ * can drift minutes behind, so deadlines shown to people are shifted by this.
+ */
+export async function chainClockOffsetMs(): Promise<number> {
+	return cached("chain-clock-offset", 30_000, async () => {
+		try {
+			const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
+			const t = await rpc.getBlockTime(slot).send();
+			return t ? Date.now() - Number(t) * 1000 : 0;
+		} catch {
+			return 0;
+		}
+	});
+}

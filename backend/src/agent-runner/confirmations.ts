@@ -16,7 +16,7 @@ import { env } from "../env.ts";
 import { publish } from "../events.ts";
 import { HttpError } from "../http.ts";
 import { applyConfirmedTx } from "../indexer/apply-tx.ts";
-import { agentSigner } from "../solana/chain.ts";
+import { agentSigner, chainClockOffsetMs } from "../solana/chain.ts";
 import { isHosted } from "../solana/gatekeeper.ts";
 import { acceptIx, rejectIx } from "../solana/scout.ts";
 import { sendAsRelayer } from "../solana/tx.ts";
@@ -79,7 +79,8 @@ export async function preAccept(submissionId: string): Promise<{ status: string;
 	const score = (sub.agentReview as { sourcing?: { score?: number } } | null)?.sourcing?.score ?? null;
 	const token = randomBytes(24).toString("base64url");
 	const link = `${env.publicAppUrl}/c/${token}`;
-	const expiresAt = new Date(sub.reviewDeadline.getTime() - MARGIN_MS);
+	// review_deadline is chain time: turn it into wall time before people (and the keeper) see it.
+	const expiresAt = new Date(sub.reviewDeadline.getTime() + (await chainClockOffsetMs()) - MARGIN_MS);
 	await db
 		.insert(schema.candidateConfirmations)
 		.values({ tokenHash: sha(token), submissionId, expiresAt, link, kind });
