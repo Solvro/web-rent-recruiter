@@ -581,8 +581,20 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 							),
 						)
 				: [];
+			const callGigs = await db.select().from(schema.gigs).where(eq(schema.gigs.roleId, roleId));
+			const isLanguage = (gigId: string | null) =>
+				callGigs.find((g) => g.id === gigId)?.variant === "language";
+			const callOf = (candidateId: string, type: GigType, language = false) =>
+				subs
+					.filter(
+						(s) =>
+							s.sub.aboutCandidateId === candidateId &&
+							s.sub.deliverableType === type &&
+							isLanguage(s.sub.gigId) === language,
+					)
+					.at(-1);
 			const callSummary = (candidateId: string, type: GigType) => {
-				const r = subs.find((s) => s.sub.aboutCandidateId === candidateId && s.sub.deliverableType === type);
+				const r = callOf(candidateId, type);
 				if (!r) return null;
 				const review = r.sub.agentReview as unknown as StoredReview | null;
 				const payload = (r.sub.payload ?? {}) as Record<string, unknown>;
@@ -592,11 +604,63 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 					recruiter: r.scout?.displayName ?? "Recruiter",
 				};
 			};
+			const role = await loadRole();
+			const sourced = await db
+				.select()
+				.from(schema.submissions)
+				.where(
+					inArray(
+						schema.submissions.id,
+						entries.map((e) => e.id).concat(["00000000-0000-0000-0000-000000000000"]),
+					),
+				);
+			/**
+			 * The company's one-glance note, from what passed: the must-haves met, then the calls.
+			 * "Strong match: production Rust, Solana programs on mainnet, DeFi. Screening 97, English C1, reference positive."
+			 */
+			const noteFor = (candidateId: string, fallback: string) => {
+				const src = sourced.find((x) => x.id === candidateId);
+				const review = (src?.agentReview as { sourcing?: AgentReview } | null)?.sourcing;
+				const met = (review?.verdicts ?? [])
+					.filter((v) => v.verdict === "MET")
+					.map((v) => role.criteria.mustHave.find((c) => c.id === v.criterionId)?.label)
+					.filter((l): l is string => Boolean(l))
+					.slice(0, 3)
+					.map((l) => l.replace(/^\d+\+?\s*years? of\s*/i, "").replace(/^./, (c) => c.toLowerCase()));
+				const quality =
+					review?.recommendation === "ADVANCE"
+						? "Strong match"
+						: review?.recommendation === "MAYBE"
+							? "Possible match"
+							: "Match";
+				const screen = callOf(candidateId, "SCREENING_CALL");
+				const lang = callOf(candidateId, "SCREENING_CALL", true);
+				const ref = callOf(candidateId, "REFERENCE_CHECK");
+				const score = (x: typeof screen) =>
+					(x?.sub.agentReview as { call?: { score?: number } } | null)?.call?.score;
+				const level =
+					(lang?.sub.agentReview as { call?: { language?: { cefrLevel?: string } } } | null)?.call?.language
+						?.cefrLevel ?? (lang?.sub.payload as { assessedLevel?: string } | null)?.assessedLevel;
+				const langName = callGigs.find((g) => g.id === lang?.sub.gigId)?.title.match(/^(\S+) language/i)?.[1];
+				const refRec = (ref?.sub.payload as { recommendation?: string } | null)?.recommendation;
+				const calls = [
+					screen ? `Screening ${score(screen) ?? "passed"}` : null,
+					lang ? `${langName ?? "Language"} ${level && level !== "UNKNOWN" ? level : "checked"}` : null,
+					ref ? `reference ${refRec === "PASS" ? "mixed" : "positive"}` : null,
+				].filter((x): x is string => Boolean(x));
+				if (!met.length && !calls.length) return fallback;
+				return [
+					met.length ? `${quality}: ${met.join(", ")}.` : null,
+					calls.length ? `${calls.join(", ")}.` : null,
+				]
+					.filter(Boolean)
+					.join(" ");
+			};
 			for (const e of entries) {
 				const values = {
 					rank: e.rank,
 					score: e.overall,
-					agentNote: e.summary,
+					agentNote: noteFor(e.id, e.summary),
 					screening: callSummary(e.id, "SCREENING_CALL"),
 					reference: callSummary(e.id, "REFERENCE_CHECK"),
 					updatedAt: new Date(),

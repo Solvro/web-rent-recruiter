@@ -1091,6 +1091,13 @@ check(
 	`cockpit: "${cockpit.now.text}", waiting on ${cockpit.waitingOn.map((w) => w.who).join("/")}, $${Number(cockpit.budget.available) / 1e6} available (same as the role view)`,
 );
 for (const s of shortlist) console.log(`    #${s.score ?? "-"} ${s.name}: ${s.agentNote}`);
+{
+	const note = shortlist.find((x) => x.candidateId === karolina)?.agentNote ?? "";
+	check(
+		/^(Strong|Possible)? ?[Mm]atch: .+\. Screening \d+/.test(note) && note.length < 240,
+		`the shortlist note is a clean summary: "${note}"`,
+	);
+}
 
 const { messageId } = await asCompany.roles.message.mutate({
 	roleId,

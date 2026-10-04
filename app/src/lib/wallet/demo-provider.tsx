@@ -16,7 +16,17 @@ type Loaded = Partial<Record<PersonaId, { keyPair: CryptoKeyPair; address: strin
 function readStoredPersona(): PersonaId | null {
 	try {
 		const v = localStorage.getItem(STORAGE_KEY);
-		return v && v in PERSONAS ? (v as PersonaId) : null;
+		if (v && v in PERSONAS) return v as PersonaId;
+		// A shared demo link (?auth=demo) on a fresh browser: sign in as the account the page is for, no gate.
+		// Candidate (/c) and recruiter-profile (/r) pages stay as they are.
+		if (new URLSearchParams(location.search).get("auth") !== "demo") return null;
+		const fromRoute: PersonaId | null = location.pathname.startsWith("/company")
+			? "company"
+			: location.pathname.startsWith("/scout")
+				? "scout"
+				: null;
+		if (fromRoute) localStorage.setItem(STORAGE_KEY, fromRoute);
+		return fromRoute;
 	} catch {
 		return null;
 	}
