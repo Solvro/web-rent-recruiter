@@ -626,7 +626,15 @@ export function createBackendPorts(roleId: string, onEvent?: (e: AgentEvent) => 
 					.map((v) => role.criteria.mustHave.find((c) => c.id === v.criterionId)?.label)
 					.filter((l): l is string => Boolean(l))
 					.slice(0, 3)
-					.map((l) => l.replace(/^\d+\+?\s*years? of\s*/i, "").replace(/^./, (c) => c.toLowerCase()));
+					// Mid-sentence: lowercase a generic first word ("Production Rust" → "production Rust"), never a name.
+					.map((l) =>
+						l
+							.replace(/^\d+\+?\s*years? of\s*/i, "")
+							.replace(
+								/^(Production|Experience|Strong|Shipped|Fluent|Hands-on|Deep|Proven|Solid|Excellent|Built|Led)\b/,
+								(w) => w.toLowerCase(),
+							),
+					);
 				const quality =
 					review?.recommendation === "ADVANCE"
 						? "Strong match"
