@@ -9,7 +9,7 @@ The rules from the current deck still hold: one idea per slide, one bold phrase 
 
 | # | Title | The one bold thing | Visual | Changes vs current deck |
 |---|---|---|---|---|
-| 1 | Scout | **„Agent AI zatrudnia. Ludzie robią to, czego AI nie umie. Płatność w sekundę."** | App hero screenshot (new UI, no crypto) | New hook: agent + human tasks |
+| 1 | RentRecruiter | **„Agent AI zatrudnia. Ludzie robią to, czego AI nie umie. Płatność w sekundę."** | App hero screenshot (new UI, no crypto) | New hook: agent + human tasks |
 | 2 | Problem | **~20% rocznej pensji** za agencję · **screeningi opłacane tylko loterią success fee** | Two big numbers side by side, with a timeline bar: 56 d / 90 d / seconds | Keep, merged with the "wait" slide |
 | 3 | Ludzie oceniają niespójnie | **56–61%**: tyle szans, że „lepszy na rozmowie" jest naprawdę lepszy | Coin-flip visual vs a structured scorecard. Footnote: Kahneman *Noise*; Quillian 2017 (+36% callbacks, no change since 1989) | **New.** Frame it as structure beats intuition, not "AI is unbiased" |
 | 4 | Rozwiązanie: zadania, nie etaty | **AI definiuje → ludzie szukają i rozmawiają → AI ocenia → firma decyduje** | The process-map diagram, with the blue human-task boxes highlighted | **New**: the end-to-end map |

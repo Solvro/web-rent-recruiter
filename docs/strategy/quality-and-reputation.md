@@ -1,6 +1,6 @@
 # Quality and reputation
 
-Global, instant payouts are worthless if the work is bad. This document designs how Scout keeps the quality of external recruiters' work high and lets the marketplace regulate itself over time. Some of it is enforced by the program and some is computed off-chain.
+Global, instant payouts are worthless if the work is bad. This document designs how RentRecruiter keeps the quality of external recruiters' work high and lets the marketplace regulate itself over time. Some of it is enforced by the program and some is computed off-chain.
 
 Scope:
 - **Task types:** `SOURCING` (deliver a qualified, interested candidate) and `SCREENING_CALL` (a 30-minute structured screening call with notes, the step agencies run before sending a candidate to a client).
@@ -89,7 +89,7 @@ score    = round(100 · quality · penalty)
 - **Fixes:** T5 and T4.
 - **What:**
   - **Soulbound reputation:** the `ScoutProfile` PDA is seeded by the wallet and has no transfer instruction, so reputation cannot be sold. It is already soulbound today.
-  - **Personhood:** a verified LinkedIn or KYC check, done by an operator and recorded as `verified_by: Option<Pubkey>` on the profile. Scout itself never stores identity documents.
+  - **Personhood:** a verified LinkedIn or KYC check, done by an operator and recorded as `verified_by: Option<Pubkey>` on the profile. RentRecruiter itself never stores identity documents.
   - **Collusion weighting:** the off-chain score counts only the first N accepts per (recruiter, company) pair at full weight. Reputation from a single counterparty is discounted, which makes T4 farming expensive: it costs real bounties plus fees and earns little.
   - **Stake:** see M8.
 - **Cost:** weighting is off-chain and cheap. Personhood depends on operators.

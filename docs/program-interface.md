@@ -1,4 +1,4 @@
-# Scout program interface (contract)
+# RentRecruiter program interface (contract)
 
 Agreed interface between the Anchor program (`programs/scout`) and its clients. The IDL generated from the program is the source of truth once it exists. Until then, build against this file. Changing anything here means updating every stream.
 
@@ -70,7 +70,7 @@ fee + operator_fee + holdback + payout == bounty                 (proptest, ever
 | 4 | `set_agent` | agent: Option<Pubkey>, agent_max_bounty, agent_max_commitment | payer, C | Rotates or revokes (`None`) the agent and changes its limits. |
 | 5 | `top_up` | amount | payer, C | Company ATA → vault. |
 | 6 | `create_task` | task_id (= role.task_count), task_type, bounty (≥ role.min_bounty), max_deliverables, exclusive, brief_hash, holdback_bps, subject_scout, min_accepted, min_accept_rate_bps (≤ 10000), bond_bps, confirmation_attestor: Option<Pubkey> | payer, C/A | Checks I2 and the agent cap (when the signer is the agent). Sets `reputable = bounty ≥ min_reputable_bounty`. |
-| 7 | `claim_task` | none | payer, S, **G** | Exclusive tasks only. The claimant must be None. Scout ≠ subject_scout (`SelfReview`). The reputation gate must pass (`ReputationTooLow`): `sourcing_accepted ≥ min_accepted`, and when `min_accept_rate_bps > 0`, `submitted > 0` with `accepted / submitted ≥ rate`. |
+| 7 | `claim_task` | none | payer, S, **G** | Exclusive tasks only. The claimant must be None. RentRecruiter ≠ subject_scout (`SelfReview`). The reputation gate must pass (`ReputationTooLow`): `sourcing_accepted ≥ min_accepted`, and when `min_accept_rate_bps > 0`, `submitted > 0` with `accepted / submitted ≥ rate`. |
 | 8 | `release_claim` | none | payer, claimant or C/A | The company or agent only after `claim_timeout` and with nothing pending. |
 | 9 | `close_task` | none | payer, C/A | Pending must be 0. Frees capacity and returns unused agent allowance. |
 | 10 | `register_operator` | fee_bps (≤ 2000), name | payer, O | |

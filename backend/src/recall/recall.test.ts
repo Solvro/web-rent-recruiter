@@ -31,7 +31,7 @@ describe("recall client", () => {
 		const headers = (calls[0]?.init?.headers ?? {}) as Record<string, string>;
 		expect(headers.Authorization).toBe("Token secret");
 		const body = JSON.parse(String(calls[0]?.init?.body));
-		expect(body.bot_name).toBe("Scout notetaker");
+		expect(body.bot_name).toBe("RentRecruiter notetaker");
 		expect(body.recording_config.transcript.provider).toEqual({ meeting_captions: { language_code: "en" } });
 	});
 

@@ -1,4 +1,4 @@
-# Security notes: the Scout program
+# Security notes: the RentRecruiter program
 
 Scope: the on-chain program `programs/scout` (Anchor 1.1, program `CmdM2WPuZ6ZrwDXP7DtzfBfR4LMocHs9tqNpGB7JCTo2` on devnet, v3.3). The backend, agent and app are out of scope except where they hold keys. Reference: [program-interface.md](program-interface.md).
 
@@ -6,7 +6,7 @@ Scope: the on-chain program `programs/scout` (Anchor 1.1, program `CmdM2WPuZ6Zrw
 
 ## 0. What depends on whom (protocol, not platform)
 
-Scout is a protocol. Our backend and AI agent are one implementation of the roles below, and nothing in the program requires them:
+RentRecruiter is a protocol. Our backend and AI agent are one implementation of the roles below, and nothing in the program requires them:
 
 | Function | Who can perform it on-chain | If our agent or backend disappears |
 |---|---|---|
@@ -24,7 +24,7 @@ Known limitation: the candidate's "yes" is a bearer link. The recruiter who rece
 
 Why this matters more than one fake: only the top few candidates get an independent screening, so a recruiter who clicks "yes" for real profiles of people who never agreed is paid for the rest, and Google sign-in makes new accounts free. The planned policy (agent-side, the program already has bonds, holdbacks, `min_accepted` and operators):
 - **Unvouched accounts earn nothing on the click.** Their sourcing payout waits for independent verification (a screening by someone else, or a short verification call posted as a gig), so extra accounts earn $0.
-- **Vouched accounts get the upfront part, with a cap** on how many paid-but-unverified candidates they can have at once. The vouching operator takes 10% of their earnings and is accountable for them, so Sybil resistance lives with operators, not with Scout.
+- **Vouched accounts get the upfront part, with a cap** on how many paid-but-unverified candidates they can have at once. The vouching operator takes 10% of their earnings and is accountable for them, so Sybil resistance lives with operators, not with RentRecruiter.
 - **Random spot checks** of confirmed candidates; one confirmed fake forfeits the recruiter's held parts across roles and bonds, and flags their on-chain reputation (and the operator's).
 
 The demo still pays an unvouched recruiter on the candidate's click.
@@ -39,7 +39,7 @@ The platform's remaining privileged roles are the **Config admin** (fee within �
 |---|---|---|---|
 | **Company** | its wallet | Fund, top up and close its roles. Create tasks. Accept or reject. Attest outcomes. Rotate or revoke the agent and set its caps (`set_agent`). | Take back money owed to scouts: pending deliverables are funded (I1). Holdbacks can only be clawed back via `Fabricated` inside the holdback window. Reject after the review deadline. Close a role with pending or held money. |
 | **Agent** (`role.agent`) | `agent.json` (our backend), or any key the company sets | Create tasks up to `agent_max_bounty` each and `agent_max_commitment` in total. Accept or reject deliverables. Attest outcomes. Release stale claims after `claim_timeout`. Co-sign deliverables and claims (gatekeeper). Attest sourcing confirmations unless the task names another attestor. | Pay itself or the company (`SelfDealing`). Pay anyone who didn't deliver: payouts go only to `submission.scout`'s token account of the role mint. Exceed its caps. Touch other roles. Withdraw from the vault. Change fees. |
-| **Scout** | own wallet | Claim exclusive gigs and deliver, with the gatekeeper co-sign. Settle its own expired deliverables. Release its own claim. | Deliver without the gatekeeper's co-signature (no "ghost" deliverables). Deliver to a closed or full task. Review its own candidate (`SelfReview`). Claim gated gigs without the reputation (`ReputationTooLow`). Submit a deliverable that is already on the task. |
+| **RentRecruiter** | own wallet | Claim exclusive gigs and deliver, with the gatekeeper co-sign. Settle its own expired deliverables. Release its own claim. | Deliver without the gatekeeper's co-signature (no "ghost" deliverables). Deliver to a closed or full task. Review its own candidate (`SelfReview`). Claim gated gigs without the reputation (`ReputationTooLow`). Submit a deliverable that is already on the task. |
 | **Operator** | `operator.json` | Vouch for scouts (co-sign `register_scout`). Earn `fee_bps` (≤ 20%) of its scouts' share. | Raise its fee after registration. Receive anything except through payouts of its own scouts. |
 | **Relayer** (platform) | `relayer.json` | Pay fees and rent. Call permissionless instructions (`settle_expired`, `release_holdback`). | Sign for any user. Its key is a fee payer only and never an authority on money. |
 | **Config admin** = **upgrade authority** | `upgrade-authority.json` (cold) | `update_config`: rotate the treasury, set fee ≤ 20% and the bounds, for **new** roles only (open roles snapshot fee and minimums). **Upgrade the program.** | Change the mint or the admin. Alter an open role's fee. Move vault funds through any instruction. |
@@ -85,7 +85,7 @@ Further properties and where they come from:
 Every account is pinned by type (owner and discriminator), PDA seeds, `has_one` or an explicit constraint:
 
 - **Vault token account:** `role_vault.vault_token_account` (`has_one`), created as the RoleVault PDA's ATA for `config.usdc_mint` at `create_role`. **Mint:** `role_vault.mint` (`has_one`) = `config.usdc_mint`.
-- **Scout payout account:** `owner == submission.scout` and `mint == role mint`. **Bond source:** `owner == scout signer` and `mint == role mint`.
+- **RentRecruiter payout account:** `owner == submission.scout` and `mint == role mint`. **Bond source:** `owner == scout signer` and `mint == role mint`.
 - **Treasury:** `config.treasury_token_account` (`has_one` on Config, Config by seeds).
 - **Operator account:** must equal `scout_profile.operator`. **Operator fee account:** must equal `operator.token_account`. Both are required exactly when the scout has an operator (`OperatorMismatch`).
 - **Company refund account (Fabricated):** `owner == role.company` and `mint == role mint`.
@@ -111,7 +111,7 @@ Negative tests:
 | **Agent paying itself** | `SelfDealing` blocks the agent and the company as scouts. Sybil wallets are still possible within the caps above (see Limitations). |
 | **Claim squatting** on exclusive gigs | Claims need the gatekeeper. A rejected claimant loses the claim. The company or agent can release after `claim_timeout` (bounded by the Config window range). |
 | **Reputation farming** with dust gigs between colluding wallets | Counters only move on tasks with `bounty ≥ min_reputable_bounty` (1 USDC on devnet), plus the 10% fee per gig. Screening gigs can require `min_accepted` and `min_accept_rate_bps` (e.g. 10 and 50%). |
-| **Scout reviewing their own candidate** | `subject_scout` on screening and reference tasks (`SelfReview`). The holdback on the sourcing gig is clawed back if an independent screener reports a fake (`attest_outcome(Fabricated)`, test "separation of duties…"). |
+| **RentRecruiter reviewing their own candidate** | `subject_scout` on screening and reference tasks (`SelfReview`). The holdback on the sourcing gig is clawed back if an independent screener reports a fake (`attest_outcome(Fabricated)`, test "separation of duties…"). |
 | **Spam deliverables** from unvouched scouts | Bond (`bond_bps`, forfeited on reject) plus the gatekeeper. |
 | **Company rejecting at the last second** to avoid paying | Reject is only allowed before `review_deadline`; after it, settle can't be raced. |
 | **Company keeping the holdback** | It can only be refunded with `Fabricated` inside the holdback window. The `flagged` counter is public. After the window anyone can release it to the scout. |

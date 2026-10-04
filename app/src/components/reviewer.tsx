@@ -7,7 +7,7 @@ const OPTIONS: { mode: ReviewerModeValue; icon: typeof Bot; name: string; line: 
 	{
 		mode: "scout",
 		icon: Bot,
-		name: "Scout agent",
+		name: "RentRecruiter agent",
 		line: "Checks every delivery within seconds and pays for good work.",
 	},
 	{

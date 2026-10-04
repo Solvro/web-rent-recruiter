@@ -31,7 +31,7 @@ Both sides have to trust the intermediary:
 | Reputation lives in the platform's database | Per-gig-type counters live in the recruiter's on-chain `ScoutProfile`, readable by any operator. |
 | Leftover budget is stuck with the platform | `close_role` refunds everything left to the company. |
 
-**Scout is a protocol, not a platform.** The program enforces money and payout rules for anyone. Judgement (accept or reject) is done by a reviewer the company chooses: our hosted agent (default), its own self-hosted agent (`scout-agent` CLI, `packages/agent`) or the company itself. The gatekeeper can be the agent or the company (v3.3, live on devnet), and the company switches with `set_agent`. Reviews and rejection reasons are hashed on-chain, and appeals are live: the recruiter appeals a rejection (`submissions.appeal`), the company decides (`decideAppeal`), and an overturn pays the recruiter directly.
+**RentRecruiter is a protocol, not a platform.** The program enforces money and payout rules for anyone. Judgement (accept or reject) is done by a reviewer the company chooses: our hosted agent (default), its own self-hosted agent (`scout-agent` CLI, `packages/agent`) or the company itself. The gatekeeper can be the agent or the company (v3.3, live on devnet), and the company switches with `set_agent`. Reviews and rejection reasons are hashed on-chain, and appeals are live: the recruiter appeals a rejection (`submissions.appeal`), the company decides (`decideAppeal`), and an overturn pays the recruiter directly.
 
 Our own hosted pieces are one implementation:
 

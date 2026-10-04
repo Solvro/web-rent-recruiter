@@ -16,7 +16,7 @@ Short version: **human screening is noisy and measurably biased, and so are LLMs
 - **Bias can flip direction.** An et al. (*PNAS Nexus*, 2025) and follow-ups found a **pro-female** bias across current models. **Removing the name** removed nearly all of it, while asking the model to "be neutral" did almost nothing ([arXiv follow-up](https://arxiv.org/pdf/2606.18649)).
 - **Rubrics matter.** With a structured rubric, LLM-human agreement can match human-human agreement. In one study, adding GPT-4o as a fifth rater to four instructors moved the ICC from 0.88 to 0.89. Agreement is weakest on borderline cases ([arXiv 2604.12227](https://arxiv.org/pdf/2604.12227)). In another benchmark, a structured rubric raised the LLM judge's correlation with human experts from **0.20 to 0.63** ([arXiv 2604.05912](https://arxiv.org/pdf/2604.05912)).
 
-## What Scout does with this
+## What RentRecruiter does with this
 
 | Risk | What we do |
 |---|---|

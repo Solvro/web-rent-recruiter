@@ -18,7 +18,7 @@ All numbers marked **(est.)** are our estimates, with assumptions written out. E
 
 ### Task-level TAM (est.)
 
-Scout sells **tasks**, not placements, so we size the market bottom-up with the prices the agent actually charges (`GIG_PRICES` in `backend/src/agent/gigs/market.ts`, CEE base prices, senior level; Western markets are 1.7–2× higher):
+RentRecruiter sells **tasks**, not placements, so we size the market bottom-up with the prices the agent actually charges (`GIG_PRICES` in `backend/src/agent/gigs/market.ts`, CEE base prices, senior level; Western markets are 1.7–2× higher):
 
 | Task | Price | Per hire (est.) | Spend per hire |
 |---|---|---|---|
@@ -37,7 +37,7 @@ Scout sells **tasks**, not placements, so we size the market bottom-up with the 
 
 - **Today's payment rails stop at borders.** Stripe Connect's self-serve cross-border payouts only work between the US, UK, EEA, Canada and Switzerland ([Stripe docs](https://docs.stripe.com/connect/cross-border-payouts)). Recruiter networks don't stop there: freelance recruiters work from everywhere.
 - **Stablecoin payouts settle in seconds, anywhere, at a fraction of a cent.** That is what makes a *$15–40 task* economically payable to someone in Lagos, Bogotá or Bucharest.
-- **The supply side is already doing the work on spec.** Freelance screeners are typically paid only through the promise of a success fee on a hire (our hypothesis from our recruiting-agency design partner; numbers shared live). Scout pays for that work per accepted call.
+- **The supply side is already doing the work on spec.** Freelance screeners are typically paid only through the promise of a success fee on a hire (our hypothesis from our recruiting-agency design partner; numbers shared live). RentRecruiter pays for that work per accepted call.
 - **And the rest of the supply is paid late.** Marketplaces like Paraform pay recruiters in instalments up to 90 days after the start date; agencies waited 56 days on average for invoices in the UK (EMW, 2015).
 
 ## Business model
@@ -56,12 +56,12 @@ Every accepted gig is split on-chain by `math::split` (`programs/scout/src/math.
 
 **Per hire** (task stack above, vouched recruiters):
 
-| | Agency today | Scout task stack |
+| | Agency today | RentRecruiter task stack |
 |---|---|---|
 | Company pays | ~$20 000 (20% of $100k) | ~$465 in tasks + its own interviews |
 | Recruiters receive | a split, after 30–90+ days | ~$377 (≈70% at acceptance, ≈30% when the candidate reaches the interview) |
 | Operators receive | n/a | ~$42 |
-| Scout revenue | n/a | ~$46 (10%) |
+| RentRecruiter revenue | n/a | ~$46 (10%) |
 
 **Per gig, our cost side:**
 

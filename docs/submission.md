@@ -1,14 +1,14 @@
 # HackTribe submission
 
-**Title:** Scout: an AI recruiting agent that hires people for gigs and pays them on Solana
+**Title:** RentRecruiter: an AI recruiting agent that hires people for gigs and pays them on Solana
 
 **Team:** Solvro Londyn
 
 **Description**
 
-Scout is a protocol: an on-chain program plus an open agent API. Our hosted agent and web app are one implementation of it. The program enforces the money rules. A reviewer the company chooses (our agent, its own agent or the company itself) decides what is accepted.
+RentRecruiter is a protocol: an on-chain program plus an open agent API. Our hosted agent and web app are one implementation of it. The program enforces the money rules. A reviewer the company chooses (our agent, its own agent or the company itself) decides what is accepted.
 
-Scout lets a company give an AI agent a role and a budget. The budget goes into a vault owned by a Solana program; the company signs once and sets the agent's spending caps. The agent breaks hiring into small paid gigs that need a human: finding candidates, a 30-minute screening call recorded by a notetaker, a language check, a reference check. Independent recruiters anywhere claim gigs and deliver. The agent checks each deliverable and, in the same on-chain transaction, the program pays the recruiter, the operator who vouches for them and the platform fee.
+RentRecruiter lets a company give an AI agent a role and a budget. The budget goes into a vault owned by a Solana program; the company signs once and sets the agent's spending caps. The agent breaks hiring into small paid gigs that need a human: finding candidates, a 30-minute screening call recorded by a notetaker, a language check, a reference check. Independent recruiters anywhere claim gigs and deliver. The agent checks each deliverable and, in the same on-chain transaction, the program pays the recruiter, the operator who vouches for them and the platform fee.
 
 - 30% of the recruiter's share waits until the candidate actually reaches the company.
 - If the company goes silent, anyone can trigger the payout after the review window.
@@ -44,7 +44,7 @@ The chain is hidden on purpose: Google login, dollars, "Payment sent", and a sma
 | One full use case from input to completed transaction | Gig flow e2e on devnet (`pnpm e2e`): create_role → create_task (agent) → submit → accept → attest Advanced; tx links in the Stream A report | ✅ (UI on v3.2 ⏳) |
 | Show the moment the intermediary is no longer needed | Accept → payout in one tx; `settle_expired` with no signer; Solscan link in the app ("Proof of payment") | ✅ |
 | Works live during the presentation | `docs/demo-script.md`, `DEMO_FAST`, `RECALL_MOCK`, `?data=mock` fallback | ⏳ (rehearsal) |
-| Logic replacing the intermediary lives on-chain | `programs/scout/src/instructions/*`, `math.rs`, `invariants.rs`; README "Scout is a protocol" and "Did the backend become the intermediary?" | ✅ (gatekeeper = agent or company, v3.3; self-hosted `scout-agent` CLI) |
+| Logic replacing the intermediary lives on-chain | `programs/scout/src/instructions/*`, `math.rs`, `invariants.rs`; README "RentRecruiter is a protocol" and "Did the backend become the intermediary?" | ✅ (gatekeeper = agent or company, v3.3; self-hosted `scout-agent` CLI) |
 | Target user named explicitly | `docs/design-rationale.md` "Who we build for" | ✅ |
 | Design rationale | `docs/design-rationale.md` | ✅ |
 | Title + detailed description | This file | ✅ |

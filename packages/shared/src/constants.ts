@@ -1,5 +1,5 @@
 /** Working name. Rename the product here only. */
-export const PROJECT_NAME = "Scout";
+export const PROJECT_NAME = "RentRecruiter";
 
 export const CLUSTER = "devnet" as const;
 // Solscan reads through its own backend. Solana Explorer queries the public devnet RPC

@@ -24,20 +24,20 @@ Research date: 2026-10-03. Sources are listed at the end of each section.
     weeks–months)        │
   slow payout ───────────┼──────────────────────── fast payout →
                          │
-   AI sourcing SaaS      │            ★ Scout
+   AI sourcing SaaS      │            ★ RentRecruiter
    (no recruiter payout) │  (pay per qualified candidate,
    Upwork (milestones)   │   paid seconds after "Accept")
                          │
                     cost to company ↓ (low, small fixed bounties)
 ```
 
-Scout is alone in the "low cost, instant payout" corner. Incumbents pay large fees late. Tools are cheap but leave the human work undone.
+RentRecruiter is alone in the "low cost, instant payout" corner. Incumbents pay large fees late. Tools are cheap but leave the human work undone.
 
-### 3 things Scout must do better
+### 3 things RentRecruiter must do better
 
 1. **Show the money first.** Paraform and Mercor show the reward, but payment comes much later. Our card should say what you earn and when ("$18 · paid when accepted"), and then actually deliver in seconds.
 2. **Make trust visible without crypto words.** Upwork's "Payment verified" and BountyJobs' refund guarantee are their trust signals. Ours: "Budget secured", "Auto-paid if no answer in 72h", and "First to submit keeps the credit".
-3. **Keep the unit small and the flow tiny.** Competitors are built around 20% placements and long pipelines. Scout's whole loop should fit in 3 clicks for recruiters (find role → submit → get paid) and 3 for companies (paste JD → publish → accept).
+3. **Keep the unit small and the flow tiny.** Competitors are built around 20% placements and long pipelines. RentRecruiter's whole loop should fit in 3 clicks for recruiters (find role → submit → get paid) and 3 for companies (paste JD → publish → accept).
 
 Sources: [Paraform pricing](https://www.herohunt.ai/blog/paraform-pricing-alternatives-2026/), [Paraform vs agencies](https://www.paraform.com/insights/paraform-vs-recruiting-agencies), [Getting paid on Paraform](https://www.paraform.com/blog/payments), [Hunt Club alternatives](https://www.recruitingfromscratch.com/blog/hunt-club-alternatives), [Hunt Club funding / model](https://www.vcaonline.com/news/2021101812/hunt-club-raises-10m-to-help-high-growth-companies-hire-faster-with-candidate-referrals-and-talent-networks), [BountyJobs model (ERE)](https://ere.net/articles/bountyjobs-legal-practical-but-is-it-right-for-you), [Chain Store Age on BountyJobs](https://chainstoreage.com/news/bounty-call), [Wellfound pricing](https://www.hireinsouth.com/post/wellfound-pricing), [Upwork vs Toptal fees (Wise)](https://wise.com/us/blog/upwork-vs-toptal-comparison), [Juicebox pricing](https://fabrichq.ai/blogs/juicebox-ai-pricing), [hireEZ pricing](https://www.juicebox.ai/blog/hireez-pricing), [AI recruiting tools 2026](https://dupple.com/learn/best-ai-tools-for-recruiters).
 
@@ -72,7 +72,7 @@ Sources: [Paraform pricing](https://www.herohunt.ai/blog/paraform-pricing-altern
 - **Plain, Sign up** ([screen](https://mobbin.com/screens/0e128434-2815-4d3b-b2ac-a40509fb572b)). A logo, "Sign up" and **one "Continue with Google" button**. **Copy:** that's the whole screen. Then one question, "I'm hiring / I'm a recruiter", as two big tiles.
 - **Mintlify** ([screen](https://mobbin.com/screens/72bb135d-3d0f-4906-b7b8-f00300671aad)) adds an email fallback under Google, which matches our Privy setup.
 
-## 3. Top 10 concrete changes for Scout's UI (by impact)
+## 3. Top 10 concrete changes for RentRecruiter's UI (by impact)
 
 1. **Payout moment like Wise/Chime.** When a submission is accepted, the recruiter sees a full-width sheet: giant "+$18", "Payment sent", one "Got it" button and a tiny "Receipt" link. This is the product's emotional peak, so make it unmissable.
 2. **Recruiter task card = 2 things.** Role title on the left, "You earn $18" right-aligned in bold, one "Submit candidate" button. Company, location and criteria move behind "Details". Pattern: Mercor/Braintrust.

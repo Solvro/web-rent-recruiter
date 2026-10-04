@@ -2,7 +2,7 @@
 
 Real hiring isn't a straight line. Candidates no-show, calls get moved, recruiters go quiet, the agent runs out of pipeline, and some people try to game the system. This page covers four things:
 
-1. what goes wrong at every stage and exactly how Scout handles it (who pays what);
+1. what goes wrong at every stage and exactly how RentRecruiter handles it (who pays what);
 2. how prompt injection by recruiters is contained;
 3. a Monte Carlo model of a role run end to end, built on the agent's real decision code;
 4. what to change next.

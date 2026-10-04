@@ -4,7 +4,7 @@
  */
 import type { TranscriptLine } from "@scout/shared";
 
-export const RECALL_BOT_NAME = "Scout notetaker";
+export const RECALL_BOT_NAME = "RentRecruiter notetaker";
 
 export class RecallError extends Error {
 	constructor(

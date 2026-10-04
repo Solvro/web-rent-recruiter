@@ -178,7 +178,7 @@ const g = {
 	agenda: [] as Agenda[],
 	started: new Set<string>(),
 	paused: new Set<string>(),
-	/** Who checks the work per role (default: the Scout agent). */
+	/** Who checks the work per role (default: the RentRecruiter agent). */
 	reviewers: new Map<string, Reviewer>(),
 	/** Changes the agent proposed in chat, waiting for the company's yes. */
 	proposals: new Map<string, Proposal>(),
@@ -665,7 +665,7 @@ function whatOf(d: MockDelivery) {
 	return `${gig?.variant === "language" ? "a language check" : "screening notes"} for ${gig?.candidate?.name ?? "a candidate"}`;
 }
 
-/** The company (or its own agent) accepts: the same next steps as when the Scout agent accepts. */
+/** The company (or its own agent) accepts: the same next steps as when the RentRecruiter agent accepts. */
 function acceptByReviewer(d: MockDelivery) {
 	const role = db.roles.get(d.roleId);
 	if (!role) return;
@@ -2398,7 +2398,7 @@ export const gigProcedures: Record<string, (ctx: Ctx) => Promise<unknown> | unkn
 					roleId,
 					"NOTE",
 					mode === "scout"
-						? "The Scout agent checks the work again"
+						? "The RentRecruiter agent checks the work again"
 						: mode === "self"
 							? "You check the work yourself from now on"
 							: `Your own agent (${agentPubkey?.slice(0, 4)}…) checks the work from now on`,

@@ -1,6 +1,6 @@
 {
 	"meta": {
-		"purpose": "Fictional demo data for Scout: companies, people and URLs are made up.",
+		"purpose": "Fictional demo data for RentRecruiter: companies, people and URLs are made up.",
 		"generatedAt": "2026-10-03",
 		"generatedFrom": "backend/src/agent/fixtures/demo-manifest.json (Stream C)"
 	},

@@ -475,7 +475,7 @@ export async function withdrawDeliverable(wallet: Address, id: string) {
 		throw new HttpError(
 			409,
 			"NOT_HOSTED",
-			"Ask this role's reviewer to reject it; withdrawals need Scout's agent.",
+			"Ask this role's reviewer to reject it; withdrawals need RentRecruiter's agent.",
 		);
 	const agent = await agentSigner();
 	// The program keeps a rejected deliverable's bond in the role: read it before the account closes.

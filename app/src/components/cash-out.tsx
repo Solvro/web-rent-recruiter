@@ -1,5 +1,5 @@
 /**
- * "Cash out" on Earnings, told honestly: the money already sits in the recruiter's own account (Scout never holds
+ * "Cash out" on Earnings, told honestly: the money already sits in the recruiter's own account (RentRecruiter never holds
  * it); a bank transfer through a payments partner is on the roadmap; today it can be sent to another account, as
  * one advanced field.
  */
@@ -50,7 +50,7 @@ export function CashOut({ available }: { available: bigint }) {
 					<DialogTitle>{formatMoney(available)} is yours</DialogTitle>
 					<div className="space-y-3 text-muted-foreground">
 						<p>
-							Your earnings are already in your own account, the moment each payment lands. Scout never holds
+							Your earnings are already in your own account, the moment each payment lands. RentRecruiter never holds
 							them and can't take them back.
 						</p>
 						<p>Moving money to your bank, through a payments partner, is coming soon.</p>

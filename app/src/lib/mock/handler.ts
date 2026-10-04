@@ -175,7 +175,7 @@ function submissionView(sub: MockSubmission, withReview = true): SubmissionView 
 		onchainAddress: sub.onchainAddress,
 		scout: {
 			wallet: sub.scoutWallet,
-			displayName: scout?.displayName ?? "Scout",
+			displayName: scout?.displayName ?? "RentRecruiter",
 			avatarUrl: scout?.avatarUrl ?? avatarFor(scout?.displayName ?? ""),
 		},
 		status: sub.status,
@@ -212,7 +212,7 @@ const BIO_KEY = "scout.mock-bios.v1";
 const SEEDED_BIOS: Record<string, string> = {
 	"Ola Wiśniewska":
 		"Tech recruiter in Kraków. Eight years hiring backend and protocol engineers for startups.",
-	"Lucía Fernández": "Sourcer in Madrid, new to Scout. I find engineers in Spain and Latin America.",
+	"Lucía Fernández": "Sourcer in Madrid, new to RentRecruiter. I find engineers in Spain and Latin America.",
 	"Andreea Popescu": "Bucharest-based recruiter for engineering teams across Europe.",
 };
 function bios(): Record<string, string> {

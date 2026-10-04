@@ -1,4 +1,4 @@
-# Scout
+# RentRecruiter
 
 **A company gives an AI agent a role and a budget. The agent runs hiring end to end and rents humans for the parts it can't do: it posts small paid gigs (find candidates, a 30-minute screening call, a language check, a reference check), checks the work, and pays recruiters from the budget on Solana.**
 
@@ -8,25 +8,25 @@ Built for HackYeah 2026, Superteam Poland challenge "Finance Without Intermediar
 
 - Agencies cost ~20% of a salary, paid only on hire. Without one, the founder searches alone in the evenings.
 - The human part of recruiting is often done on spec. Freelance screeners are typically paid only through a share of the success fee if a candidate is eventually hired, months later, so most calls are never paid (our hypothesis, from our recruiting-agency design partner). Screeners want steady income, not a lottery.
-- Scout pays per accepted piece of work, in seconds, to recruiters in any country.
+- RentRecruiter pays per accepted piece of work, in seconds, to recruiters in any country.
 
-## Scout is a protocol
+## RentRecruiter is a protocol
 
-Scout is **an on-chain program plus an open agent API**. Our hosted agent and this app are one implementation of it.
+RentRecruiter is **an on-chain program plus an open agent API**. Our hosted agent and this app are one implementation of it.
 
 ```mermaid
 flowchart LR
   subgraph Apps["Any app"]
-    A1["Scout web app (ours)"]
+    A1["RentRecruiter web app (ours)"]
     A2["Agency or ATS integration"]
     A3["Another agent via API / MCP"]
   end
   subgraph Agents["Any reviewer the company chooses"]
-    G1["Scout agent (hosted, default)"]
+    G1["RentRecruiter agent (hosted, default)"]
     G2["Self-hosted agent<br/>scout-agent CLI (packages/agent), own key"]
     G3["The company itself"]
   end
-  P["Scout program on Solana<br/>vault · math::split · settle_expired<br/>close_role · caps · bonds · reputation"]
+  P["RentRecruiter program on Solana<br/>vault · math::split · settle_expired<br/>close_role · caps · bonds · reputation"]
   Apps --> Agents
   Agents -- "create_task · accept / reject<br/>(as role.agent or company)" --> P
   Apps -- "create_role · top_up · set_agent<br/>claim · submit · settle" --> P
@@ -42,7 +42,7 @@ Three layers, kept apart on purpose:
   - `SelfDealing` and `subject_scout` (separation of duties);
   - bonds;
   - company-signed agent caps (`agent_max_bounty`, `agent_max_commitment`).
-- **(b) Judgement (accept or reject) is done by a reviewer the company chooses.** It can be our Scout agent (the default), its own self-hosted agent (`scout-agent` CLI in `packages/agent`, its own key as the on-chain gatekeeper, remote ports over the `agent.*` API) or the company itself.
+- **(b) Judgement (accept or reject) is done by a reviewer the company chooses.** It can be our RentRecruiter agent (the default), its own self-hosted agent (`scout-agent` CLI in `packages/agent`, its own key as the on-chain gatekeeper, remote ports over the `agent.*` API) or the company itself.
   - The gatekeeper is the agent or the company (program v3.3, live).
   - The company can switch at any time with `set_agent`.
   - Accept carries a `review_hash` and reject a `reason_hash` on-chain (v3.3, live). Appeals are live: `submissions.appeal` → the company's `decideAppeal`; an overturn pays the recruiter directly.
@@ -142,7 +142,7 @@ Full interface: [docs/program-interface.md](docs/program-interface.md). Everythi
 
 **5. What next week?** See "Next" below.
 
-**Did the backend become the intermediary?** No. The backend is one reviewer implementation (see "Scout is a protocol").
+**Did the backend become the intermediary?** No. The backend is one reviewer implementation (see "RentRecruiter is a protocol").
 - **What our hosted agent decides:** quality, as the company's chosen delegate, within the company's caps. The company can replace it with its own agent or review itself.
 - **What the program enforces regardless of us:**
   - custody in the vault;
@@ -240,7 +240,7 @@ Demo wallets (devnet only, keys in `~/.config/solana/superrecruiter/`, never com
 | Role | Keypair | Address |
 |---|---|---|
 | Company | `client.json` | `2XtdaRgpB4W9PXRQZRuPYiM67iH8fVq9bhwZ6nhAdv3v` |
-| Scout (Ola, vouched by the operator) | `recruiter.json` | `DJBv8s5VMVH5w6sW3s1u2pZCEHYDT9NkuYyKvrBwGuvi` |
+| RentRecruiter (Ola, vouched by the operator) | `recruiter.json` | `DJBv8s5VMVH5w6sW3s1u2pZCEHYDT9NkuYyKvrBwGuvi` |
 | Second scout | `scout2.json` | `29Bwe4RdtvjZmzN8c2GYG5Cs1ZDD1LGEP9BHDE35o1PE` |
 | Operator authority (Kraków Recruiting Academy, 10%) | `operator.json` | `DaCdXnaJmS5JHcijS6BGaGbMdMC8rXKhozXzNhFWBArj` |
 | AI agent (`role.agent`: posts gigs, accepts deliverables; no SOL, the relayer pays) | `agent.json` | `A3WfA3F7m7tgUNxVQowwBhZFXmUAj1K5329WWv4v3y9r` |

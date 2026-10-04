@@ -1,6 +1,6 @@
 # The hiring process as paid tasks
 
-Scout doesn't try to automate a whole hire. It splits the process into **tasks**. The AI agent does the ones it can do cheaply and reliably. For the rest it **posts a paid task to a human recruiter**, and the payment rules for that task run in a Solana program. Each task has a clear unit of work, an acceptance criterion and a price, and that is what makes it payable without an intermediary.
+RentRecruiter doesn't try to automate a whole hire. It splits the process into **tasks**. The AI agent does the ones it can do cheaply and reliably. For the rest it **posts a paid task to a human recruiter**, and the payment rules for that task run in a Solana program. Each task has a clear unit of work, an acceptance criterion and a price, and that is what makes it payable without an intermediary.
 
 We optimize tasks, not the hire. A task can be verified within hours or days, whereas "the hire" only resolves after months.
 

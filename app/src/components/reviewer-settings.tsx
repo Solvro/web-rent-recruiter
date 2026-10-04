@@ -52,7 +52,7 @@ export function ReviewerSettings({ roleId }: { roleId: string }) {
 				</Button>
 			)}
 			<p className="type-label text-muted-foreground">
-				Payout rules are enforced automatically, not by Scout. You can change who checks the work any time.
+				Payout rules are enforced automatically, not by RentRecruiter. You can change who checks the work any time.
 			</p>
 		</div>
 	);

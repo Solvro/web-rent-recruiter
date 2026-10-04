@@ -201,7 +201,7 @@ export async function claimShowUpFee(wallet: string, gigId: string): Promise<{ u
 	if (feeGig && feeGig.acceptedCount > 0)
 		throw new HttpError(409, "ALREADY_PAID", "The show-up fee was already paid.");
 	if (!role.roleVault || !(await isHosted(role))) {
-		throw new HttpError(409, "NOT_HOSTED", "Only roles run by Scout's agent pay show-up fees automatically.");
+		throw new HttpError(409, "NOT_HOSTED", "Only roles run by RentRecruiter's agent pay show-up fees automatically.");
 	}
 	const agent = await agentSigner();
 	const roleVault = address(role.roleVault);

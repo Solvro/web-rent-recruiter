@@ -60,7 +60,7 @@ export function getModel(tier: ModelTier = "main"): LanguageModel | null {
 	if (hit) return hit;
 	let model: LanguageModel;
 	if (provider === "openrouter") {
-		const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, appName: "Scout" });
+		const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY, appName: "RentRecruiter" });
 		model = openrouter.chat(id, { usage: { include: true } });
 	} else if (provider === "anthropic") {
 		model = createAnthropic()(id);

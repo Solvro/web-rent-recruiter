@@ -31,7 +31,7 @@ async function headFor(backend: string, path: string) {
 	const description = v
 		? `${v.recruiterName.split(" ")[0]} thinks the ${v.roleTitle} role could fit you. Open to say if you're interested.`
 		: "A recruiter thinks this role could fit you. Open to say if you're interested.";
-	return { title: `${title} · Scout`, description };
+	return { title: `${title} · RentRecruiter`, description };
 }
 
 function rewrite(html: string, head: { title: string; description: string }) {

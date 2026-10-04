@@ -1,6 +1,6 @@
 # Demo use cases
 
-`demo-use-cases.json` holds realistic demo data for Scout: 4 roles, 3 recruiter personas and 4 candidate submissions for the main demo role.
+`demo-use-cases.json` holds realistic demo data for RentRecruiter: 4 roles, 3 recruiter personas and 4 candidate submissions for the main demo role.
 
 ## Where it comes from
 

@@ -38,7 +38,7 @@ export async function repriceGig(roleId: string, gigId: string, bounty: bigint, 
 	if (!role.roleVault || !gig.taskAddress)
 		throw new HttpError(409, "NOT_ON_CHAIN", "The gig isn't on-chain yet.");
 	if (!(await isHosted(role)))
-		throw new HttpError(409, "NOT_HOSTED", "Only Scout's agent can reprice this role's gigs.");
+		throw new HttpError(409, "NOT_HOSTED", "Only RentRecruiter's agent can reprice this role's gigs.");
 	if (gig.status !== "OPEN" && gig.status !== "PAUSED")
 		throw new HttpError(409, "NO_OPEN_GIG", "This gig isn't open.");
 	if (gig.pendingCount > 0)

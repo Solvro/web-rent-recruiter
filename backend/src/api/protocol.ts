@@ -1,5 +1,5 @@
 /**
- * Scout as a protocol (packages/shared/src/agent-api.ts): any agent key, or the company itself, can review a
+ * RentRecruiter as a protocol (packages/shared/src/agent-api.ts): any agent key, or the company itself, can review a
  * role. The hosted agent is just one implementation; it runs on the same ports.
  *
  * Trust: every agent.* call is SIWS-authenticated and must come from the role's on-chain agent (synced from
@@ -89,7 +89,7 @@ export async function setReviewer(caller: Address, input: z.output<typeof SetRev
 	);
 	const label =
 		input.mode === "scout"
-			? "Scout's agent"
+			? "RentRecruiter's agent"
 			: input.mode === "custom"
 				? `your agent ${input.agentPubkey.slice(0, 6)}…`
 				: "you (manual review)";

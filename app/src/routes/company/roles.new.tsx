@@ -287,7 +287,7 @@ function Drafting({
 				navigate({ to: "/company/roles/$roleId", params: { roleId: res.roleId } });
 				return;
 			}
-			// Someone other than the Scout agent checks the work: record it on the role right away.
+			// Someone other than the RentRecruiter agent checks the work: record it on the role right away.
 			if (reviewer.mode !== "scout") {
 				const set = await reviewApi.setReviewer(res.roleId, reviewer.mode, reviewer.key.trim());
 				await transact(set.unsignedTx, {
@@ -461,7 +461,7 @@ function Drafting({
 									onClick={() => setPickReviewer(true)}
 									className="block type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
 								>
-									Who checks the work: your Scout agent · change
+									Who checks the work: your RentRecruiter agent · change
 								</button>
 							)}
 							<Button
@@ -495,7 +495,7 @@ function Drafting({
 							)}
 							{!validReviewer(reviewer.mode, reviewer.key) && (
 								<p className="type-label text-destructive">
-									Paste your agent's ID above to start, or let your Scout agent check the work.
+									Paste your agent's ID above to start, or let your RentRecruiter agent check the work.
 								</p>
 							)}
 							{start.isError && <p className="type-label text-destructive">{errorMessage(start.error)}</p>}
