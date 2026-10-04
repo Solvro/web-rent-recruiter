@@ -1241,6 +1241,19 @@ function reply(roleId: string, text: string) {
 
 let ticking = false;
 /** Runs everything that is due: agent reviews, replies and the simulated market. */
+/** When this page session first looked at a role after a long gap (in memory: every reload is a new visit). */
+const visits = new Map<string, number>();
+const LONG_GAP = 30 * 60_000;
+function visitStart(roleId: string) {
+	const known = visits.get(roleId);
+	if (known !== undefined) return known;
+	const last = (g.entries.get(roleId) ?? []).at(-1);
+	const quietFor = last ? Date.now() - Date.parse(last.createdAt) : 0;
+	const start = quietFor > LONG_GAP ? Date.now() : 0;
+	visits.set(roleId, start);
+	return start;
+}
+
 export async function tick() {
 	if (ticking) return;
 	ticking = true;
@@ -1950,6 +1963,8 @@ function roleStatus(roleId: string): RoleStatusView {
 	const waitingOn: W[] = [];
 	// Demo time: "usual" durations are minutes, so slow states show up during a demo.
 	const MIN = 60_000;
+	// The mock clock keeps running between visits; a demo opened hours later starts its waits fresh, never "8 h".
+	const visit = visitStart(roleId);
 	const wait = (
 		who: W["who"],
 		what: string,
@@ -1962,6 +1977,7 @@ function roleStatus(roleId: string): RoleStatusView {
 			actions?: W["actions"];
 		} = {},
 	) => {
+		if (!extra.deadline && Date.parse(since) < visit) since = iso(visit);
 		const expectedBy = extra.usualMs ? iso(Date.parse(since) + extra.usualMs) : null;
 		waitingOn.push({
 			who,

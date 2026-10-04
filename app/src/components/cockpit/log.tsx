@@ -43,7 +43,7 @@ type Row =
 	| { kind: "step"; id: string; item: ThreadActivity }
 	| { kind: "fold"; id: string; items: ThreadActivity[] };
 
-/** Bookkeeping: how the work moved along. Folded per section so payments and decisions stand out. */
+/** Bookkeeping: how the work moved along. Runs of it fold in place so payments and decisions stand out. */
 const ROUTINE = new Set([
 	"PLANNED",
 	"GIG_POSTED",
@@ -64,26 +64,30 @@ const hidden = (item: ThreadActivity) =>
 function toRows(items: ThreadActivity[], fresh: (id: string) => boolean): Row[] {
 	const rows: Row[] = [];
 	let phase = -1;
-	let fold: Extract<Row, { kind: "fold" }> | null = null;
+	// Consecutive routine steps fold where they happened; a lone one stays a quiet line.
+	let run: ThreadActivity[] = [];
+	const flush = () => {
+		if (run.length > 1) rows.push({ kind: "fold", id: `fold-${run[0]?.id}`, items: run });
+		else if (run[0]) rows.push({ kind: "step", id: run[0].id, item: run[0] });
+		run = [];
+	};
 	for (const item of items) {
 		if (hidden(item)) continue;
 		const p = phaseOf(item);
 		if (p > phase) {
+			flush();
 			phase = p;
 			rows.push({ kind: "phase", id: `phase-${p}`, name: PHASES[p] ?? "" });
-			fold = null;
 		}
-		// What just happened stays visible; older routine steps fold into the section's one quiet line.
+		// What just happened stays visible until the next visit.
 		if (ROUTINE.has(item.kind) && !fresh(item.id)) {
-			if (!fold) {
-				fold = { kind: "fold", id: `fold-${item.id}`, items: [] };
-				rows.push(fold);
-			}
-			fold.items.push(item);
+			run.push(item);
 			continue;
 		}
+		flush();
 		rows.push({ kind: MESSAGES.has(item.kind) ? "message" : "step", id: item.id, item });
 	}
+	flush();
 	return rows;
 }
 
@@ -129,6 +133,7 @@ export function Log({
 					<MessageScrollerViewport aria-label="What your agent did" className="scroll-fade-none">
 						<MessageScrollerContent className="gap-1 pt-4 pb-16" spacerClassName="hidden">
 							{above}
+							{rows.length > 0 && <h2 className="px-2 pt-2 type-label text-muted-foreground">Activity</h2>}
 							{rows.map((r) => (
 								<MessageScrollerItem key={r.id} messageId={r.id}>
 									{r.kind === "phase" ? (
@@ -363,7 +368,7 @@ function moneyOf(item: ThreadActivity): string | null {
 	return null;
 }
 
-/** A section's routine steps (posted, took, sent notes, booked), one quiet line until opened. */
+/** A run of routine steps (posted, took, sent notes, booked), one quiet control until opened, in place. */
 function Folded({ items }: { items: ThreadActivity[] }) {
 	const [open, setOpen] = useState(false);
 	return (
@@ -372,9 +377,9 @@ function Folded({ items }: { items: ThreadActivity[] }) {
 				type="button"
 				onClick={() => setOpen((o) => !o)}
 				aria-expanded={open}
-				className="rounded-xl px-2 py-1 type-label text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground"
+				className="rounded-xl px-2 py-1 type-label text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 hover:text-foreground"
 			>
-				{open ? "Hide steps" : `${items.length} ${items.length === 1 ? "step" : "steps"}`}
+				{open ? "Hide" : `Show ${items.length} earlier steps`}
 			</button>
 			<div
 				className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"

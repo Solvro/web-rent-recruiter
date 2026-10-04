@@ -12,6 +12,7 @@ import { firstName, formatMoney } from "@/lib/format";
 import { useWaitingAction } from "@/lib/gigs/actions";
 import { gigApi } from "@/lib/gigs/api";
 import { callApi } from "@/lib/gigs/calls";
+import { useCandidates } from "@/lib/gigs/candidates";
 import { useReviewQueue } from "@/lib/gigs/review";
 import type { ShortlistItemView as ShortlistItem, ThreadActivity } from "@/lib/gigs/schemas";
 import type { Waiting } from "@/lib/gigs/status";
@@ -128,8 +129,15 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 	const [head, ...rest] = proposal ? [raw] : raw.split(/:\s+/);
 	const title = rest.length && (head?.length ?? 0) < 80 ? (head ?? raw) : raw;
 	const reasonText = rest.length && title !== raw ? rest.join(": ") : null;
-	const detail = why?.detail && !raw.includes(plain(why.detail).slice(0, 40)) ? plain(why.detail) : null;
+	const fullDetail = why?.detail && !raw.includes(plain(why.detail).slice(0, 40)) ? plain(why.detail) : null;
+	// "From Andreea Popescu. Karolina …" → who sourced them on a quiet line of its own, the reasoning as prose.
+	const from = fullDetail?.match(/^From ([^.]+)\.\s*/);
+	const detail = from ? fullDetail?.slice(from[0].length) || null : fullDetail;
 	const person = [...byName.keys()].find((n) => raw.includes(n));
+	const candidates = useCandidates(roleId);
+	const fit = person ? candidates.data?.find((c) => c.name === person)?.score : null;
+	const source =
+		from?.[1] ?? (person ? candidates.data?.find((c) => c.name === person)?.sourcedBy.displayName : null);
 	const decides = (w.actions ?? []).filter((x) => x.id === "decide");
 	const generic = decides.length === 1 && !/accept|take|yes|reject|no\b|pass/i.test(decides[0]?.label ?? "");
 	const others = (w.actions ?? []).filter((x) => !(generic && x.id === "decide"));
@@ -140,6 +148,11 @@ function ActionCard({ w, roleId, thread }: { w: Waiting; roleId: string; thread:
 			<p>
 				<WithCandidateLinks text={title.charAt(0).toUpperCase() + title.slice(1)} />
 			</p>
+			{(source || fit != null) && person && (
+				<p className="type-label text-muted-foreground">
+					{[source && `Sourced by ${source}`, fit != null && `fit ${fit}`].filter(Boolean).join(" · ")}
+				</p>
+			)}
 			{reasonText && <p className="type-label text-muted-foreground">{reasonText}</p>}
 			{w.actions?.some((x) => x.id === "attended") && (
 				<p className="type-label text-muted-foreground">
