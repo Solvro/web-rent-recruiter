@@ -22,6 +22,13 @@ Scout is a protocol. Our backend and AI agent are one implementation of the role
 
 Known limitation: the candidate's "yes" is a bearer link. The recruiter who receives the link to forward could click it themselves. A cheap guard catches the obvious case: a "yes" from a device (IP + user agent) the link holder used while signed in in the last 24 hours isn't paid automatically; the company decides ("the confirmation came from the recruiter's own device"). It doesn't stop a recruiter using a second device or network, and the device list is in memory (a restart forgets it). Real candidate identity (email / LinkedIn sign-in on the confirmation page) is on the roadmap.
 
+Why this matters more than one fake: only the top few candidates get an independent screening, so a recruiter who clicks "yes" for real profiles of people who never agreed is paid for the rest, and Google sign-in makes new accounts free. The planned policy (agent-side, the program already has bonds, holdbacks, `min_accepted` and operators):
+- **Unvouched accounts earn nothing on the click.** Their sourcing payout waits for independent verification (a screening by someone else, or a short verification call posted as a gig), so extra accounts earn $0.
+- **Vouched accounts get the upfront part, with a cap** on how many paid-but-unverified candidates they can have at once. The vouching operator takes 10% of their earnings and is accountable for them, so Sybil resistance lives with operators, not with Scout.
+- **Random spot checks** of confirmed candidates; one confirmed fake forfeits the recruiter's held parts across roles and bonds, and flags their on-chain reputation (and the operator's).
+
+The demo still pays an unvouched recruiter on the candidate's click.
+
 Known limitation: an unrecorded ("self-reported") screening or language call is only paid after the candidate confirms the call happened. That rule lives off-chain: our agent pre-accepts and rejects unconfirmed calls before `review_deadline`. If no reviewer acts before the deadline, `settle_expired` still pays the call permissionlessly, because on-chain all non-sourcing tasks settle on silence. Closing this gap would need an attestor for call tasks too, the same way sourcing works.
 
 The platform's remaining privileged roles are the **Config admin** (fee within ≤ 20% and bounds for new roles; treasury rotation) and the **upgrade authority** (section 1).
