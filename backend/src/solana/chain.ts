@@ -276,3 +276,8 @@ export async function chainClockOffsetMs(): Promise<number> {
 		}
 	});
 }
+
+/** "Now" on the chain's clock (ms): compare on-chain deadlines (review, holdback) against this, not Date.now(). */
+export async function chainNowMs(): Promise<number> {
+	return Date.now() - (await chainClockOffsetMs());
+}

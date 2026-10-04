@@ -57,6 +57,7 @@ export const CandidateRequest = z.object({ roleId: z.string().uuid(), candidateI
 export const CandidateListRequest = z.object({
 	roleId: z.string().uuid(),
 	stage: CandidateStage.optional(),
+	/** Default: passed and removed candidates are listed too (stage PASSED, removed: true). false hides removed ones. */
 	includeRemoved: z.boolean().optional(),
 });
 

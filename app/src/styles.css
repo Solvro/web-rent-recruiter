@@ -176,3 +176,27 @@
   /* …and above the cockpit composer, so a toast never covers what Hanna is typing. */
   bottom: calc(var(--moment-height, 0px) + var(--composer-height, 0px) + 24px) !important;
 }
+
+/* Cockpit motion: a new person slides in once; a step that completes settles its check. Transitions only on
+   transform/opacity, ease-out, under 250ms. Reduced motion keeps the fade, drops the movement. */
+.cockpit-row {
+  transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1), transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.step-done {
+  display: inline-block;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-row,
+  .step-done {
+    transform: none !important;
+  }
+}

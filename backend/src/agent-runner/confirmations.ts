@@ -307,7 +307,32 @@ async function notifyOwnAgent(roleId: string, sub: { id: string; gigId: string |
 	});
 }
 
-async function payConfirmed(submissionId: string) {
+/**
+ * One settlement at a time per deliverable: the candidate's "yes" (candidateRespond) and the agent's own step
+ * (preAccept on an already-confirmed link) can both arrive within a second; the second must not send a second accept.
+ */
+const settling = new Map<string, Promise<void>>();
+function once(submissionId: string, run: () => Promise<void>) {
+	const prev = settling.get(submissionId) ?? Promise.resolve();
+	const next = prev.catch(() => {}).then(run);
+	settling.set(submissionId, next);
+	void next.finally(() => {
+		if (settling.get(submissionId) === next) settling.delete(submissionId);
+	});
+	return next;
+}
+/** NotPending (6010): someone else already decided it on-chain (their path records it); nothing to do. */
+function alreadyDecided(err: unknown) {
+	return /NotPending|"Custom":\s*6010|custom program error: 0x177a/i.test(
+		String((err as Error)?.message ?? err),
+	);
+}
+
+function payConfirmed(submissionId: string) {
+	return once(submissionId, () => payConfirmedNow(submissionId));
+}
+
+async function payConfirmedNow(submissionId: string) {
 	const { sub, role, gig } = await load(submissionId);
 	if (sub.status !== "PENDING") return;
 	const [c] = await db
@@ -327,7 +352,13 @@ async function payConfirmed(submissionId: string) {
 		authority: agent.address,
 		review: `${what} (${c.proofHash})`,
 	});
-	const confirmed = await sendAsRelayer([ix, memoIx(`scout:confirm:${c.proofHash}`)], [agent]);
+	let confirmed: Awaited<ReturnType<typeof sendAsRelayer>>;
+	try {
+		confirmed = await sendAsRelayer([ix, memoIx(`scout:confirm:${c.proofHash}`)], [agent]);
+	} catch (err) {
+		if (alreadyDecided(err)) return;
+		throw err;
+	}
 	const [payee] = await db.select().from(schema.accounts).where(eq(schema.accounts.wallet, sub.scoutWallet));
 	await applyConfirmedTx(confirmed);
 	const [paid] = await db.select().from(schema.submissions).where(eq(schema.submissions.id, submissionId));
@@ -355,7 +386,15 @@ async function payConfirmed(submissionId: string) {
 	});
 }
 
-async function rejectUnconfirmed(
+function rejectUnconfirmed(
+	submissionId: string,
+	why: string,
+	reasonCode: number = REJECT_REASONS.NOT_INTERESTED,
+) {
+	return once(submissionId, () => rejectUnconfirmedNow(submissionId, why, reasonCode));
+}
+
+async function rejectUnconfirmedNow(
 	submissionId: string,
 	why: string,
 	reasonCode: number = REJECT_REASONS.NOT_INTERESTED,
@@ -370,7 +409,13 @@ async function rejectUnconfirmed(
 		reasonCode,
 		reasonText: `${why}.`,
 	});
-	const confirmed = await sendAsRelayer([ix], [agent]);
+	let confirmed: Awaited<ReturnType<typeof sendAsRelayer>>;
+	try {
+		confirmed = await sendAsRelayer([ix], [agent]);
+	} catch (err) {
+		if (alreadyDecided(err)) return;
+		throw err;
+	}
 	await db
 		.update(schema.submissions)
 		.set({ rejectText: `${why}.` })

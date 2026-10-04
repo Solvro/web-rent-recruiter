@@ -63,6 +63,7 @@ async function drain(roleId: string) {
 		for (let job = q.jobs.shift(); job; job = q.jobs.shift()) {
 			try {
 				await runJob(roleId, job);
+				failures.delete(roleId);
 			} catch (err) {
 				if (job.kind === "debug") job.reject(err);
 				await reportError(roleId, err);
@@ -73,16 +74,22 @@ async function drain(roleId: string) {
 	}
 }
 
+/**
+ * Internal errors go to the server log; the agent retries on its next tick. The company hears about it only when
+ * it keeps failing (3 steps in a row), in one plain sentence, at most once an hour.
+ */
+const failures = new Map<string, number>();
 async function reportError(roleId: string, err: unknown) {
 	const message = (err as Error)?.message ?? String(err);
 	log.warn(`[agent-runner] ${roleId}: ${message}`);
-	// At most one timeline error per role per minute.
-	if (Date.now() - (lastError.get(roleId) ?? 0) < 60_000) return;
+	const n = (failures.get(roleId) ?? 0) + 1;
+	failures.set(roleId, n);
+	if (n < 3 || Date.now() - (lastError.get(roleId) ?? 0) < 3_600_000) return;
 	lastError.set(roleId, Date.now());
 	await logActivity(
 		roleId,
 		"ERROR",
-		`Your agent hit a problem and will retry: ${message.slice(0, 200)}`,
+		"Your agent keeps running into a problem and is retrying; nothing was paid twice.",
 	).catch(() => {});
 }
 
@@ -462,7 +469,7 @@ async function noteDelivery(e: LiveEvent) {
 
 // ---- Status line ----------------------------------------------------------------------------
 
-async function refreshStatus(roleId: string) {
+export async function refreshStatus(roleId: string) {
 	const [role] = await db.select().from(schema.roles).where(eq(schema.roles.id, roleId));
 	if (!role) return;
 	const gigs = await db.select().from(schema.gigs).where(eq(schema.gigs.roleId, roleId));
@@ -490,6 +497,8 @@ async function refreshStatus(roleId: string) {
 		line = `${plural(shortlist.filter((s) => s.decision === "ATTENDED").length, "candidate")} interviewed`;
 	else if (shortlist.some((s) => s.decision === "NONE"))
 		line = `Shortlist ready: ${plural(shortlist.filter((s) => s.decision === "NONE").length, "candidate")} for you`;
+	else if (shortlist.length && shortlist.every((s) => s.decision === "PASSED" || s.decision === "NO_SHOW"))
+		line = "No one on the shortlist. Your agent keeps sourcing.";
 	else if (openOf("REFERENCE_CHECK").length) line = "Your agent is checking references";
 	else if (openOf("SCREENING_CALL").length)
 		line = `Your agent is screening ${plural(openOf("SCREENING_CALL").length, "candidate")}`;
@@ -528,6 +537,8 @@ export function startAgentRunner(logger: Log) {
 		if (!e.roleId) return;
 		if (e.type === "submission.created") void noteDelivery(e).catch(() => {});
 		if (e.type === "role.status" || e.type === "agent.message") return;
+		// The company's own decisions change the status line too (not only the agent's steps).
+		if (e.type === "shortlist.updated") void refreshStatus(e.roleId).catch(() => {});
 		statusSoon(e.roleId);
 		if (e.type === "agent.tool" || e.type === "agent.activity") return;
 		// Anything happened on an agent role: look at it on the next tick (cheap, coalesced).

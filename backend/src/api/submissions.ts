@@ -28,7 +28,7 @@ import { candidateHash, toHex } from "../lib/candidate-hash.ts";
 import { splitBounty } from "../lib/money.ts";
 import { submissionView } from "../lib/views.ts";
 import { ensureReview } from "../services/reviews.ts";
-import { agentSigner, fetchProgramAccount, findSubmissionPda } from "../solana/chain.ts";
+import { agentSigner, chainNowMs, fetchProgramAccount, findSubmissionPda } from "../solana/chain.ts";
 import { isHosted } from "../solana/gatekeeper.ts";
 import { acceptIx, attestOutcomeIx, rejectIx, releaseHoldbackIx, settleExpiredIx } from "../solana/scout.ts";
 import { buildUnsignedTx, sendAsRelayer } from "../solana/tx.ts";
@@ -162,7 +162,7 @@ export async function decide(
 	const { sub, role, gig } = await loadSubmission(id);
 	if (role.companyWallet !== wallet) throw forbidden("only the role's company can decide");
 	const accounts = pendingOnchain(sub, role, gig);
-	if (Date.now() > sub.reviewDeadline.getTime()) {
+	if ((await chainNowMs()) > sub.reviewDeadline.getTime()) {
 		throw new HttpError(
 			409,
 			"REVIEW_WINDOW_EXPIRED",
@@ -229,7 +229,7 @@ async function saveDecisionText(id: string, text: string) {
 export async function settle(id: string): Promise<z.output<typeof SettleResponse>> {
 	const { sub, role, gig } = await loadSubmission(id);
 	const accounts = pendingOnchain(sub, role, gig);
-	if (Date.now() <= sub.reviewDeadline.getTime()) {
+	if ((await chainNowMs()) <= sub.reviewDeadline.getTime()) {
 		throw new HttpError(
 			409,
 			"REVIEW_WINDOW_OPEN",
@@ -294,7 +294,7 @@ export async function attestOutcome(
 	const held = sub.laterStatus === "HELD" && later > 0n;
 	if (
 		input.outcome === "fabricated" &&
-		(!held || (sub.holdbackDeadline && Date.now() > sub.holdbackDeadline.getTime()))
+		(!held || (sub.holdbackDeadline && (await chainNowMs()) > sub.holdbackDeadline.getTime()))
 	) {
 		throw new HttpError(
 			409,
@@ -320,7 +320,7 @@ export async function release(id: string): Promise<z.output<typeof SettleRespons
 	const { sub, role, gig } = await loadSubmission(id);
 	const accounts = acceptedOnchain(sub, role, gig);
 	if (sub.laterStatus !== "HELD") throw new HttpError(409, "NOTHING_HELD_BACK", "nothing is held back");
-	if (!sub.holdbackDeadline || Date.now() <= sub.holdbackDeadline.getTime()) {
+	if (!sub.holdbackDeadline || (await chainNowMs()) <= sub.holdbackDeadline.getTime()) {
 		throw new HttpError(
 			409,
 			"HOLDBACK_WINDOW_OPEN",

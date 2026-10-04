@@ -159,7 +159,9 @@ export async function listCandidates(
 				eq(schema.submissions.roleId, input.roleId),
 				eq(schema.submissions.deliverableType, "SOURCING"),
 				eq(schema.submissions.confirmed, true),
-				...(input.includeRemoved ? [] : [eq(schema.submissions.removed, false)]),
+				// Passed (and "removed") candidates stay listed with stage PASSED, so the company can take them anyway;
+				// includeRemoved: false hides the removed ones.
+				...(input.includeRemoved === false ? [eq(schema.submissions.removed, false)] : []),
 			),
 		)
 		.orderBy(desc(schema.submissions.submittedAt));
@@ -376,8 +378,21 @@ export async function updateCandidate(
 				"ALREADY_DECIDED",
 				"This candidate was rejected; the recruiter can appeal it.",
 			);
-		if (sub.passedAt) {
-			await db.update(schema.submissions).set({ passedAt: null }).where(eq(schema.submissions.id, sub.id));
+		const [entry] = await db
+			.select()
+			.from(schema.shortlist)
+			.where(and(eq(schema.shortlist.roleId, role.id), eq(schema.shortlist.candidateId, sub.id)));
+		if (sub.passedAt || sub.removed || entry?.decision === "PASSED") {
+			// "Take anyway": back in the pipeline (and on the shortlist, waiting for the company's decision).
+			await db
+				.update(schema.submissions)
+				.set({ passedAt: null, removed: false })
+				.where(eq(schema.submissions.id, sub.id));
+			if (entry?.decision === "PASSED")
+				await db
+					.update(schema.shortlist)
+					.set({ decision: "NONE", decidedAt: null })
+					.where(and(eq(schema.shortlist.roleId, role.id), eq(schema.shortlist.candidateId, sub.id)));
 			await logActivity(role.id, "DECISION", `You moved ${sub.candidateName} back into the pipeline`, {
 				deliverableId: sub.id,
 			});

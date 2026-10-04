@@ -1136,6 +1136,35 @@ check(
 // ---- 6. Company decision ---------------------------------------------------------------------
 
 const before = await Promise.all([asSourcer, asScreener, asReferee].map(balance));
+// Passing from the shortlist keeps her listed and changes the status line; "Take anyway" brings her back.
+{
+	const pass = await asCompany.roles.decide.mutate({ roleId, candidateId: karolina, decision: "pass" });
+	if (pass.unsignedTx) await signAndSubmit([company], pass.unsignedTx);
+	const passed = await waitFor(
+		"the status reflects the pass",
+		async () => {
+			const st = await asCompany.roles.status.query({ roleId });
+			return /No one on the shortlist/.test(st.now.text) ? st : null;
+		},
+		30_000,
+	);
+	const listed = (await asCompany.roles.candidates.query({ roleId })).find((c) => c.candidateId === karolina);
+	check(listed?.stage === "PASSED", `passed Karolina stays listed (PASSED); status: "${passed.now.text}"`);
+	const back = await asCompany.candidates.update.mutate({ candidateId: karolina, stageOverride: "accept" });
+	if (back.unsignedTx) await signAndSubmit([company], back.unsignedTx);
+	await waitFor(
+		"take anyway: back on the shortlist",
+		async () => {
+			const st = await asCompany.roles.status.query({ roleId });
+			const item = (await asCompany.roles.shortlist.query({ roleId })).find(
+				(x) => x.candidateId === karolina,
+			);
+			return item?.decision === "NONE" && /Shortlist ready/.test(st.now.text);
+		},
+		30_000,
+	);
+	console.log('  ✓ "Take anyway" puts her back on the shortlist');
+}
 const invite = await asCompany.roles.decide.mutate({ roleId, candidateId: karolina, decision: "invite" });
 check(invite.unsignedTx === null, "invite is a decision only (nothing to sign)");
 const decided = await asCompany.roles.shortlist.query({ roleId });
@@ -1187,12 +1216,12 @@ const piotr = sourced.find(
 	if (tomasz) {
 		const r = await asCompany.candidates.remove.mutate({ candidateId: tomasz.id });
 		if (r.unsignedTx) await signAndSubmit([company], r.unsignedTx);
-		const list = await asCompany.roles.candidates.query({ roleId });
-		const all = await asCompany.roles.candidates.query({ roleId, includeRemoved: true });
+		const all = await asCompany.roles.candidates.query({ roleId });
+		const visible = await asCompany.roles.candidates.query({ roleId, includeRemoved: false });
 		check(
-			!list.some((c) => c.candidateId === tomasz.id) &&
-				all.some((c) => c.candidateId === tomasz.id && c.removed),
-			"removing a candidate passes and hides them (still listed with includeRemoved)",
+			all.some((c) => c.candidateId === tomasz.id && c.removed && c.stage === "PASSED") &&
+				!visible.some((c) => c.candidateId === tomasz.id),
+			"a removed candidate stays listed as PASSED (hidden only with includeRemoved: false)",
 		);
 	}
 	const { db: tdb, schema: tschema } = await import("../db/index.ts");
@@ -1313,6 +1342,10 @@ check(
 		(i) => /no recording/i.test(`${i.message} ${i.detail ?? ""}`) && i.message.includes("reference"),
 	),
 	"the recorded reference isn't described as unrecorded",
+);
+check(
+	!activity.items.some((i) => i.kind === "ERROR"),
+	"no agent errors reached the company's thread (a confirmation racing the agent's own step settles once)",
 );
 check(
 	activity.items.some((i) => /^Planned: \d+ profiles?, /.test(i.message)),

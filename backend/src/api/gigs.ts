@@ -963,7 +963,11 @@ export async function roleActivity(wallet: Address, roleId: string, limit = 200)
 			(role.status === "DRAFT" ? "Waiting for the budget to land" : "Your agent is working"),
 		// Older rows predate the plain-language thread: hide raw review rows, and clean the rest as they're read.
 		items: rows
-			.filter((r) => r.kind !== "REVIEWED")
+			// Raw internal errors (older rows) are for the server log, not the company.
+			.filter(
+				(r) =>
+					r.kind !== "REVIEWED" && !(r.kind === "ERROR" && /[{}]|transaction failed|Error:/i.test(r.message)),
+			)
 			.map(
 				(r): AgentActivity => ({
 					id: r.id,

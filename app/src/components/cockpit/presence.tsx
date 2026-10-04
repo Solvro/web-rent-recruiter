@@ -39,52 +39,72 @@ export function Thinking({ items, status }: { items: ThreadActivity[]; status: R
 }
 
 /**
- * Everyone the agent is waiting for (not the company), each with how long it has been, whether that is slow,
- * and the one-click fixes the API offers for it.
+ * "Now": what the agent is waiting on (not the company), as one labelled group: the most pressing line, the rest
+ * folded into "and N more". Slow and deadline lines first; each keeps its one-click fixes.
  */
 export function WaitingList({ roleId, status }: { roleId: string; status: RoleStatusView | undefined }) {
 	const now = useNow(30_000);
 	const run = useWaitingAction(roleId);
-	const list = (status?.waitingOn ?? []).filter((w) => w.who !== "company");
+	const [all, setAll] = useState(false);
+	const list = (status?.waitingOn ?? [])
+		.filter((w) => w.who !== "company")
+		.sort((x, y) => Number(!!y.slow) - Number(!!x.slow) || Number(!!y.deadline) - Number(!!x.deadline));
 	if (!list.length) return null;
+	const shown = all ? list : list.slice(0, 1);
 	return (
-		<ul className="space-y-1 px-2 pb-1">
-			{list.map((w) => {
-				const waited = now - Date.parse(w.since);
-				const left = w.deadline ? Date.parse(w.deadline) - now : null;
-				const due = w.expectedBy ? Date.parse(w.expectedBy) - now : null;
-				return (
-					<li key={w.what} className="type-label text-muted-foreground">
-						<span className={cn(w.slow && "text-warning-foreground")}>
-							Waiting for {lower(plain(w.what))}
-						</span>
-						{left !== null
-							? ` · ${left > 0 ? `${since(left)} left` : "time is up"}`
-							: waited > 60_000
-								? ` · ${since(waited)} so far`
-								: ""}
-						{w.slow
-							? " · slower than usual"
-							: left === null && due !== null && due > 0
-								? ` · usually within ${since(due)}`
-								: ""}
-						<span className="mt-1.5 flex flex-wrap gap-2">
-							{(w.actions ?? []).map((action) => (
-								<button
-									key={`${action.id}-${action.criterionId ?? action.gigId ?? ""}`}
-									type="button"
-									disabled={run.isPending}
-									onClick={() => run.mutate({ action })}
-									className="rounded-full border bg-background px-3 py-1 text-foreground hover:bg-muted disabled:opacity-50"
-								>
-									{run.isPending && run.variables?.action === action ? "…" : action.label}
-								</button>
-							))}
-						</span>
-					</li>
-				);
-			})}
-		</ul>
+		<section aria-label="Now" className="space-y-1 px-2">
+			<h2 className="type-label text-muted-foreground">Now</h2>
+			<ul className="space-y-1.5">
+				{shown.map((w) => {
+					const waited = now - Date.parse(w.since);
+					const left = w.deadline ? Date.parse(w.deadline) - now : null;
+					const due = w.expectedBy ? Date.parse(w.expectedBy) - now : null;
+					return (
+						<li key={w.what} className="type-label">
+							<span className={cn("text-foreground", w.slow && "text-warning-foreground")}>
+								Waiting for {lower(plain(w.what))}
+							</span>
+							<span className="text-muted-foreground">
+								{left !== null
+									? ` · ${left > 0 ? `${since(left)} left` : "time is up"}`
+									: waited > 60_000
+										? ` · ${since(waited)} so far`
+										: ""}
+								{w.slow
+									? " · slower than usual"
+									: left === null && due !== null && due > 0
+										? ` · usually within ${since(due)}`
+										: ""}
+							</span>
+							{(w.actions ?? []).length > 0 && (
+								<span className="mt-1.5 flex flex-wrap gap-2">
+									{(w.actions ?? []).map((action) => (
+										<button
+											key={`${action.id}-${action.criterionId ?? action.gigId ?? ""}`}
+											type="button"
+											disabled={run.isPending}
+											onClick={() => run.mutate({ action })}
+											className="rounded-full border bg-background px-3 py-1 text-foreground transition-transform duration-150 ease-out hover:bg-muted active:scale-[0.97] disabled:opacity-50"
+										>
+											{run.isPending && run.variables?.action === action ? "…" : action.label}
+										</button>
+									))}
+								</span>
+							)}
+						</li>
+					);
+				})}
+			</ul>
+			{list.length > 1 && (
+				<button
+					type="button"
+					onClick={() => setAll((v) => !v)}
+					className="type-label text-muted-foreground hover:text-foreground"
+				>
+					{all ? "Show less" : `and ${list.length - 1} more`}
+				</button>
+			)}
+		</section>
 	);
 }
 

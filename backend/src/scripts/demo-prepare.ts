@@ -299,6 +299,9 @@ await waitFor("the shortlist", async () =>
 	),
 );
 step("✓ shortlist ready, waiting for Hanna's Invite");
+const errors = (await hanna.roles.activity.query({ roleId })).items.filter((i) => i.kind === "ERROR");
+if (errors.length)
+	console.log(`       Warning: ${errors.length} error line(s) in Hanna's thread: ${errors[0]?.message}`);
 const decisionsNeeded = (await hanna.roles.status.query({ roleId })).waitingOn.filter(
 	(w) => w.who === "company",
 );

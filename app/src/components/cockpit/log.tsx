@@ -40,18 +40,47 @@ function phaseOf(item: ThreadActivity): number {
 type Row =
 	| { kind: "phase"; id: string; name: string }
 	| { kind: "message"; id: string; item: ThreadActivity }
-	| { kind: "step"; id: string; item: ThreadActivity };
+	| { kind: "step"; id: string; item: ThreadActivity }
+	| { kind: "fold"; id: string; items: ThreadActivity[] };
 
-function toRows(items: ThreadActivity[]): Row[] {
+/** Bookkeeping: how the work moved along. Folded per section so payments and decisions stand out. */
+const ROUTINE = new Set([
+	"PLANNED",
+	"GIG_POSTED",
+	"GIG_CLAIMED",
+	"DELIVERY_RECEIVED",
+	"NOTE",
+	"REVIEWED",
+	"REPRICED",
+]);
+
+/** Internal failures the agent retries on its own are not the company's business; anything else, one plain line. */
+const hidden = (item: ThreadActivity) =>
+	item.kind === "TOOL" ||
+	isPlumbing(item.message) ||
+	(item.kind === "ERROR" &&
+		(/retry|retrying/i.test(item.message) || /[{[]|Error|failed:/.test(item.message)));
+
+function toRows(items: ThreadActivity[], fresh: (id: string) => boolean): Row[] {
 	const rows: Row[] = [];
 	let phase = -1;
+	let fold: Extract<Row, { kind: "fold" }> | null = null;
 	for (const item of items) {
-		// Tool calls behind a reply are the agent's plumbing, not news for Hanna.
-		if (item.kind === "TOOL" || isPlumbing(item.message)) continue;
+		if (hidden(item)) continue;
 		const p = phaseOf(item);
 		if (p > phase) {
 			phase = p;
 			rows.push({ kind: "phase", id: `phase-${p}`, name: PHASES[p] ?? "" });
+			fold = null;
+		}
+		// What just happened stays visible; older routine steps fold into the section's one quiet line.
+		if (ROUTINE.has(item.kind) && !fresh(item.id)) {
+			if (!fold) {
+				fold = { kind: "fold", id: `fold-${item.id}`, items: [] };
+				rows.push(fold);
+			}
+			fold.items.push(item);
+			continue;
 		}
 		rows.push({ kind: MESSAGES.has(item.kind) ? "message" : "step", id: item.id, item });
 	}
@@ -65,6 +94,7 @@ function toRows(items: ThreadActivity[]): Row[] {
 export function Log({
 	roleId,
 	items,
+	loaded,
 	now,
 	busy,
 	pinned,
@@ -75,6 +105,8 @@ export function Log({
 }: {
 	roleId: string;
 	items: ThreadActivity[];
+	/** The first load arrived: only lines after it count as new. */
+	loaded: boolean;
 	now: string | null;
 	busy: boolean;
 	/** The one thing that needs the company, pinned right above the composer. */
@@ -87,8 +119,8 @@ export function Log({
 	above?: ReactNode;
 	below?: ReactNode;
 }) {
-	const seen = useSeen(items);
-	const rows = toRows(items);
+	const seen = useSeen(loaded ? items : undefined);
+	const rows = toRows(items, (id) => !seen(id));
 	const bottom = useComposerHeight();
 	return (
 		<MessageScrollerProvider defaultScrollPosition="end">
@@ -103,6 +135,8 @@ export function Log({
 										<Marker variant="separator" className="pt-6 pb-2">
 											<MarkerContent>{r.name}</MarkerContent>
 										</Marker>
+									) : r.kind === "fold" ? (
+										<Folded items={r.items} />
 									) : (
 										<Fresh fresh={!seen(r.id)}>
 											{r.kind === "message" ? (
@@ -163,8 +197,12 @@ function StepLine({ item }: { item: ThreadActivity }) {
 	const [open, setOpen] = useState(false);
 	// Demo data has made-up signatures: no proof link that leads nowhere.
 	const proof = API_MOCK ? null : (item.solscanUrl ?? item.explorerUrl);
+	const amount = moneyOf(item);
 	const tone =
-		item.kind === "DELIVERY_ACCEPTED" || item.kind === "SHORTLISTED"
+		item.kind === "DELIVERY_ACCEPTED" ||
+		item.kind === "SHORTLISTED" ||
+		item.kind === "DECISION" ||
+		item.kind === "BUDGET"
 			? "text-foreground"
 			: item.kind === "DELIVERY_REJECTED"
 				? "text-muted-foreground"
@@ -184,9 +222,13 @@ function StepLine({ item }: { item: ThreadActivity }) {
 				<span className={cn("min-w-0 flex-1", tone)}>
 					<WithCandidateLinks text={plain(item.message)} />
 				</span>
+				{amount && <span className="shrink-0 tabular text-foreground">{amount}</span>}
 				<time
 					dateTime={item.createdAt}
-					className="shrink-0 tabular text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+					className={cn(
+						"shrink-0 tabular text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
+						amount && "hidden",
+					)}
 				>
 					{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
 				</time>
@@ -309,6 +351,41 @@ function Composer({ roleId, items, asking }: { roleId: string; items: ThreadActi
 					{send.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
 				</Button>
 			</form>
+		</div>
+	);
+}
+
+/** The amount a line moved, for a right-aligned money column: payments and budget lines only. */
+function moneyOf(item: ThreadActivity): string | null {
+	if (item.kind === "BUDGET") return item.message.match(/\$[\d,]+(?:\.\d{2})?/)?.[0] ?? null;
+	if (item.kind === "DELIVERY_ACCEPTED" || item.kind === "DECISION")
+		return item.message.match(/\bpaid [^$]*?(\$[\d,]+(?:\.\d{2})?)/)?.[1] ?? null;
+	return null;
+}
+
+/** A section's routine steps (posted, took, sent notes, booked), one quiet line until opened. */
+function Folded({ items }: { items: ThreadActivity[] }) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div>
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				aria-expanded={open}
+				className="rounded-xl px-2 py-1 type-label text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground"
+			>
+				{open ? "Hide steps" : `${items.length} ${items.length === 1 ? "step" : "steps"}`}
+			</button>
+			<div
+				className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+				style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}
+			>
+				<div className="overflow-hidden">
+					{items.map((item) => (
+						<StepLine key={item.id} item={item} />
+					))}
+				</div>
+			</div>
 		</div>
 	);
 }

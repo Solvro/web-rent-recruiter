@@ -8,6 +8,7 @@ import { CandidatesProvider } from "@/components/cockpit/candidates";
 import { RoleHeader } from "@/components/cockpit/header";
 import { CloseRole, FundRole, MoneyRecord } from "@/components/cockpit/lifecycle";
 import { Log } from "@/components/cockpit/log";
+import { headline, People } from "@/components/cockpit/people";
 import { Thinking, WaitingList, WhatHappensNext } from "@/components/cockpit/presence";
 import { ReviewerSettings } from "@/components/reviewer-settings";
 import { locationText, SENIORITY, salaryText } from "@/components/role-draft/job-post";
@@ -16,6 +17,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { appCodeOf, errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { useRoleActivity, useShortlist } from "@/lib/gigs/api";
+import { useCandidates } from "@/lib/gigs/candidates";
 import { useRoleStatus } from "@/lib/gigs/status";
 import { useRole } from "@/lib/queries";
 
@@ -35,6 +37,7 @@ function Cockpit({ roleId }: { roleId: string }) {
 	const status = useRoleStatus(roleId);
 	const activity = useRoleActivity(roleId);
 	const shortlist = useShortlist(roleId);
+	const candidates = useCandidates(roleId);
 	const [details, setDetails] = useState(false);
 	const items = activity.data?.items ?? [];
 	const asks = useAsks({
@@ -65,10 +68,19 @@ function Cockpit({ roleId }: { roleId: string }) {
 		<CandidatesProvider roleId={r.id} criteria={r.criteria}>
 			<div className="fixed inset-x-0 top-16 bottom-0 z-20 bg-background">
 				<div className="mx-auto flex h-full w-full max-w-[760px] flex-col px-4">
-					<RoleHeader role={r} status={status.data} onDetails={() => setDetails(true)} />
+					<RoleHeader
+						role={r}
+						status={status.data}
+						headline={headline(status.data, candidates.data, { closed, pending: r.pendingCount })}
+						onDetails={() => setDetails(true)}
+					>
+						<People roleId={r.id} criteria={r.criteria} />
+						{!closed && <WaitingList roleId={r.id} status={status.data} />}
+					</RoleHeader>
 					<Log
 						roleId={r.id}
 						items={items}
+						loaded={activity.isSuccess}
 						now={status.data?.now.text ?? null}
 						busy={!!status.data?.now.busy}
 						closed={closed}
@@ -77,16 +89,7 @@ function Cockpit({ roleId }: { roleId: string }) {
 								<WhatHappensNext roleId={r.id} started={(status.data?.pipeline.sourcingAccepted ?? 0) > 0} />
 							)
 						}
-						below={
-							closed ? (
-								<ClosedNote role={r} />
-							) : (
-								<>
-									<Thinking items={items} status={status.data} />
-									<WaitingList roleId={r.id} status={status.data} />
-								</>
-							)
-						}
+						below={closed ? <ClosedNote role={r} /> : <Thinking items={items} status={status.data} />}
 						pinned={closed ? null : <Pinned asks={asks} />}
 						pinnedKey={asks.map((a) => a.key).join(",")}
 					/>
